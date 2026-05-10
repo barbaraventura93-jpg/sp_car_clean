@@ -129,6 +129,19 @@ footer p{font-size:.7rem;color:rgba(255,255,255,.3)}
 .admin-link:hover{color:var(--blue)}
 @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 
+/* ====== PORTFOLIO FEED ====== */
+.insta-feed{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;overflow:hidden}
+.insta-carousel{display:flex;gap:1rem;overflow-x:auto;scroll-behavior:smooth;width:100%;padding:1rem 0;scroll-snap-type:x mandatory;max-height:280px}
+.insta-post{flex-shrink:0;width:200px;height:200px;scroll-snap-align:center;border-radius:8px;overflow:hidden;cursor:pointer;transition:transform .3s ease;position:relative;background:#000}
+.insta-post img,.insta-post video{width:100%;height:100%;object-fit:cover;transition:transform .3s ease}
+.insta-post:hover img,.insta-post:hover video{transform:scale(1.05)}
+.insta-post .play-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.3);font-size:2.5rem;opacity:0;transition:opacity .3s}
+.insta-post:hover .play-icon{opacity:1}
+.insta-header{text-align:center;margin-bottom:1.5rem;color:rgba(255,255,255,.9)}
+.insta-header a{color:#fff;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:.5rem;transition:opacity .3s}
+.insta-header a:hover{opacity:.8}
+.insta-link-icon{font-size:1.3rem}
+
 /* ====== MODAL BASE ====== */
 .modal-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10,18,30,.85);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:1rem;animation:fadeIn .2s ease}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -333,9 +346,14 @@ footer p{font-size:.7rem;color:rgba(255,255,255,.3)}
   </div>
   <div class="hero-right">
     <div class="hero-right-pattern"></div>
-    <div class="hero-right-content">
-      <svg viewBox="0 0 320 155" fill="none"><path d="M18 98C18 98 38 52 68 42L118 32L200 32L244 42C270 52 290 98 290 98" stroke="rgba(255,255,255,.88)" stroke-width="5" stroke-linecap="round"/><path d="M8 98L310 98L310 118C310 124 306 129 300 129L238 129C238 129 233 143 220 143L210 143C197 143 192 129 192 129L128 129C128 129 123 143 110 143L100 143C87 143 82 129 82 129L20 129C14 129 8 124 8 118Z" stroke="rgba(255,255,255,.88)" stroke-width="4" fill="rgba(255,255,255,.05)" stroke-linejoin="round"/><circle cx="100" cy="137" r="13" stroke="rgba(255,255,255,.9)" stroke-width="4" fill="rgba(255,255,255,.08)"/><circle cx="100" cy="137" r="5" fill="rgba(255,255,255,.5)"/><circle cx="220" cy="137" r="13" stroke="rgba(255,255,255,.9)" stroke-width="4" fill="rgba(255,255,255,.08)"/><circle cx="220" cy="137" r="5" fill="rgba(255,255,255,.5)"/><path d="M78 86L100 56L200 56L240 86Z" stroke="rgba(255,255,255,.55)" stroke-width="2.5" fill="rgba(255,255,255,.04)" stroke-linejoin="round"/><line x1="155" y1="56" x2="155" y2="86" stroke="rgba(255,255,255,.35)" stroke-width="2"/><line x1="5" y1="72" x2="38" y2="72" stroke="rgba(255,255,255,.18)" stroke-width="2.5" stroke-linecap="round"/><line x1="5" y1="84" x2="28" y2="84" stroke="rgba(255,255,255,.12)" stroke-width="2" stroke-linecap="round"/></svg>
-      <div class="hero-tagline">Agendamento Online · Confirmação Rápida</div>
+    <div class="insta-feed">
+      <div class="insta-header">
+        <a href="https://www.instagram.com/spcarclean/" target="_blank" rel="noopener noreferrer">
+          <span class="insta-link-icon">📸</span>
+          Nossas Obras
+        </a>
+      </div>
+      <div id="instafeed" class="insta-carousel"></div>
     </div>
   </div>
 </section>
@@ -426,7 +444,13 @@ footer p{font-size:.7rem;color:rgba(255,255,255,.3)}
     <div class="logo-text"><div class="name" style="color:#fff">SP <span>Car</span> Clean</div><div class="tag">São Paulo, SP</div></div>
   </a>
   <p>© 2025 SP Car Clean. Todos os direitos reservados.</p>
-  <a class="admin-link" onclick="openAdminLogin()">Área Restrita</a>
+  <div style="display:flex;gap:1.5rem;align-items:center">
+    <a href="https://www.instagram.com/spcarclean/" target="_blank" rel="noopener noreferrer" style="color:rgba(255,255,255,.4);text-decoration:none;transition:color .3s;font-size:.8rem;display:inline-flex;align-items:center;gap:.35rem" class="admin-link" onmouseover="this.style.color='#E1306C'" onmouseout="this.style.color='rgba(255,255,255,.4)'">
+      <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zM5.838 12a6.162 6.162 0 1 1 12.324 0 6.162 6.162 0 0 1-12.324 0zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm4.965-10.322a1.44 1.44 0 1 1 2.881.001 1.44 1.44 0 0 1-2.881-.001z"/></svg>
+      Instagram
+    </a>
+    <a class="admin-link" onclick="openAdminLogin()">Área Restrita</a>
+  </div>
 </footer>
 
 <!-- ===================================================
@@ -1547,6 +1571,42 @@ function updateWaLink() {
 // ============================================================
 // FIREBASE INIT
 // ============================================================
+// Portfolio Feed
+(function initPortfolioFeed() {
+  fetch('/assets/portfolio.json')
+    .then(r => r.json())
+    .then(data => {
+      const feed = document.getElementById('instafeed');
+      if(!data.items || data.items.length === 0) {
+        feed.innerHTML = '<p style="color:rgba(255,255,255,.5);text-align:center;font-size:.85rem">Galeria de obras em breve!</p>';
+        return;
+      }
+
+      let html = '';
+      data.items.forEach(item => {
+        if(item.type === 'image') {
+          html += `<div class="insta-post"><img src="${item.url}" alt="${item.title}" title="${item.title}"/></div>`;
+        } else if(item.type === 'video') {
+          html += `<div class="insta-post"><video src="${item.url}" poster="${item.thumb}"></video><div class="play-icon">▶</div></div>`;
+        }
+      });
+      feed.innerHTML = html;
+
+      // Video click to expand
+      document.querySelectorAll('.insta-post:has(video)').forEach(el => {
+        el.onclick = e => {
+          e.preventDefault();
+          const vid = el.querySelector('video');
+          vid.requestFullscreen?.() || vid.webkitRequestFullscreen?.();
+        };
+      });
+    })
+    .catch(e => {
+      console.log('Portfolio load:', e);
+      document.getElementById('instafeed').innerHTML = '<p style="color:rgba(255,255,255,.5);text-align:center;font-size:.85rem">Galeria de obras em breve!</p>';
+    });
+})();
+
 (function initFirebase() {
   const firebaseConfig = {
     apiKey: "AIzaSyDa4Mu7M7GXRtNa5YvnaKXw1rl7dM1mFYQ",
