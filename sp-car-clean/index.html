@@ -1414,7 +1414,24 @@ function doApprove(id) {
   closeModal('detailModal');
   renderAdminBookings();
 
-  alert(`✅ Orçamento enviado!\nDatas ${fmtDateShort(startDate)} → ${fmtDateShort(endDate)} pré-reservadas no calendário.\nAguardando confirmação do cliente.`);
+  // Abrir WhatsApp do cliente com mensagem de orçamento
+  const _svcApprove = SVCS[b.service];
+  const _rawPhone = b.phone.replace(/\D/g,'');
+  const _waPhone = _rawPhone.length <= 11 ? '55'+_rawPhone : _rawPhone;
+  const _waMsg = encodeURIComponent(
+    `Olá *${b.name}*! 👋\n\n` +
+    `Seu orçamento na *SP Car Clean* está pronto:\n\n` +
+    `📋 *Código:* ${b.id}\n` +
+    `🔧 *Serviço:* ${_svcApprove.name}\n` +
+    `🚗 *Veículo:* ${b.car}${b.plate ? ' | ' + b.plate : ''}\n` +
+    `📅 *Entrega:* ${fmtDate(startDate)} às ${CFG.dropoffTime}\n` +
+    `🏁 *Retirada:* ${fmtDate(endDate)} às ${CFG.pickupTime}\n` +
+    `💰 *Valor:* ${fmtMoney(b.finalPrice)}\n` +
+    `📍 *Local:* ${b.approvedLocation}` +
+    (b.adminNotes ? `\n📝 *Obs:* ${b.adminNotes}` : '') +
+    `\n\nPara confirmar, acesse o site e informe o código *${b.id}*.`
+  );
+  window.open(`https://wa.me/${_waPhone}?text=${_waMsg}`, '_blank');
 }
 
 function rejectBooking(id) {
