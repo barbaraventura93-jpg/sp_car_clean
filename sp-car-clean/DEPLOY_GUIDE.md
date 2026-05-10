@@ -142,8 +142,8 @@ git push origin main
 
 Depois de configurado, seus sites estarão em:
 
-- **Netlify**: `https://seu-site-netlify.netlify.app` (verifique no dashboard)
-- **Firebase**: `https://seu-projeto.web.app` (verifique no Firebase Hosting)
+- **Netlify**: https://sp-car-clean.netlify.app/#
+- **Firebase**: sp-car-clean.web.app
 
 ---
 
