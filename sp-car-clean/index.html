@@ -1433,7 +1433,9 @@ function doApprove(id) {
     `💰 *Valor:* ${fmtMoney(b.finalPrice)}\n` +
     `📍 *Local:* ${b.approvedLocation}` +
     (b.adminNotes ? `\n📝 *Obs:* ${b.adminNotes}` : '') +
-    `\n\nPara confirmar, acesse o site e informe o código *${b.id}*.`
+    `\n\n⚠️ *Para garantir a reserva do seu dia, é necessário dar o aceite no orçamento pelo nosso site.*\n\n` +
+    `👉 Acesse: *https://sp-car-clean.netlify.app*\n` +
+    `Clique em *"Consultar Agendamento"* e informe o código *${b.id}* para confirmar.`
   );
   window.open(`https://wa.me/${_waPhone}?text=${_waMsg}`, '_blank');
 }
