@@ -19,7 +19,7 @@ jobs:
           node-version: '18'
 
       - name: Build project
-        run: mkdir -p dist && cp index.html dist/
+        run: mkdir -p dist && cp index.html dist/ && cp -r assets dist/
 
       - name: Deploy to Netlify
         uses: nwtgck/actions-netlify@v2.0
@@ -33,8 +33,9 @@ jobs:
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
       - name: Deploy to Firebase
-        uses: w9jds/firebase-action@master
+        uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          args: deploy --only hosting
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          channelId: live
+          projectId: sp-car-clean

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "SP Car Clean — Estética Automotiva Premium",
   "scripts": {
-    "build": "mkdir -p dist && cp index.html dist/",
+    "build": "mkdir -p dist && cp index.html dist/ && cp -r assets dist/",
     "start": "npx serve ."
   }
 }
