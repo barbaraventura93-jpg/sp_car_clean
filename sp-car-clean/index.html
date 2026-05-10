@@ -2005,6 +2005,93 @@ document.addEventListener('click', function(e) {
   btn.appendChild(r);
   r.addEventListener('animationend', () => r.remove());
 });
+
+// ============================================================
+// ENGINE SOUND — toca o ronco quando #porque aparece na tela
+// ============================================================
+(function() {
+  let played = false;
+  let unlocked = false;
+  let ctx = null;
+
+  function unlock() {
+    if (unlocked) return;
+    unlocked = true;
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+  }
+  ['click','touchstart','scroll'].forEach(ev =>
+    document.addEventListener(ev, unlock, { once: true, passive: true })
+  );
+
+  function playRev() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    const now = ctx.currentTime;
+    const dur = 4.0;
+
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0, now);
+    master.gain.linearRampToValueAtTime(0.38, now + 0.07);
+    master.gain.setValueAtTime(0.38, now + dur - 0.5);
+    master.gain.linearRampToValueAtTime(0, now + dur);
+    master.connect(ctx.destination);
+
+    // Harmônicos do motor (osciladores sawtooth empilhados)
+    [
+      { f: 55,  type: 'sawtooth', g: 1.0,  mult: 4.2 },
+      { f: 110, type: 'sawtooth', g: 0.55, mult: 4.0 },
+      { f: 220, type: 'square',   g: 0.22, mult: 3.2 },
+      { f: 440, type: 'sawtooth', g: 0.09, mult: 2.6 },
+      { f: 880, type: 'sawtooth', g: 0.04, mult: 2.0 },
+    ].forEach(({ f, type, g, mult }) => {
+      const osc = ctx.createOscillator();
+      const og  = ctx.createGain();
+      osc.type = type;
+      // Idle → aceleração → settle
+      osc.frequency.setValueAtTime(f, now);
+      osc.frequency.exponentialRampToValueAtTime(f * mult, now + dur * 0.52);
+      osc.frequency.exponentialRampToValueAtTime(f * mult * 0.68, now + dur);
+      og.gain.value = g * 0.16;
+      osc.connect(og); og.connect(master);
+      osc.start(now); osc.stop(now + dur);
+    });
+
+    // Ruído de escape (noise filtrado como bandpass)
+    const bufLen = Math.ceil(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buf;
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'bandpass';
+    filt.frequency.setValueAtTime(85, now);
+    filt.frequency.exponentialRampToValueAtTime(680, now + dur * 0.52);
+    filt.frequency.exponentialRampToValueAtTime(320, now + dur);
+    filt.Q.value = 0.65;
+    const ng = ctx.createGain(); ng.gain.value = 0.09;
+    noise.connect(filt); filt.connect(ng); ng.connect(master);
+    noise.start(now); noise.stop(now + dur);
+  }
+
+  const section = document.getElementById('porque');
+  if (!section) return;
+
+  const obs = new IntersectionObserver(entries => {
+    if (!entries[0].isIntersecting || played) return;
+    played = true;
+    obs.disconnect();
+    setTimeout(() => {
+      if (unlocked) { playRev(); return; }
+      // Aguarda primeira interação se o usuário ainda não tocou na página
+      const once = () => playRev();
+      ['click','touchstart'].forEach(e => document.addEventListener(e, once, { once: true }));
+    }, 350);
+  }, { threshold: 0.25 });
+
+  obs.observe(section);
+})();
 </script>
 </body>
 </html>
