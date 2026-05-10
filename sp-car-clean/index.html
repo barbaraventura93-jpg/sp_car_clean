@@ -1762,19 +1762,20 @@ function updateWaLink() {
 // ============================================================
 // FIREBASE INIT
 // ============================================================
-// Hero Carousel
+// Hero Carousel — adicione/remova arquivos da pasta e o array abaixo.
+// Slides com arquivos ausentes são removidos automaticamente via onerror.
 (function initHeroCarousel() {
   const media = [
-    {src:'assets/portfolio/fusca.mp4',                     type:'video', alt:'SP Car Clean'},
-    {src:'assets/portfolio/branco.jpg.jpg',                alt:'Carro branco'},
-    {src:'assets/portfolio/estofado.jpg.jpg',              alt:'Higienização de estofado'},
-    {src:'assets/portfolio/moto.jpg.jpg',                  alt:'Moto'},
+    {src:'assets/portfolio/fusca.mp4',                       type:'video', alt:'SP Car Clean'},
+    {src:'assets/portfolio/branco.jpg.jpg',                  alt:'Carro branco'},
+    {src:'assets/portfolio/estofado.jpg.jpg',                alt:'Higienização de estofado'},
+    {src:'assets/portfolio/moto.jpg.jpg',                    alt:'Moto'},
     {src:'assets/portfolio/antes-e-depois-estofado.jpg.jpg', alt:'Antes e depois estofado'},
-    {src:'assets/portfolio/detalhes.jpg.jpg',              alt:'Detalhes'},
-    {src:'assets/portfolio/revitalização.jpg.jpg',         alt:'Revitalização'},
-    {src:'assets/portfolio/revitalização-plastico.jpg.jpg',alt:'Revitalização plástico'},
-    {src:'assets/portfolio/produtos.jpg.jpg',              alt:'Produtos'},
-    {src:'assets/portfolio/estepe.jpg.jpg',                alt:'Estepe'},
+    {src:'assets/portfolio/detalhes.jpg.jpg',                alt:'Detalhes'},
+    {src:'assets/portfolio/revitalização.jpg.jpg',           alt:'Revitalização'},
+    {src:'assets/portfolio/revitalização-plastico.jpg.jpg',  alt:'Revitalização plástico'},
+    {src:'assets/portfolio/produtos.jpg.jpg',                alt:'Produtos'},
+    {src:'assets/portfolio/estepe.jpg.jpg',                  alt:'Estepe'},
   ];
 
   const track = document.getElementById('heroTrack');
@@ -1785,8 +1786,30 @@ function updateWaLink() {
   if (!track) return;
 
   let current = 0, timer, startX = 0;
+  let slides = []; // slides ativos (sem os que falharam)
 
-  media.forEach((item, i) => {
+  function syncDots() {
+    dotsEl.innerHTML = '';
+    slides.forEach((_, i) => {
+      const dot = document.createElement('button');
+      dot.className = 'hero-carousel-dot' + (i === current ? ' active' : '');
+      dot.setAttribute('aria-label', 'Slide ' + (i+1));
+      dot.addEventListener('click', () => goTo(i));
+      dotsEl.appendChild(dot);
+    });
+    counterEl.textContent = slides.length ? `${current + 1} / ${slides.length}` : '';
+  }
+
+  function removeSlide(slide) {
+    const idx = slides.indexOf(slide);
+    if (idx === -1) return;
+    slides.splice(idx, 1);
+    slide.remove();
+    if (current >= slides.length) current = Math.max(0, slides.length - 1);
+    goTo(current);
+  }
+
+  media.forEach(item => {
     const slide = document.createElement('div');
     slide.className = 'hero-carousel-slide';
     if (item.type === 'video') {
@@ -1797,33 +1820,30 @@ function updateWaLink() {
       vid.playsInline = true;
       vid.setAttribute('playsinline', '');
       vid.setAttribute('preload', 'metadata');
+      vid.addEventListener('error', () => removeSlide(slide), { once: true });
       slide.appendChild(vid);
     } else {
       const img = document.createElement('img');
       img.src = item.src;
       img.alt = item.alt;
-      img.loading = i === 0 ? 'eager' : 'lazy';
+      img.loading = 'lazy';
+      img.onerror = () => removeSlide(slide);
       slide.appendChild(img);
     }
+    slides.push(slide);
     track.appendChild(slide);
-
-    const dot = document.createElement('button');
-    dot.className = 'hero-carousel-dot' + (i === 0 ? ' active' : '');
-    dot.setAttribute('aria-label', 'Slide ' + (i+1));
-    dot.addEventListener('click', () => goTo(i));
-    dotsEl.appendChild(dot);
   });
 
   function goTo(n) {
-    const prevVid = track.children[current]?.querySelector('video');
+    if (!slides.length) return;
+    const prevVid = slides[current]?.querySelector('video');
     if (prevVid) prevVid.pause();
 
-    current = ((n % media.length) + media.length) % media.length;
+    current = ((n % slides.length) + slides.length) % slides.length;
     track.style.transform = `translateX(-${current * 100}%)`;
-    dotsEl.querySelectorAll('.hero-carousel-dot').forEach((d,i) => d.classList.toggle('active', i === current));
-    counterEl.textContent = `${current + 1} / ${media.length}`;
+    syncDots();
 
-    const currVid = track.children[current]?.querySelector('video');
+    const currVid = slides[current]?.querySelector('video');
     if (currVid) currVid.play().catch(() => {});
 
     clearInterval(timer);
