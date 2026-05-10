@@ -905,10 +905,12 @@ function renderBookingStep() {
         <h3 style="font-family:Montserrat,sans-serif;font-size:1.2rem;font-weight:800;color:var(--dark)">Solicitação Enviada!</h3>
         <p style="color:var(--muted);margin-top:.5rem;font-size:.9rem">Guarde seu código de reserva:</p>
         <div class="booking-id-badge" id="newBookingId"></div>
-        <div class="pending-note">
+        <div style="background:var(--green-lt);border:1px solid #a8e6c1;border-radius:8px;padding:.9rem 1rem;margin-top:.8rem;font-size:.83rem;color:#1a6b3a;line-height:1.5">
+          📱 <strong>Estabelecimento notificado via WhatsApp!</strong>
+        </div>
+        <div class="pending-note" style="margin-top:.7rem">
           ⏳ <strong>Aguardando aprovação.</strong><br/>
-          O administrador irá confirmar sua solicitação em breve. Você receberá os detalhes por e-mail após a aprovação.<br/>
-          Você também pode consultar o status a qualquer momento com o código acima.
+          O administrador irá analisar sua solicitação e enviar o orçamento. Consulte o status com o código acima.
         </div>
       </div>`;
     footer.innerHTML = `<button class="btn-ghost" onclick="closeBooking()">Fechar</button><button class="btn-primary" onclick="closeBooking();openStatusCheck()">Consultar Status</button>`;
@@ -958,6 +960,18 @@ function submitBooking() {
   const bookings = getBookings();
   bookings.push(b);
   setBookings(bookings);
+
+  // Notificar negócio via CallMeBot (Netlify Function)
+  fetch('/.netlify/functions/notify-booking', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id, name, phone, car, plate,
+      service: svc.name, carSize: b.carSize,
+      date: fmtDate(booking.date),
+      price: fmtMoney(b.price), obs
+    })
+  }).catch(() => {}); // silencioso — não bloqueia o fluxo
 
   booking.step = 4;
   renderBookingStep();
@@ -1165,7 +1179,7 @@ function renderBookingsList(filter) {
           <span style="font-size:.7rem;font-weight:700;color:${statusColor[b.status]}">${statusMap[b.status]}</span>
         </div>
         <div class="booking-item-name">${b.name} — ${b.car}</div>
-        <div class="booking-item-detail">${svc.icon} ${svc.name} · ${fmtDateShort(b.startDate||b.date)} · ${fmtMoney(b.finalPrice||b.price)}</div>
+        <div class="booking-item-detail">${svc.icon} ${svc.name} · 📅 ${b.status==='pending'?`<span style="color:var(--orange);font-weight:700">Solicitado: ${fmtDateShort(b.date)}</span>`:`Confirmado: ${fmtDateShort(b.startDate||b.date)}`} · ${fmtMoney(b.finalPrice||b.price)}</div>
       </div>
       <div class="booking-item-actions">
         <button class="btn-view" onclick="viewBooking('${b.id}')">Ver</button>
@@ -1211,6 +1225,8 @@ function viewBooking(id) {
       <div class="summary-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
       <div class="summary-row"><strong>Porte</strong><span>${b.carSize==='pq'?'Carro Pequeno':'Carro Grande'}</span></div>
       <div class="summary-row"><strong>Serviço</strong><span>${svc.icon} ${svc.name}</span></div>
+      <div class="summary-row"><strong>📅 Data solicitada</strong><span style="font-weight:700;color:var(--orange)">${fmtDate(b.date)}</span></div>
+      <div class="summary-row"><strong>Solicitação recebida</strong><span>${new Date(b.submittedAt).toLocaleString('pt-BR')}</span></div>
       <div class="summary-row"><strong>Valor estimado</strong><span>${fmtMoney(b.price)}</span></div>
       ${hasFinalPrice ? `<div class="summary-row"><strong>Valor final (adm)</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.finalPrice)}</span></div>` : ''}
       ${b.obs ? `<div class="summary-row"><strong>Obs. cliente</strong><span style="font-style:italic">${b.obs}</span></div>` : ''}
@@ -1397,6 +1413,7 @@ function doApprove(id) {
   setBookings(bookings);
   closeModal('detailModal');
   renderAdminBookings();
+
   alert(`✅ Orçamento enviado!\nDatas ${fmtDateShort(startDate)} → ${fmtDateShort(endDate)} pré-reservadas no calendário.\nAguardando confirmação do cliente.`);
 }
 
