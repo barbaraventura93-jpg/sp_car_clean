@@ -267,6 +267,11 @@ footer p{font-size:.7rem;color:rgba(255,255,255,.3)}
 .btn-reject:hover{background:var(--red);color:#fff}
 .btn-view{background:var(--blue-lt);color:var(--blue-dk);border:1px solid var(--blue-mid);padding:.4rem .9rem;border-radius:4px;font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.04em;text-transform:uppercase}
 .btn-view:hover{background:var(--blue);color:#fff}
+.btn-cancel{background:#fff3f3;color:var(--red);border:1px solid #f5c6c3;padding:.4rem .9rem;border-radius:4px;font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.04em;text-transform:uppercase}
+.btn-cancel:hover{background:var(--red);color:#fff}
+.btn-edit-date{background:var(--orange-lt);color:#8a6200;border:1px solid #f6d39b;padding:.4rem .9rem;border-radius:4px;font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.04em;text-transform:uppercase}
+.btn-edit-date:hover{background:var(--orange);color:#fff}
+.status-cancelled{background:#fdecea;color:var(--red);border:1px solid #f5c6c3}
 
 /* Stats */
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem}
@@ -1152,7 +1157,7 @@ function unblockRange() {
 function renderAdminBookings() {
   const bookings = getBookings();
   const filterEl = `<div style="display:flex;gap:.5rem;margin-bottom:1.2rem;flex-wrap:wrap">
-    ${['all','pending','approved','confirmed','rejected'].map(f=>`<button onclick="filterBookings('${f}',this)" class="${f==='all'?'btn-primary':'btn-ghost'}" style="font-size:.72rem;padding:.4rem 1rem" id="filter-${f}">${{all:'Todos',pending:'⏳ Pendentes',approved:'✅ Aprovados',confirmed:'🔒 Confirmados',rejected:'❌ Rejeitados'}[f]}</button>`).join('')}
+    ${['all','pending','approved','confirmed','rejected','cancelled'].map(f=>`<button onclick="filterBookings('${f}',this)" class="${f==='all'?'btn-primary':'btn-ghost'}" style="font-size:.72rem;padding:.4rem 1rem" id="filter-${f}">${{all:'Todos',pending:'⏳ Pendentes',approved:'✅ Aprovados',confirmed:'🔒 Confirmados',rejected:'❌ Rejeitados',cancelled:'🚫 Cancelados'}[f]}</button>`).join('')}
   </div>`;
   document.getElementById('adminContent').innerHTML = `<h2>📋 Agendamentos</h2>${filterEl}<div id="bookingsList"></div>`;
   renderBookingsList('all');
@@ -1172,8 +1177,8 @@ function renderBookingsList(filter) {
   bookings.sort((a,b)=>b.submittedAt.localeCompare(a.submittedAt));
   const el = document.getElementById('bookingsList');
   if(!bookings.length) { el.innerHTML = `<p style="color:var(--muted);font-size:.9rem">Nenhum agendamento encontrado.</p>`; return; }
-  const statusMap = {pending:'⏳ Pendente',approved:'✅ Aprovado',rejected:'❌ Rejeitado',confirmed:'🔒 Confirmado'};
-  const statusColor = {pending:'var(--orange)',approved:'var(--green)',rejected:'var(--red)',confirmed:'var(--blue-dk)'};
+  const statusMap = {pending:'⏳ Pendente',approved:'✅ Aprovado',rejected:'❌ Rejeitado',confirmed:'🔒 Confirmado',cancelled:'🚫 Cancelado'};
+  const statusColor = {pending:'var(--orange)',approved:'var(--green)',rejected:'var(--red)',confirmed:'var(--blue-dk)',cancelled:'var(--red)'};
   el.innerHTML = bookings.map(b => {
     const svc = SVCS[b.service];
     return `<div class="booking-item">
@@ -1197,8 +1202,8 @@ function viewBooking(id) {
   const b = getBookings().find(x=>x.id===id);
   if(!b) return;
   const svc = SVCS[b.service];
-  const statusMap = {pending:'⏳ Aguardando aprovação',approved:'✅ Aprovado — aguardando confirmação do cliente',rejected:'❌ Rejeitado',confirmed:'🔒 Confirmado pelo cliente'};
-  const statusClass = {pending:'status-pending',approved:'status-approved',rejected:'status-rejected',confirmed:'status-confirmed'};
+  const statusMap = {pending:'⏳ Aguardando aprovação',approved:'✅ Aprovado — aguardando confirmação do cliente',rejected:'❌ Rejeitado',confirmed:'🔒 Confirmado pelo cliente',cancelled:'🚫 Cancelado pelo administrador'};
+  const statusClass = {pending:'status-pending',approved:'status-approved',rejected:'status-rejected',confirmed:'status-confirmed',cancelled:'status-cancelled'};
 
   const rawPhone = b.phone.replace(/\D/g,'');
   const waPhone = rawPhone.length <= 11 ? '55'+rawPhone : rawPhone;
@@ -1250,9 +1255,13 @@ function viewBooking(id) {
     <p style="font-size:.72rem;color:var(--muted)">Enviado em ${new Date(b.submittedAt).toLocaleString('pt-BR')}</p>`;
 
   const footer = document.getElementById('detailFooter');
+  const _canEdit = b.status==='approved'||b.status==='confirmed';
   footer.innerHTML = b.status==='pending'
     ? `<button class="btn-reject" onclick="rejectBooking('${b.id}');closeModal('detailModal')">Rejeitar</button>
        <button class="btn-approve" onclick="closeModal('detailModal');openApprove('${b.id}')">Aprovar & Definir Orçamento</button>`
+    : _canEdit
+    ? `<button class="btn-cancel" onclick="cancelBooking('${b.id}')">🚫 Cancelar Agendamento</button>
+       <button class="btn-edit-date" onclick="openEditDate('${b.id}')">📅 Alterar Data</button>`
     : `<span></span><button class="btn-primary" onclick="closeModal('detailModal')">Fechar</button>`;
   document.getElementById('detailModal').style.display = 'flex';
 }
@@ -1447,6 +1456,59 @@ function rejectBooking(id) {
   if(b) { b.status = 'rejected'; b.rejectedAt = new Date().toISOString(); }
   setBookings(bookings);
   renderAdminBookings();
+}
+
+function cancelBooking(id) {
+  if(!confirm('Cancelar este agendamento? O cliente será removido do calendário.')) return;
+  const bookings = getBookings();
+  const b = bookings.find(x=>x.id===id);
+  if(b) { b.status = 'cancelled'; b.cancelledAt = new Date().toISOString(); }
+  setBookings(bookings);
+  closeModal('detailModal');
+  renderAdminBookings();
+}
+
+function openEditDate(id) {
+  const b = getBookings().find(x=>x.id===id);
+  if(!b) return;
+  document.getElementById('detailBody').innerHTML = `
+    <div class="confirm-card">
+      <h4>Alterar Data do Agendamento</h4>
+      <div class="confirm-row"><strong>Cliente</strong><span>${b.name}</span></div>
+      <div class="confirm-row"><strong>Veículo</strong><span>${b.car}</span></div>
+      <div class="confirm-row"><strong>Serviço</strong><span>${SVCS[b.service].name}</span></div>
+    </div>
+    <div class="form-row" style="margin-top:1.2rem">
+      <div class="form-group">
+        <label>📅 Nova data de início (entrega)</label>
+        <input id="editStart" type="date" value="${b.startDate||b.date}" min="${todayStr()}"/>
+      </div>
+      <div class="form-group">
+        <label>🏁 Nova data de conclusão (retirada)</label>
+        <input id="editEnd" type="date" value="${b.endDate||b.pickup}" min="${b.startDate||b.date}"/>
+      </div>
+    </div>
+    <p style="font-size:.75rem;color:var(--muted);margin-top:.8rem">As novas datas serão refletidas no calendário imediatamente.</p>`;
+  document.getElementById('detailFooter').innerHTML = `
+    <button class="btn-ghost" onclick="viewBooking('${id}')">← Voltar</button>
+    <button class="btn-approve" style="padding:.6rem 1.4rem" onclick="doEditDate('${id}')">💾 Salvar Nova Data</button>`;
+}
+
+function doEditDate(id) {
+  const startDate = document.getElementById('editStart').value;
+  const endDate   = document.getElementById('editEnd').value;
+  if(!startDate||!endDate) { alert('Preencha as duas datas.'); return; }
+  if(endDate < startDate)  { alert('A data de conclusão deve ser igual ou após o início.'); return; }
+  const bookings = getBookings();
+  const b = bookings.find(x=>x.id===id);
+  if(!b) return;
+  b.startDate = startDate;
+  b.endDate   = endDate;
+  b.dateEditedAt = new Date().toISOString();
+  setBookings(bookings);
+  closeModal('detailModal');
+  renderAdminBookings();
+  alert(`✅ Data atualizada!\n${fmtDateShort(startDate)} → ${fmtDateShort(endDate)}`);
 }
 
 function renderAdminStats() {
