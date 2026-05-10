@@ -298,9 +298,13 @@ footer p{font-size:.7rem;color:rgba(255,255,255,.3)}
   .nav-links{display:none}
   .svc-pick-grid{grid-template-columns:1fr}
   .form-row{grid-template-columns:1fr}
-  .admin-sidebar{width:60px}
-  .admin-tab span{display:none}
-  .admin-tab{justify-content:center;padding:.75rem}
+  .admin-body{flex-direction:column}
+  .admin-sidebar{width:100%;flex-direction:row;padding:0;order:2;border-top:1px solid rgba(255,255,255,.12);position:sticky;bottom:0;z-index:20;flex-shrink:0}
+  .admin-tab{flex:1;flex-direction:column;gap:.15rem;padding:.55rem .2rem;font-size:.58rem;letter-spacing:.04em;border-left:none;border-top:3px solid transparent;justify-content:center;align-items:center;text-align:center}
+  .admin-tab.active{border-left-color:transparent;border-top-color:var(--blue);background:rgba(255,255,255,.07)}
+  .admin-tab span{display:block}
+  .admin-tab-icon{font-size:1.25rem}
+  .admin-content{order:1;padding:1.2rem;min-height:0;flex:1}
 }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
