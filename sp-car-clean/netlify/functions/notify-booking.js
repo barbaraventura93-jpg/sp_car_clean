@@ -3,9 +3,11 @@ exports.handler = async (event) => {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
-  const apiKey = process.env.CALLMEBOT_API_KEY;
-  if (!apiKey) {
-    return { statusCode: 500, body: JSON.stringify({ ok: false, error: 'CALLMEBOT_API_KEY not set' }) };
+  const instanceId = process.env.ZAPI_INSTANCE_ID;
+  const token      = process.env.ZAPI_TOKEN;
+
+  if (!instanceId || !token) {
+    return { statusCode: 500, body: JSON.stringify({ ok: false, error: 'ZAPI_INSTANCE_ID ou ZAPI_TOKEN não configurado' }) };
   }
 
   let data;
@@ -14,7 +16,7 @@ exports.handler = async (event) => {
 
   const { id, name, phone, car, plate, service, carSize, date, price, obs } = data;
 
-  const text = encodeURIComponent(
+  const message =
     `🔔 *Nova Solicitação — SP Car Clean*\n\n` +
     `📋 *Código:* ${id}\n` +
     `👤 *Cliente:* ${name}\n` +
@@ -23,15 +25,21 @@ exports.handler = async (event) => {
     `🔧 *Serviço:* ${service} (${carSize === 'pq' ? 'Pequeno' : 'Grande'})\n` +
     `📅 *Data solicitada:* ${date}\n` +
     `💰 *Valor estimado:* ${price}` +
-    (obs ? `\n📝 *Obs:* ${obs}` : '')
-  );
+    (obs ? `\n📝 *Obs:* ${obs}` : '');
 
-  const url = `https://api.callmebot.com/whatsapp.php?phone=+5511926697474&text=${text}&apikey=${apiKey}`;
+  const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
   try {
-    const resp = await fetch(url);
-    const body = await resp.text();
-    return { statusCode: 200, body: JSON.stringify({ ok: true, callmebot: body }) };
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: '5511926697474', message })
+    });
+    const body = await resp.json();
+    if (!resp.ok) {
+      return { statusCode: 502, body: JSON.stringify({ ok: false, error: body }) };
+    }
+    return { statusCode: 200, body: JSON.stringify({ ok: true, zapi: body }) };
   } catch (err) {
     return { statusCode: 500, body: JSON.stringify({ ok: false, error: err.message }) };
   }
