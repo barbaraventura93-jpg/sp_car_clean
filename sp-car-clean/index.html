@@ -617,7 +617,7 @@ nav.scrolled{height:58px;box-shadow:0 4px 32px rgba(42,159,214,.22);background:r
 // CONFIG
 // ============================================================
 const CFG = {
-  whatsapp: '5511926697474',
+  whatsapp: '11926697474',
   location: 'A definir — São Paulo, SP',
   dropoffTime: '08:00',
   pickupTime: '18:00',
@@ -1729,9 +1729,9 @@ function renderServices() {
 
 function updateWaLink() {
   const msg = encodeURIComponent('Olá! Gostaria de agendar um serviço na SP Car Clean.');
-  const url = `https://wa.me/${CFG.whatsapp}?text=${msg}`;
+  const url = `https://wa.me/55${CFG.whatsapp}?text=${msg}`;
   document.getElementById('waBtn').href = url;
-  const fmt = CFG.whatsapp.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+  const fmt = CFG.whatsapp.replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
   document.getElementById('phoneDisplay').textContent = fmt;
 }
 
@@ -1840,7 +1840,7 @@ function updateWaLink() {
     _cfgRef.once('value', snap => {
       const d = snap.val();
       if(!d) return;
-      if(d.whatsapp)       CFG.whatsapp       = d.whatsapp;
+      if(d.whatsapp)       CFG.whatsapp       = d.whatsapp.replace(/^55/,'');
       if(d.location)       CFG.location       = d.location;
       if(d.dropoffTime)    CFG.dropoffTime    = d.dropoffTime;
       if(d.pickupTime)     CFG.pickupTime     = d.pickupTime;
