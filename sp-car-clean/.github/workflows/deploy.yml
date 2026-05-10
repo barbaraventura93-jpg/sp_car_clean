@@ -1,4 +1,4 @@
-name: Deploy to Netlify and Firebase
+name: Deploy to Firebase
 
 on:
   push:
@@ -13,24 +13,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-
       - name: Build project
         run: mkdir -p dist && cp index.html dist/ && cp -r assets dist/
-
-      - name: Deploy to Netlify
-        uses: nwtgck/actions-netlify@v2.0
-        with:
-          publish-dir: './dist'
-          production-branch: main
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          deploy-message: "Deploy from GitHub Actions"
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
