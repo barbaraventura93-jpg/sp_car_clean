@@ -129,18 +129,21 @@ footer p{font-size:.7rem;color:rgba(255,255,255,.3)}
 .admin-link:hover{color:var(--blue)}
 @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 
-/* ====== PORTFOLIO FEED ====== */
-.insta-feed{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;overflow:hidden}
-.insta-carousel{display:flex;gap:1rem;overflow-x:auto;scroll-behavior:smooth;width:100%;padding:1rem 0;scroll-snap-type:x mandatory;max-height:280px}
-.insta-post{flex-shrink:0;width:200px;height:200px;scroll-snap-align:center;border-radius:8px;overflow:hidden;cursor:pointer;transition:transform .3s ease;position:relative;background:#000}
-.insta-post img,.insta-post video{width:100%;height:100%;object-fit:cover;transition:transform .3s ease}
-.insta-post:hover img,.insta-post:hover video{transform:scale(1.05)}
-.insta-post .play-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.3);font-size:2.5rem;opacity:0;transition:opacity .3s}
-.insta-post:hover .play-icon{opacity:1}
-.insta-header{text-align:center;margin-bottom:1.5rem;color:rgba(255,255,255,.9)}
-.insta-header a{color:#fff;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:.5rem;transition:opacity .3s}
-.insta-header a:hover{opacity:.8}
-.insta-link-icon{font-size:1.3rem}
+/* ====== HERO CAROUSEL ====== */
+.hero-carousel{position:absolute;inset:0;overflow:hidden;cursor:pointer}
+.hero-carousel-track{display:flex;height:100%;transition:transform .65s cubic-bezier(.4,0,.2,1)}
+.hero-carousel-slide{flex-shrink:0;width:100%;height:100%;position:relative}
+.hero-carousel-slide img{width:100%;height:100%;object-fit:cover;display:block}
+.hero-carousel-slide::after{content:'';position:absolute;inset:0;background:linear-gradient(140deg,rgba(10,60,100,.55) 0%,rgba(42,159,214,.25) 100%)}
+.hero-carousel-label{position:absolute;top:1.6rem;left:50%;transform:translateX(-50%);z-index:10;background:rgba(0,0,0,.35);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.2);border-radius:50px;padding:.45rem 1.1rem;color:#fff;font-family:'Montserrat',sans-serif;font-size:.68rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;white-space:nowrap;display:flex;align-items:center;gap:.45rem}
+.hero-carousel-dots{position:absolute;bottom:1.6rem;left:50%;transform:translateX(-50%);display:flex;gap:.45rem;z-index:10}
+.hero-carousel-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.35);cursor:pointer;transition:all .3s;border:none;padding:0}
+.hero-carousel-dot.active{background:#fff;width:20px;border-radius:4px}
+.hero-carousel-counter{position:absolute;bottom:1.6rem;right:1.6rem;z-index:10;color:rgba(255,255,255,.55);font-family:'Montserrat',sans-serif;font-size:.68rem;letter-spacing:.08em}
+.hero-carousel-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:10;background:rgba(0,0,0,.3);backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.2);color:#fff;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s;font-size:.9rem}
+.hero-carousel-arrow:hover{background:rgba(0,0,0,.55)}
+.hero-carousel-arrow.prev{left:1rem}
+.hero-carousel-arrow.next{right:1rem}
 
 /* ====== MODAL BASE ====== */
 .modal-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10,18,30,.85);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:1rem;animation:fadeIn .2s ease}
@@ -345,15 +348,13 @@ footer p{font-size:.7rem;color:rgba(255,255,255,.3)}
     </div>
   </div>
   <div class="hero-right">
-    <div class="hero-right-pattern"></div>
-    <div class="insta-feed">
-      <div class="insta-header">
-        <a href="https://www.instagram.com/spcarclean/" target="_blank" rel="noopener noreferrer">
-          <span class="insta-link-icon">📸</span>
-          Nossas Obras
-        </a>
-      </div>
-      <div id="instafeed" class="insta-carousel"></div>
+    <div class="hero-carousel" id="heroCarousel">
+      <div class="hero-carousel-track" id="heroTrack"></div>
+      <div class="hero-carousel-label">📸 Nossas Obras</div>
+      <button class="hero-carousel-arrow prev" id="heroPrev">&#8592;</button>
+      <button class="hero-carousel-arrow next" id="heroNext">&#8594;</button>
+      <div class="hero-carousel-dots" id="heroDots"></div>
+      <div class="hero-carousel-counter" id="heroCounter"></div>
     </div>
   </div>
 </section>
@@ -1571,40 +1572,67 @@ function updateWaLink() {
 // ============================================================
 // FIREBASE INIT
 // ============================================================
-// Portfolio Feed
-(function initPortfolioFeed() {
-  fetch('/assets/portfolio.json')
-    .then(r => r.json())
-    .then(data => {
-      const feed = document.getElementById('instafeed');
-      if(!data.items || data.items.length === 0) {
-        feed.innerHTML = '<p style="color:rgba(255,255,255,.5);text-align:center;font-size:.85rem">Galeria de obras em breve!</p>';
-        return;
-      }
+// Hero Carousel
+(function initHeroCarousel() {
+  const images = [
+    {src:'assets/portfolio/fusca-azul.jpg.jpg', alt:'Fusca azul'},
+    {src:'assets/portfolio/fusca.jpg.jpg', alt:'Fusca'},
+    {src:'assets/portfolio/branco.jpg.jpg', alt:'Carro branco'},
+    {src:'assets/portfolio/estofado.jpg.jpg', alt:'Higienização de estofado'},
+    {src:'assets/portfolio/detalhes-fusca.jpg.jpg', alt:'Detalhes fusca'},
+    {src:'assets/portfolio/moto.jpg.jpg', alt:'Moto'},
+    {src:'assets/portfolio/antes-e-depois-estofado.jpg.jpg', alt:'Antes e depois estofado'},
+    {src:'assets/portfolio/detalhes.jpg.jpg', alt:'Detalhes'},
+    {src:'assets/portfolio/revitalização.jpg.jpg', alt:'Revitalização'},
+    {src:'assets/portfolio/revitalização-plastico.jpg.jpg', alt:'Revitalização plástico'},
+    {src:'assets/portfolio/produtos.jpg.jpg', alt:'Produtos'},
+    {src:'assets/portfolio/estepe.jpg.jpg', alt:'Estepe'}
+  ];
 
-      let html = '';
-      data.items.forEach(item => {
-        if(item.type === 'image') {
-          html += `<div class="insta-post"><img src="${item.url}" alt="${item.title}" title="${item.title}"/></div>`;
-        } else if(item.type === 'video') {
-          html += `<div class="insta-post"><video src="${item.url}" poster="${item.thumb}"></video><div class="play-icon">▶</div></div>`;
-        }
-      });
-      feed.innerHTML = html;
+  const track = document.getElementById('heroTrack');
+  const dotsEl = document.getElementById('heroDots');
+  const counterEl = document.getElementById('heroCounter');
+  const prevBtn = document.getElementById('heroPrev');
+  const nextBtn = document.getElementById('heroNext');
+  if (!track) return;
 
-      // Video click to expand
-      document.querySelectorAll('.insta-post:has(video)').forEach(el => {
-        el.onclick = e => {
-          e.preventDefault();
-          const vid = el.querySelector('video');
-          vid.requestFullscreen?.() || vid.webkitRequestFullscreen?.();
-        };
-      });
-    })
-    .catch(e => {
-      console.log('Portfolio load:', e);
-      document.getElementById('instafeed').innerHTML = '<p style="color:rgba(255,255,255,.5);text-align:center;font-size:.85rem">Galeria de obras em breve!</p>';
-    });
+  let current = 0, timer, startX = 0;
+
+  images.forEach(({src, alt}, i) => {
+    const slide = document.createElement('div');
+    slide.className = 'hero-carousel-slide';
+    const img = document.createElement('img');
+    img.src = src; img.alt = alt;
+    img.loading = i === 0 ? 'eager' : 'lazy';
+    slide.appendChild(img);
+    track.appendChild(slide);
+
+    const dot = document.createElement('button');
+    dot.className = 'hero-carousel-dot' + (i === 0 ? ' active' : '');
+    dot.setAttribute('aria-label', 'Slide ' + (i+1));
+    dot.addEventListener('click', () => goTo(i));
+    dotsEl.appendChild(dot);
+  });
+
+  function goTo(n) {
+    current = ((n % images.length) + images.length) % images.length;
+    track.style.transform = `translateX(-${current * 100}%)`;
+    dotsEl.querySelectorAll('.hero-carousel-dot').forEach((d,i) => d.classList.toggle('active', i === current));
+    counterEl.textContent = `${current + 1} / ${images.length}`;
+    clearInterval(timer);
+    timer = setInterval(() => goTo(current + 1), 4500);
+  }
+
+  prevBtn.addEventListener('click', () => goTo(current - 1));
+  nextBtn.addEventListener('click', () => goTo(current + 1));
+
+  track.parentElement.addEventListener('touchstart', e => { startX = e.touches[0].clientX; }, {passive:true});
+  track.parentElement.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - startX;
+    if (Math.abs(dx) > 40) goTo(dx < 0 ? current + 1 : current - 1);
+  }, {passive:true});
+
+  goTo(0);
 })();
 
 (function initFirebase() {
