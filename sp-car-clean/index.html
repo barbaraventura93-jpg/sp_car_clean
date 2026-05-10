@@ -163,7 +163,7 @@ footer p{font-size:.72rem;color:var(--muted)}
 .hero-carousel{position:absolute;inset:0;overflow:hidden;cursor:pointer}
 .hero-carousel-track{display:flex;height:100%;transition:transform .65s cubic-bezier(.4,0,.2,1)}
 .hero-carousel-slide{flex-shrink:0;width:100%;height:100%;position:relative}
-.hero-carousel-slide img{width:100%;height:100%;object-fit:cover;display:block}
+.hero-carousel-slide img,.hero-carousel-slide video{width:100%;height:100%;object-fit:cover;display:block}
 .hero-carousel-slide::after{content:'';position:absolute;inset:0;background:linear-gradient(to bottom,rgba(6,9,15,.1) 0%,rgba(6,9,15,.5) 100%)}
 .hero-carousel-label{position:absolute;top:1.6rem;left:50%;transform:translateX(-50%);z-index:10;background:rgba(6,9,15,.5);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.12);border-radius:50px;padding:.45rem 1.2rem;color:#fff;font-family:'Montserrat',sans-serif;font-size:.68rem;font-weight:700;letter-spacing:.15em;text-transform:uppercase;white-space:nowrap;display:flex;align-items:center;gap:.45rem}
 .hero-carousel-dots{position:absolute;bottom:1.6rem;left:50%;transform:translateX(-50%);display:flex;gap:.45rem;z-index:10}
@@ -338,6 +338,31 @@ footer p{font-size:.72rem;color:var(--muted)}
   .admin-tab-icon{font-size:1.25rem}
   .admin-content{order:1;padding:1.2rem;min-height:0;flex:1}
 }
+
+/* ====== ICE GLASS EFFECT ====== */
+.ice{
+  background:linear-gradient(135deg,rgba(180,225,255,.09) 0%,rgba(100,190,255,.04) 100%);
+  backdrop-filter:blur(28px) saturate(1.6) brightness(1.05);
+  -webkit-backdrop-filter:blur(28px) saturate(1.6) brightness(1.05);
+  border:1px solid rgba(180,225,255,.16);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),inset 0 -1px 0 rgba(100,180,255,.05),0 12px 40px rgba(0,0,0,.45),0 0 0 1px rgba(100,190,255,.06);
+  position:relative;
+}
+.ice::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.25),transparent);pointer-events:none;border-radius:inherit}
+/* apply ice to hero stats */
+.hero-stats{background:linear-gradient(135deg,rgba(180,225,255,.07) 0%,rgba(100,190,255,.03) 100%)!important;backdrop-filter:blur(28px) saturate(1.5)!important;-webkit-backdrop-filter:blur(28px) saturate(1.5)!important;border:1px solid rgba(180,225,255,.14)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.1),0 16px 48px rgba(0,0,0,.5)!important}
+/* service price badge → ice */
+.svc-price-tag{background:linear-gradient(135deg,rgba(180,225,255,.1),rgba(100,190,255,.06))!important;border:1px solid rgba(180,225,255,.18)!important;backdrop-filter:blur(12px);box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+/* porque-vis panel → ice */
+.porque-vis{background:linear-gradient(135deg,rgba(180,225,255,.07) 0%,rgba(100,190,255,.03) 100%)!important;border:1px solid rgba(180,225,255,.13)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 20px 60px rgba(0,0,0,.5)!important}
+/* pv-badge → ice */
+.pv-badge{background:linear-gradient(135deg,rgba(180,225,255,.08),rgba(100,190,255,.04))!important;border:1px solid rgba(180,225,255,.14)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.1)}
+/* hero carousel label → ice */
+.hero-carousel-label{background:linear-gradient(135deg,rgba(180,225,255,.14),rgba(100,190,255,.08))!important;border-color:rgba(180,225,255,.2)!important}
+/* nav → stronger ice when scrolled */
+nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.94))!important;border-bottom:1px solid rgba(180,225,255,.1)!important;backdrop-filter:blur(28px) saturate(1.4)!important}
+/* sec-label badge → ice */
+.sec-label{background:linear-gradient(135deg,rgba(72,201,245,.1),rgba(42,159,214,.06))!important;border:1px solid rgba(180,225,255,.18)!important;backdrop-filter:blur(10px)}
 
 /* ====== SCROLL REVEAL ====== */
 .reveal{opacity:0;transform:translateY(28px);transition:opacity .65s ease,transform .65s ease}
@@ -1739,19 +1764,17 @@ function updateWaLink() {
 // ============================================================
 // Hero Carousel
 (function initHeroCarousel() {
-  const images = [
-    {src:'assets/portfolio/fusca-azul.jpg.jpg', alt:'Fusca azul'},
-    {src:'assets/portfolio/fusca.jpg.jpg', alt:'Fusca'},
-    {src:'assets/portfolio/branco.jpg.jpg', alt:'Carro branco'},
-    {src:'assets/portfolio/estofado.jpg.jpg', alt:'Higienização de estofado'},
-    {src:'assets/portfolio/detalhes-fusca.jpg.jpg', alt:'Detalhes fusca'},
-    {src:'assets/portfolio/moto.jpg.jpg', alt:'Moto'},
+  const media = [
+    {src:'assets/portfolio/fusca.mp4',                     type:'video', alt:'SP Car Clean'},
+    {src:'assets/portfolio/branco.jpg.jpg',                alt:'Carro branco'},
+    {src:'assets/portfolio/estofado.jpg.jpg',              alt:'Higienização de estofado'},
+    {src:'assets/portfolio/moto.jpg.jpg',                  alt:'Moto'},
     {src:'assets/portfolio/antes-e-depois-estofado.jpg.jpg', alt:'Antes e depois estofado'},
-    {src:'assets/portfolio/detalhes.jpg.jpg', alt:'Detalhes'},
-    {src:'assets/portfolio/revitalização.jpg.jpg', alt:'Revitalização'},
-    {src:'assets/portfolio/revitalização-plastico.jpg.jpg', alt:'Revitalização plástico'},
-    {src:'assets/portfolio/produtos.jpg.jpg', alt:'Produtos'},
-    {src:'assets/portfolio/estepe.jpg.jpg', alt:'Estepe'}
+    {src:'assets/portfolio/detalhes.jpg.jpg',              alt:'Detalhes'},
+    {src:'assets/portfolio/revitalização.jpg.jpg',         alt:'Revitalização'},
+    {src:'assets/portfolio/revitalização-plastico.jpg.jpg',alt:'Revitalização plástico'},
+    {src:'assets/portfolio/produtos.jpg.jpg',              alt:'Produtos'},
+    {src:'assets/portfolio/estepe.jpg.jpg',                alt:'Estepe'},
   ];
 
   const track = document.getElementById('heroTrack');
@@ -1763,13 +1786,25 @@ function updateWaLink() {
 
   let current = 0, timer, startX = 0;
 
-  images.forEach(({src, alt}, i) => {
+  media.forEach((item, i) => {
     const slide = document.createElement('div');
     slide.className = 'hero-carousel-slide';
-    const img = document.createElement('img');
-    img.src = src; img.alt = alt;
-    img.loading = i === 0 ? 'eager' : 'lazy';
-    slide.appendChild(img);
+    if (item.type === 'video') {
+      const vid = document.createElement('video');
+      vid.src = item.src;
+      vid.muted = true;
+      vid.loop = true;
+      vid.playsInline = true;
+      vid.setAttribute('playsinline', '');
+      vid.setAttribute('preload', 'metadata');
+      slide.appendChild(vid);
+    } else {
+      const img = document.createElement('img');
+      img.src = item.src;
+      img.alt = item.alt;
+      img.loading = i === 0 ? 'eager' : 'lazy';
+      slide.appendChild(img);
+    }
     track.appendChild(slide);
 
     const dot = document.createElement('button');
@@ -1780,12 +1815,19 @@ function updateWaLink() {
   });
 
   function goTo(n) {
-    current = ((n % images.length) + images.length) % images.length;
+    const prevVid = track.children[current]?.querySelector('video');
+    if (prevVid) prevVid.pause();
+
+    current = ((n % media.length) + media.length) % media.length;
     track.style.transform = `translateX(-${current * 100}%)`;
     dotsEl.querySelectorAll('.hero-carousel-dot').forEach((d,i) => d.classList.toggle('active', i === current));
-    counterEl.textContent = `${current + 1} / ${images.length}`;
+    counterEl.textContent = `${current + 1} / ${media.length}`;
+
+    const currVid = track.children[current]?.querySelector('video');
+    if (currVid) currVid.play().catch(() => {});
+
     clearInterval(timer);
-    timer = setInterval(() => goTo(current + 1), 4500);
+    timer = setInterval(() => goTo(current + 1), currVid ? 9000 : 4500);
   }
 
   prevBtn.addEventListener('click', () => goTo(current - 1));
