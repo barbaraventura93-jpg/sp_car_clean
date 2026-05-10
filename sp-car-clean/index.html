@@ -1,0 +1,1630 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SP Car Clean — Estética Automotiva Premium</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Open+Sans:wght@300;400;600&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --blue:#2A9FD6;--blue-dk:#1A7FAE;--blue-dkr:#0F5F8A;
+  --blue-lt:#E8F5FC;--blue-mid:#C5E8F7;--accent:#1BBFFF;
+  --dark:#1A2535;--dark2:#243040;--text:#2C3E50;--muted:#6B7F90;
+  --white:#fff;--off:#F7FBFE;--border:#D8EDF7;
+  --green:#27AE60;--green-lt:#E8F8F0;--red:#E74C3C;--red-lt:#FDECEA;
+  --orange:#F39C12;--orange-lt:#FEF5E7;
+}
+html{scroll-behavior:smooth}
+body{font-family:'Open Sans',sans-serif;background:var(--white);color:var(--text);overflow-x:hidden}
+
+/* ====== NAV ====== */
+nav{position:fixed;top:0;left:0;width:100%;z-index:100;background:rgba(255,255,255,.97);backdrop-filter:blur(10px);box-shadow:0 2px 20px rgba(42,159,214,.1);padding:0 6%;display:flex;justify-content:space-between;align-items:center;height:70px}
+.logo-wrap{display:flex;align-items:center;gap:.8rem;text-decoration:none}
+.logo-svg{width:82px;height:42px}
+.logo-text .name{font-family:'Montserrat',sans-serif;font-size:1.15rem;font-weight:800;color:var(--dark);letter-spacing:.02em}
+.logo-text .name span{color:var(--blue)}
+.logo-text .tag{font-size:.58rem;color:var(--muted);letter-spacing:.18em;text-transform:uppercase;margin-top:1px}
+.nav-links{display:flex;gap:1.8rem;list-style:none;align-items:center}
+.nav-links a{font-family:'Montserrat',sans-serif;font-size:.78rem;font-weight:600;color:var(--muted);text-decoration:none;letter-spacing:.08em;text-transform:uppercase;transition:color .25s;cursor:pointer}
+.nav-links a:hover{color:var(--blue)}
+.nav-links .cta{background:var(--blue);color:#fff!important;padding:.5rem 1.2rem;border-radius:4px;transition:background .25s!important}
+.nav-links .cta:hover{background:var(--blue-dk)!important}
+
+/* ====== HERO ====== */
+#hero{min-height:100vh;padding-top:70px;display:grid;grid-template-columns:55% 45%}
+.hero-left{display:flex;flex-direction:column;justify-content:center;padding:5rem 3rem 5rem 6%}
+.hero-right{background:linear-gradient(140deg,var(--blue-dkr) 0%,var(--blue) 55%,#48C9F5 100%);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.hero-right-pattern{position:absolute;inset:0;opacity:.06;background-image:repeating-linear-gradient(45deg,white 0,white 1px,transparent 0,transparent 50%);background-size:18px 18px}
+.hero-right-content{position:relative;z-index:1;text-align:center;padding:2rem}
+.hero-right-content svg{width:min(320px,80%);filter:drop-shadow(0 16px 36px rgba(0,0,0,.25))}
+.hero-tagline{color:rgba(255,255,255,.55);font-family:'Montserrat',sans-serif;font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;margin-top:2rem}
+.hero-badge{display:inline-flex;align-items:center;gap:.4rem;background:var(--blue-lt);color:var(--blue-dk);border:1px solid var(--blue-mid);padding:.35rem .9rem;border-radius:50px;font-family:'Montserrat',sans-serif;font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:1.4rem;animation:fadeUp .7s ease both}
+h1{font-family:'Montserrat',sans-serif;font-size:clamp(2rem,3.8vw,3.5rem);font-weight:900;color:var(--dark);line-height:1.1;letter-spacing:-.02em;animation:fadeUp .7s .1s ease both}
+h1 .blue{color:var(--blue);display:block}
+.hero-sub{margin-top:1.1rem;font-size:.97rem;font-weight:300;color:var(--muted);line-height:1.75;max-width:430px;animation:fadeUp .7s .2s ease both}
+.hero-ctas{display:flex;gap:1rem;margin-top:2.2rem;flex-wrap:wrap;animation:fadeUp .7s .3s ease both}
+.btn-primary{background:var(--blue);color:#fff;padding:.85rem 1.8rem;font-family:'Montserrat',sans-serif;font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;text-decoration:none;border-radius:4px;transition:background .25s,transform .2s,box-shadow .25s;box-shadow:0 4px 18px rgba(42,159,214,.35);display:inline-flex;align-items:center;gap:.5rem;border:none;cursor:pointer}
+.btn-primary:hover{background:var(--blue-dk);transform:translateY(-2px);box-shadow:0 8px 26px rgba(42,159,214,.45)}
+.btn-ghost{border:2px solid var(--blue);color:var(--blue);padding:.85rem 1.8rem;font-family:'Montserrat',sans-serif;font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;text-decoration:none;border-radius:4px;transition:all .25s;display:inline-block;background:none;cursor:pointer}
+.btn-ghost:hover{background:var(--blue);color:#fff}
+.hero-stats{display:flex;margin-top:2.5rem;border:1px solid var(--border);border-radius:8px;overflow:hidden;animation:fadeUp .7s .4s ease both}
+.stat{flex:1;padding:.9rem 1rem;text-align:center;border-right:1px solid var(--border)}
+.stat:last-child{border-right:none}
+.stat-num{font-family:'Montserrat',sans-serif;font-size:1.7rem;font-weight:900;color:var(--blue);line-height:1}
+.stat-lbl{font-size:.63rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
+
+/* ====== STRIP ====== */
+.strip{background:linear-gradient(90deg,var(--blue-dkr),var(--blue),#48C9F5);padding:.9rem 5%;display:flex;justify-content:center;align-items:center;gap:2.5rem;flex-wrap:wrap}
+.strip-item{display:flex;align-items:center;gap:.4rem;font-family:'Montserrat',sans-serif;font-size:.73rem;font-weight:600;color:#fff;letter-spacing:.06em;text-transform:uppercase}
+
+/* ====== SERVICES ====== */
+#servicos{padding:6rem 6%;background:var(--off)}
+.sec-header{text-align:center;margin-bottom:3rem}
+.sec-label{display:inline-block;font-family:'Montserrat',sans-serif;font-size:.66rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--blue);background:var(--blue-lt);padding:.28rem .85rem;border-radius:50px;margin-bottom:.7rem}
+h2{font-family:'Montserrat',sans-serif;font-size:clamp(1.7rem,3vw,2.6rem);font-weight:900;color:var(--dark);letter-spacing:-.02em}
+.sec-sub{font-size:.95rem;color:var(--muted);margin-top:.5rem}
+.size-toggle{display:inline-flex;background:var(--border);border-radius:50px;padding:3px;margin-top:1.4rem}
+.size-toggle button{background:none;border:none;color:var(--muted);padding:.42rem 1.4rem;cursor:pointer;font-family:'Montserrat',sans-serif;font-size:.76rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:50px;transition:all .25s}
+.size-toggle button.active{background:var(--blue);color:#fff;box-shadow:0 2px 10px rgba(42,159,214,.4)}
+.categories{display:flex;flex-direction:column;gap:2.5rem}
+.cat-label{font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:#fff;background:var(--blue);display:inline-block;padding:.32rem .9rem;border-radius:4px;margin-bottom:1.1rem}
+.svcs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:1.1rem}
+.svc-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:1.5rem;transition:transform .25s,box-shadow .25s,border-color .25s;position:relative;overflow:hidden;cursor:pointer}
+.svc-card::after{content:'';position:absolute;top:0;left:0;width:4px;height:100%;background:var(--blue);transform:scaleY(0);transform-origin:top;transition:transform .3s ease}
+.svc-card:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(42,159,214,.14);border-color:var(--blue-mid)}
+.svc-card:hover::after{transform:scaleY(1)}
+.svc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.75rem}
+.svc-icon{font-size:1.7rem}
+.svc-price-tag{background:var(--blue-lt);border:1px solid var(--blue-mid);border-radius:6px;padding:.28rem .65rem;text-align:right}
+.price-from{font-size:.58rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.price-val{font-family:'Montserrat',sans-serif;font-size:1.3rem;font-weight:900;color:var(--blue);line-height:1}
+.price-val .cur{font-size:.72rem;vertical-align:super}
+.svc-name{font-family:'Montserrat',sans-serif;font-size:.9rem;font-weight:700;color:var(--dark);margin-bottom:.35rem}
+.svc-sub{font-size:.72rem;font-weight:400;color:var(--muted)}
+.svc-desc{font-size:.8rem;color:var(--muted);line-height:1.6}
+.svc-agendar{margin-top:1rem;background:var(--blue-lt);color:var(--blue-dk);border:1px solid var(--blue-mid);border-radius:4px;padding:.4rem .9rem;font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;transition:all .2s;display:inline-block}
+.svc-agendar:hover{background:var(--blue);color:#fff}
+
+/* ====== PORQUE / DEP / CTA (condensed) ====== */
+#porque{padding:6rem 6%;background:#fff}
+.porque-wrap{display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center;margin-top:3rem}
+.porque-vis{background:linear-gradient(135deg,var(--blue-dkr),var(--blue));border-radius:14px;padding:2.5rem;position:relative;overflow:hidden}
+.pv-pattern{position:absolute;inset:0;opacity:.06;background-image:repeating-linear-gradient(45deg,white 0,white 1px,transparent 0,transparent 50%);background-size:18px 18px}
+.pv-content{position:relative;z-index:1}
+.pv-content svg{width:100%;max-width:260px;display:block;margin:0 auto}
+.pv-badges{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-top:1.8rem}
+.pv-badge{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:.9rem;text-align:center}
+.pv-badge .n{font-family:'Montserrat',sans-serif;font-size:1.7rem;font-weight:900;color:#fff;line-height:1}
+.pv-badge .l{font-size:.62rem;color:rgba(255,255,255,.65);text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
+.porque-list{display:flex;flex-direction:column;gap:1.2rem}
+.pq-item{display:flex;gap:.9rem;align-items:flex-start;padding:1.1rem;border-radius:10px;border:1px solid var(--border);transition:border-color .25s,box-shadow .25s}
+.pq-item:hover{border-color:var(--blue-mid);box-shadow:0 4px 14px rgba(42,159,214,.1)}
+.pq-icon{width:42px;min-width:42px;height:42px;background:var(--blue-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.15rem}
+.pq-item h4{font-family:'Montserrat',sans-serif;font-size:.85rem;font-weight:700;color:var(--dark);margin-bottom:.2rem}
+.pq-item p{font-size:.78rem;color:var(--muted);line-height:1.6}
+#depoimentos{padding:6rem 6%;background:var(--off)}
+.dep-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1.4rem;margin-top:2.5rem}
+.dep-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:1.7rem;position:relative}
+.dep-card::before{content:'"';font-family:'Montserrat',sans-serif;font-size:4.5rem;font-weight:900;color:var(--blue-lt);position:absolute;top:.4rem;left:1.1rem;line-height:1}
+.dep-stars{color:#FFB800;letter-spacing:2px;margin-bottom:.7rem;font-size:.88rem}
+.dep-text{font-size:.85rem;color:var(--muted);line-height:1.7;font-style:italic;position:relative;z-index:1}
+.dep-hr{border:none;border-top:1px solid var(--border);margin:1rem 0}
+.dep-author{font-family:'Montserrat',sans-serif;font-size:.8rem;font-weight:700;color:var(--dark)}
+.dep-svc{font-size:.68rem;color:var(--blue);text-transform:uppercase;letter-spacing:.1em;margin-top:2px}
+#contato{padding:6rem 6%;background:linear-gradient(135deg,var(--dark),var(--dark2));text-align:center;position:relative;overflow:hidden}
+#contato::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 55% 55% at 50% 50%,rgba(42,159,214,.1) 0%,transparent 70%)}
+#contato .inner{position:relative;z-index:1;max-width:560px;margin:0 auto}
+#contato h2{color:#fff;margin-bottom:.9rem}
+#contato p{color:rgba(255,255,255,.55);margin-bottom:2.2rem;line-height:1.75}
+.cta-btns{display:flex;justify-content:center;gap:1rem;flex-wrap:wrap}
+.wa-btn{background:#25D366;color:#fff;padding:1rem 2.2rem;border-radius:4px;font-family:'Montserrat',sans-serif;font-size:.88rem;font-weight:700;text-decoration:none;letter-spacing:.04em;display:inline-flex;align-items:center;gap:.55rem;transition:opacity .2s,transform .2s;box-shadow:0 4px 18px rgba(37,211,102,.4)}
+.wa-btn:hover{opacity:.9;transform:translateY(-2px)}
+.phone-info{margin-top:1.8rem;color:rgba(255,255,255,.4);font-size:.78rem;letter-spacing:.1em}
+.phone-info strong{color:rgba(255,255,255,.7)}
+footer{background:#0D1520;padding:2rem 6%;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem}
+footer p{font-size:.7rem;color:rgba(255,255,255,.3)}
+.admin-link{font-size:.65rem;color:rgba(255,255,255,.2);cursor:pointer;text-decoration:none;transition:color .3s}
+.admin-link:hover{color:var(--blue)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+
+/* ====== MODAL BASE ====== */
+.modal-overlay{position:fixed;inset:0;z-index:1000;background:rgba(10,18,30,.85);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:1rem;animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.modal-box{background:#fff;border-radius:16px;width:100%;max-width:680px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.4);display:flex;flex-direction:column}
+.modal-box.wide{max-width:900px}
+.modal-hdr{padding:1.4rem 1.8rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:10;border-radius:16px 16px 0 0}
+.modal-hdr h3{font-family:'Montserrat',sans-serif;font-size:1rem;font-weight:800;color:var(--dark)}
+.modal-hdr .sub{font-size:.75rem;color:var(--muted);margin-top:1px}
+.modal-close{background:none;border:none;font-size:1.4rem;color:var(--muted);cursor:pointer;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:background .2s}
+.modal-close:hover{background:var(--off)}
+.modal-body{padding:1.8rem;flex:1}
+.modal-footer{padding:1.2rem 1.8rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:1rem;background:#fafafa;border-radius:0 0 16px 16px}
+
+/* ====== BOOKING STEPS ====== */
+.step-indicator{display:flex;gap:0;margin-bottom:1.8rem}
+.step-dot{flex:1;height:4px;background:var(--border);border-radius:2px;transition:background .3s}
+.step-dot.done{background:var(--blue)}
+.step-dot.active{background:var(--blue);animation:pulse-bar 1.2s infinite}
+@keyframes pulse-bar{0%,100%{opacity:1}50%{opacity:.6}}
+.step-label{font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:700;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:1.2rem}
+
+/* Service picker */
+.svc-pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+.svc-pick-card{border:2px solid var(--border);border-radius:8px;padding:1rem;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:.8rem}
+.svc-pick-card:hover{border-color:var(--blue-mid);background:var(--blue-lt)}
+.svc-pick-card.selected{border-color:var(--blue);background:var(--blue-lt)}
+.svc-pick-icon{font-size:1.4rem;min-width:28px}
+.svc-pick-name{font-family:'Montserrat',sans-serif;font-size:.82rem;font-weight:700;color:var(--dark)}
+.svc-pick-meta{font-size:.7rem;color:var(--muted);margin-top:1px}
+.svc-pick-price{margin-left:auto;font-family:'Montserrat',sans-serif;font-size:.95rem;font-weight:800;color:var(--blue);white-space:nowrap}
+
+/* Calendar */
+.cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+.cal-nav button{background:none;border:1px solid var(--border);border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;transition:all .2s;color:var(--text)}
+.cal-nav button:hover{border-color:var(--blue);color:var(--blue)}
+.cal-nav .month-label{font-family:'Montserrat',sans-serif;font-size:.9rem;font-weight:700;color:var(--dark);text-transform:capitalize}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-day-hdr{font-family:'Montserrat',sans-serif;font-size:.65rem;font-weight:700;color:var(--muted);text-align:center;padding:.4rem 0;letter-spacing:.05em}
+.cal-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;font-family:'Montserrat',sans-serif;font-size:.82rem;font-weight:600;border:2px solid transparent;transition:all .15s;position:relative}
+.cal-day.empty{}
+.cal-day.past{color:#ccc;cursor:not-allowed}
+.cal-day.blocked{background:#fee;color:#c9a;cursor:not-allowed;text-decoration:line-through}
+.cal-day.full{background:#fdf0f0;color:var(--red);cursor:not-allowed}
+.cal-day.partial{background:var(--orange-lt);color:var(--orange);cursor:pointer}
+.cal-day.available{background:var(--green-lt);color:var(--green);cursor:pointer}
+.cal-day.available:hover{background:var(--green);color:#fff;border-color:var(--green)}
+.cal-day.selected{background:var(--blue)!important;color:#fff!important;border-color:var(--blue)!important}
+.cal-legend{display:flex;gap:1rem;flex-wrap:wrap;margin-top:1rem;font-size:.68rem;color:var(--muted)}
+.cal-legend-item{display:flex;align-items:center;gap:.3rem}
+.cal-legend-dot{width:10px;height:10px;border-radius:2px}
+/* Admin calendar extra */
+.cal-day.admin-blocked{background:#fef3f3;color:#e57373;cursor:pointer;border-color:#ffcdd2}
+.cal-day.admin-available{background:var(--green-lt);color:var(--green);cursor:pointer}
+.cal-day.admin-has-booking{background:var(--blue-lt);color:var(--blue);cursor:pointer}
+
+/* Form */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
+.form-row.full{grid-template-columns:1fr}
+.form-group{display:flex;flex-direction:column;gap:.3rem}
+.form-group label{font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:700;color:var(--dark);letter-spacing:.05em;text-transform:uppercase}
+.form-group input,.form-group select,.form-group textarea{border:1.5px solid var(--border);border-radius:6px;padding:.65rem .85rem;font-family:'Open Sans',sans-serif;font-size:.88rem;color:var(--text);transition:border-color .2s;outline:none;background:#fff}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--blue)}
+.form-group textarea{resize:vertical;min-height:70px}
+.booking-summary{background:var(--blue-lt);border:1px solid var(--blue-mid);border-radius:8px;padding:1rem;margin-bottom:1.2rem}
+.booking-summary h4{font-family:'Montserrat',sans-serif;font-size:.75rem;font-weight:800;color:var(--blue-dk);letter-spacing:.1em;text-transform:uppercase;margin-bottom:.6rem}
+.summary-row{display:flex;justify-content:space-between;font-size:.83rem;margin-bottom:.25rem}
+.summary-row strong{font-weight:600}
+
+/* Success screen */
+.success-screen{text-align:center;padding:1.5rem 0}
+.success-icon{font-size:3.5rem;margin-bottom:1rem}
+.booking-id-badge{display:inline-block;background:var(--blue-lt);border:2px solid var(--blue-mid);border-radius:8px;padding:.8rem 2rem;font-family:'Montserrat',sans-serif;font-size:1.5rem;font-weight:900;color:var(--blue);letter-spacing:.15em;margin:1rem 0}
+.pending-note{background:var(--orange-lt);border:1px solid #f6d39b;border-radius:8px;padding:1rem;font-size:.83rem;color:#8a6200;margin-top:1rem;line-height:1.5}
+
+/* Confirmation card */
+.confirm-card{background:linear-gradient(135deg,var(--blue-dkr),var(--blue));border-radius:12px;padding:1.5rem;color:#fff;margin-bottom:1.2rem}
+.confirm-card h4{font-family:'Montserrat',sans-serif;font-size:.75rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase;opacity:.7;margin-bottom:.8rem}
+.confirm-row{display:flex;justify-content:space-between;margin-bottom:.4rem;font-size:.85rem}
+.confirm-row strong{opacity:.7;font-weight:400;font-size:.75rem}
+.confirm-row span{font-weight:600}
+.confirm-price{font-family:'Montserrat',sans-serif;font-size:1.6rem;font-weight:900;margin-top:.8rem}
+
+/* Status check */
+.status-badge{display:inline-flex;align-items:center;gap:.4rem;padding:.3rem .8rem;border-radius:50px;font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.status-pending{background:var(--orange-lt);color:var(--orange)}
+.status-approved{background:var(--green-lt);color:var(--green)}
+.status-rejected{background:var(--red-lt);color:var(--red)}
+.status-confirmed{background:var(--blue-lt);color:var(--blue-dk)}
+
+/* ====== ADMIN ====== */
+.admin-overlay{position:fixed;inset:0;z-index:2000;background:var(--off);overflow:hidden;display:flex;flex-direction:column}
+.admin-nav{background:var(--dark);padding:0 2rem;height:60px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.admin-nav .brand{font-family:'Montserrat',sans-serif;font-size:.95rem;font-weight:800;color:#fff}
+.admin-nav .brand span{color:var(--blue)}
+.admin-nav-actions{display:flex;align-items:center;gap:1rem}
+.admin-logout{background:none;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.7);padding:.35rem .9rem;border-radius:4px;font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:600;cursor:pointer;transition:all .2s;letter-spacing:.06em;text-transform:uppercase}
+.admin-logout:hover{border-color:var(--red);color:var(--red)}
+.admin-body{display:flex;flex:1;overflow:hidden}
+.admin-sidebar{width:220px;background:var(--dark2);display:flex;flex-direction:column;padding:1.5rem 0;flex-shrink:0}
+.admin-tab{display:flex;align-items:center;gap:.7rem;padding:.75rem 1.5rem;cursor:pointer;font-family:'Montserrat',sans-serif;font-size:.78rem;font-weight:600;color:rgba(255,255,255,.5);letter-spacing:.06em;text-transform:uppercase;transition:all .2s;border-left:3px solid transparent}
+.admin-tab:hover{color:rgba(255,255,255,.8);background:rgba(255,255,255,.04)}
+.admin-tab.active{color:#fff;background:rgba(255,255,255,.07);border-left-color:var(--blue)}
+.admin-tab-icon{font-size:1rem}
+.admin-content{flex:1;overflow-y:auto;padding:2rem}
+.admin-content h2{font-family:'Montserrat',sans-serif;font-size:1.2rem;font-weight:800;color:var(--dark);margin-bottom:1.5rem}
+.admin-panel{background:#fff;border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem}
+.admin-panel h3{font-family:'Montserrat',sans-serif;font-size:.85rem;font-weight:800;color:var(--dark);letter-spacing:.08em;text-transform:uppercase;margin-bottom:1.2rem;padding-bottom:.7rem;border-bottom:1px solid var(--border)}
+
+/* Bookings list */
+.booking-item{border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:1rem;transition:border-color .2s}
+.booking-item:hover{border-color:var(--blue-mid)}
+.booking-item-info{flex:1}
+.booking-item-id{font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:800;color:var(--blue);letter-spacing:.1em}
+.booking-item-name{font-family:'Montserrat',sans-serif;font-size:.88rem;font-weight:700;color:var(--dark);margin-top:.1rem}
+.booking-item-detail{font-size:.78rem;color:var(--muted);margin-top:.15rem}
+.booking-item-actions{display:flex;gap:.5rem;flex-shrink:0}
+.btn-approve{background:var(--green-lt);color:var(--green);border:1px solid #a8e6c1;padding:.4rem .9rem;border-radius:4px;font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.04em;text-transform:uppercase}
+.btn-approve:hover{background:var(--green);color:#fff}
+.btn-reject{background:var(--red-lt);color:var(--red);border:1px solid #f5c6c3;padding:.4rem .9rem;border-radius:4px;font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.04em;text-transform:uppercase}
+.btn-reject:hover{background:var(--red);color:#fff}
+.btn-view{background:var(--blue-lt);color:var(--blue-dk);border:1px solid var(--blue-mid);padding:.4rem .9rem;border-radius:4px;font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.04em;text-transform:uppercase}
+.btn-view:hover{background:var(--blue);color:#fff}
+
+/* Stats */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem}
+.stat-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:1.2rem;text-align:center}
+.stat-card .num{font-family:'Montserrat',sans-serif;font-size:2rem;font-weight:900;color:var(--blue);line-height:1}
+.stat-card .lbl{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-top:.3rem}
+.chart-bar-row{display:flex;align-items:center;gap:.75rem;margin-bottom:.6rem}
+.chart-bar-label{font-size:.75rem;color:var(--text);width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chart-bar-wrap{flex:1;background:var(--border);border-radius:4px;height:16px;overflow:hidden}
+.chart-bar-fill{height:100%;background:var(--blue);border-radius:4px;transition:width .6s ease;display:flex;align-items:center;padding-left:.4rem}
+.chart-bar-val{font-family:'Montserrat',sans-serif;font-size:.6rem;font-weight:800;color:#fff;white-space:nowrap}
+
+/* Admin cal day interaction */
+.cal-day.admin-toggle:hover{opacity:.8;transform:scale(1.05)}
+
+/* ====== DETAIL MODAL ====== */
+.detail-modal{max-width:560px}
+#detailModal{z-index:3000}
+
+/* ====== APPROVE MODAL ====== */
+.approve-form{display:flex;flex-direction:column;gap:1rem}
+
+@media(max-width:880px){
+  #hero{grid-template-columns:1fr}
+  .hero-right{display:none}
+  .hero-left{padding:4rem 5%}
+  .porque-wrap{grid-template-columns:1fr}
+  .porque-vis{display:none}
+  .nav-links{display:none}
+  .svc-pick-grid{grid-template-columns:1fr}
+  .form-row{grid-template-columns:1fr}
+  .admin-sidebar{width:60px}
+  .admin-tab span{display:none}
+  .admin-tab{justify-content:center;padding:.75rem}
+}
+</style>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<!-- ===== NAV ===== -->
+<nav>
+  <a href="#" class="logo-wrap">
+    <svg class="logo-svg" viewBox="0 0 120 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M 8 41 C 4 39, 2 35, 2 32 C 2 28, 6 24, 12 22 C 24 18, 38 15, 50 14 L 55 7 C 58 4, 64 2, 68 2 C 80 2, 92 2, 96 4 C 100 6, 103 10, 105 16 C 107 21, 108 26, 108 30 C 110 32, 114 35, 116 38 L 116 41 L 8 41 Z" stroke="#2BBDD0" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M 50 14 L 50 27 C 51 29, 53 30, 56 30 L 104 30 C 106 30, 107 28, 108 26" stroke="#2BBDD0" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+      <ellipse cx="51" cy="23" rx="4" ry="2.5" fill="#2BBDD0" opacity="0.85" transform="rotate(-10 51 23)"/>
+      <path d="M 2 44 L 116 44 C 118 44, 119 43, 120 41" stroke="#2BBDD0" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M 4 48 L 114 48 C 116 48, 117 47, 118 45" stroke="#2BBDD0" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    <div class="logo-text"><div class="name">SP <span>Car</span> Clean</div><div class="tag">Estética Automotiva</div></div>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#servicos">Serviços</a></li>
+    <li><a href="#porque">Diferenciais</a></li>
+    <li><a href="#depoimentos">Clientes</a></li>
+    <li><a onclick="openBooking()" class="cta" style="cursor:pointer">Agendar</a></li>
+  </ul>
+</nav>
+
+<!-- ===== HERO ===== -->
+<section id="hero">
+  <div class="hero-left">
+    <div class="hero-badge">⭐ Estética Automotiva Premium · São Paulo</div>
+    <h1>O cuidado <span class="blue">que seu carro merece.</span></h1>
+    <p class="hero-sub">Da lavagem detalhada ao polimento profissional, devolvemos o brilho original do seu veículo com técnicas e produtos de nível premium.</p>
+    <div class="hero-ctas">
+      <button class="btn-primary" onclick="openBooking()">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" stroke="currentColor" stroke-width="2" fill="none"/><line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="2"/></svg>
+        Agendar Serviço
+      </button>
+      <button class="btn-ghost" onclick="openStatusCheck()">Consultar Agendamento</button>
+    </div>
+    <div class="hero-stats">
+      <div class="stat"><div class="stat-num">15%</div><div class="stat-lbl">Valorização revenda</div></div>
+      <div class="stat"><div class="stat-num">9+</div><div class="stat-lbl">Serviços premium</div></div>
+      <div class="stat"><div class="stat-num">100%</div><div class="stat-lbl">Certificados</div></div>
+    </div>
+  </div>
+  <div class="hero-right">
+    <div class="hero-right-pattern"></div>
+    <div class="hero-right-content">
+      <svg viewBox="0 0 320 155" fill="none"><path d="M18 98C18 98 38 52 68 42L118 32L200 32L244 42C270 52 290 98 290 98" stroke="rgba(255,255,255,.88)" stroke-width="5" stroke-linecap="round"/><path d="M8 98L310 98L310 118C310 124 306 129 300 129L238 129C238 129 233 143 220 143L210 143C197 143 192 129 192 129L128 129C128 129 123 143 110 143L100 143C87 143 82 129 82 129L20 129C14 129 8 124 8 118Z" stroke="rgba(255,255,255,.88)" stroke-width="4" fill="rgba(255,255,255,.05)" stroke-linejoin="round"/><circle cx="100" cy="137" r="13" stroke="rgba(255,255,255,.9)" stroke-width="4" fill="rgba(255,255,255,.08)"/><circle cx="100" cy="137" r="5" fill="rgba(255,255,255,.5)"/><circle cx="220" cy="137" r="13" stroke="rgba(255,255,255,.9)" stroke-width="4" fill="rgba(255,255,255,.08)"/><circle cx="220" cy="137" r="5" fill="rgba(255,255,255,.5)"/><path d="M78 86L100 56L200 56L240 86Z" stroke="rgba(255,255,255,.55)" stroke-width="2.5" fill="rgba(255,255,255,.04)" stroke-linejoin="round"/><line x1="155" y1="56" x2="155" y2="86" stroke="rgba(255,255,255,.35)" stroke-width="2"/><line x1="5" y1="72" x2="38" y2="72" stroke="rgba(255,255,255,.18)" stroke-width="2.5" stroke-linecap="round"/><line x1="5" y1="84" x2="28" y2="84" stroke="rgba(255,255,255,.12)" stroke-width="2" stroke-linecap="round"/></svg>
+      <div class="hero-tagline">Agendamento Online · Confirmação Rápida</div>
+    </div>
+  </div>
+</section>
+
+<div class="strip">
+  <div class="strip-item">✓ Agendamento Online</div>
+  <div class="strip-item">✓ Confirmação por E-mail</div>
+  <div class="strip-item">✓ Hora Marcada</div>
+  <div class="strip-item">✓ Produtos Premium</div>
+</div>
+
+<!-- ===== SERVIÇOS ===== -->
+<section id="servicos">
+  <div class="sec-header">
+    <div class="sec-label">Tabela de Preços</div>
+    <h2>Nossos Serviços</h2>
+    <p class="sec-sub">Clique em qualquer serviço para agendar.</p>
+    <div class="size-toggle">
+      <button class="active" onclick="setSize('pq',this)">🚗 Carro Pequeno</button>
+      <button onclick="setSize('gr',this)">🚙 Carro Grande</button>
+    </div>
+  </div>
+  <div class="categories" id="catWrap"></div>
+</section>
+
+<!-- ===== POR QUE NÓS ===== -->
+<section id="porque">
+  <div class="sec-header"><div class="sec-label">Por que nos escolher</div><h2>Mais que limpeza, é proteção.</h2></div>
+  <div class="porque-wrap">
+    <div class="porque-vis">
+      <div class="pv-pattern"></div>
+      <div class="pv-content">
+        <svg viewBox="0 0 260 130" fill="none"><path d="M14 82C14 82 30 46 54 38L96 26L165 26L200 38C220 46 240 82 240 82" stroke="rgba(255,255,255,.88)" stroke-width="4.5" stroke-linecap="round"/><path d="M6 82L248 82L248 98C248 103 245 107 240 107L192 107C192 107 188 118 178 118L170 118C160 118 156 107 156 107L104 107C104 107 100 118 90 118L82 118C72 118 68 107 68 107L18 107C13 107 6 103 6 98Z" stroke="rgba(255,255,255,.88)" stroke-width="3.5" fill="rgba(255,255,255,.05)" stroke-linejoin="round"/><circle cx="82" cy="114" r="11" stroke="rgba(255,255,255,.88)" stroke-width="3.5" fill="rgba(255,255,255,.08)"/><circle cx="82" cy="114" r="4" fill="rgba(255,255,255,.5)"/><circle cx="174" cy="114" r="11" stroke="rgba(255,255,255,.88)" stroke-width="3.5" fill="rgba(255,255,255,.08)"/><circle cx="174" cy="114" r="4" fill="rgba(255,255,255,.5)"/></svg>
+        <div class="pv-badges">
+          <div class="pv-badge"><div class="n">15%</div><div class="l">Mais valor na revenda</div></div>
+          <div class="pv-badge"><div class="n">9+</div><div class="l">Serviços premium</div></div>
+          <div class="pv-badge"><div class="n">100%</div><div class="l">Garantia no serviço</div></div>
+          <div class="pv-badge"><div class="n">0%</div><div class="l">Risco de danos</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="porque-list">
+      <div class="pq-item"><div class="pq-icon">💎</div><div><h4>Técnica profissional de nível premium</h4><p>Clay Bar, boinas de polimento e compostos nanotecnológicos — os mesmos usados por detailers de alto nível.</p></div></div>
+      <div class="pq-item"><div class="pq-icon">🌿</div><div><h4>Saúde para você e sua família</h4><p>Higienização elimina ácaros, fungos e bactérias — essencial para quem tem crianças ou alergias.</p></div></div>
+      <div class="pq-item"><div class="pq-icon">📈</div><div><h4>Valorização real na revenda</h4><p>Um veículo bem cuidado pode valer até 15% a mais no mercado de usados.</p></div></div>
+      <div class="pq-item"><div class="pq-icon">🛡️</div><div><h4>Proteção de longa duração</h4><p>A cristalização cria barreira contra UV, poluição e chuva ácida, evitando repinturas futuras.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== DEPOIMENTOS ===== -->
+<section id="depoimentos">
+  <div class="sec-header"><div class="sec-label">Clientes Satisfeitos</div><h2>O que dizem sobre nós</h2></div>
+  <div class="dep-grid">
+    <div class="dep-card"><div class="dep-stars">★★★★★</div><p class="dep-text">Meu carro preto estava cheio de hologramas. O resultado foi incrível — parece que saiu da concessionária hoje.</p><hr class="dep-hr"/><div class="dep-author">Rodrigo M.</div><div class="dep-svc">Polimento Carro Preto</div></div>
+    <div class="dep-card"><div class="dep-stars">★★★★★</div><p class="dep-text">Higienização de couro ficou perfeita. Cheiro de novo, macio, sem aquele brilho escorregadio.</p><hr class="dep-hr"/><div class="dep-author">Fernanda L.</div><div class="dep-svc">Higienização de Couro</div></div>
+    <div class="dep-card"><div class="dep-stars">★★★★★</div><p class="dep-text">Trinca no para-brisa resolvida em menos de uma hora e ficou invisível. Economizei a troca do vidro!</p><hr class="dep-hr"/><div class="dep-author">Carlos T.</div><div class="dep-svc">Reparo de Trinca</div></div>
+  </div>
+</section>
+
+<!-- ===== CTA CONTATO ===== -->
+<section id="contato">
+  <div class="inner">
+    <div class="sec-label">Agende seu Orçamento</div>
+    <h2>Seu carro está esperando.</h2>
+    <p>Atendemos com hora marcada para garantir dedicação total ao seu veículo.</p>
+    <div class="cta-btns">
+      <a href="#" class="wa-btn" id="waBtn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+        Falar no WhatsApp
+      </a>
+      <button class="btn-ghost" onclick="openBooking()" style="border-color:rgba(255,255,255,.3);color:rgba(255,255,255,.7)">Agendar Online</button>
+    </div>
+    <div class="phone-info">WhatsApp: <strong id="phoneDisplay">a definir</strong></div>
+  </div>
+</section>
+
+<!-- ===== FOOTER ===== -->
+<footer>
+  <a href="#" class="logo-wrap" style="text-decoration:none">
+    <svg class="logo-svg" viewBox="0 0 120 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M 8 41 C 4 39, 2 35, 2 32 C 2 28, 6 24, 12 22 C 24 18, 38 15, 50 14 L 55 7 C 58 4, 64 2, 68 2 C 80 2, 92 2, 96 4 C 100 6, 103 10, 105 16 C 107 21, 108 26, 108 30 C 110 32, 114 35, 116 38 L 116 41 L 8 41 Z" stroke="#2BBDD0" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M 50 14 L 50 27 C 51 29, 53 30, 56 30 L 104 30 C 106 30, 107 28, 108 26" stroke="#2BBDD0" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+      <ellipse cx="51" cy="23" rx="4" ry="2.5" fill="#2BBDD0" opacity="0.85" transform="rotate(-10 51 23)"/>
+      <path d="M 2 44 L 116 44 C 118 44, 119 43, 120 41" stroke="#2BBDD0" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M 4 48 L 114 48 C 116 48, 117 47, 118 45" stroke="#2BBDD0" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    <div class="logo-text"><div class="name" style="color:#fff">SP <span>Car</span> Clean</div><div class="tag">São Paulo, SP</div></div>
+  </a>
+  <p>© 2025 SP Car Clean. Todos os direitos reservados.</p>
+  <a class="admin-link" onclick="openAdminLogin()">Área Restrita</a>
+</footer>
+
+<!-- ===================================================
+     BOOKING MODAL
+=================================================== -->
+<div id="bookingModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <div><h3 id="bookingTitle">Agendar Serviço</h3><div class="sub" id="bookingSubtitle">Passo 1 de 4 — Escolha o serviço</div></div>
+      <button class="modal-close" onclick="closeBooking()">✕</button>
+    </div>
+    <div class="modal-body" id="bookingBody"></div>
+    <div class="modal-footer" id="bookingFooter"></div>
+  </div>
+</div>
+
+<!-- ===================================================
+     STATUS CHECK MODAL
+=================================================== -->
+<div id="statusModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-hdr">
+      <div><h3>Consultar Agendamento</h3><div class="sub">Digite seu código de reserva</div></div>
+      <button class="modal-close" onclick="closeModal('statusModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row full" style="margin-bottom:1rem">
+        <div class="form-group">
+          <label>Código de Reserva</label>
+          <input id="statusInput" placeholder="Ex: SPC-X7K2M" oninput="this.value=this.value.toUpperCase()" style="font-family:'Montserrat',sans-serif;font-weight:700;letter-spacing:.1em;font-size:1rem"/>
+        </div>
+      </div>
+      <button class="btn-primary" onclick="checkStatus()" style="width:100%;justify-content:center">Consultar</button>
+      <div id="statusResult" style="margin-top:1.2rem"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================
+     ADMIN LOGIN MODAL
+=================================================== -->
+<div id="adminLoginModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-hdr">
+      <div><h3>🔐 Acesso Administrativo</h3><div class="sub">SP Car Clean — Painel de Gestão</div></div>
+      <button class="modal-close" onclick="closeModal('adminLoginModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row full"><div class="form-group"><label>Usuário</label><input id="adminUser" value="admin" readonly style="background:var(--off)"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Senha</label><input id="adminPass" type="password" placeholder="Digite a senha" onkeydown="if(event.key==='Enter')doAdminLogin()"/></div></div>
+      <div id="loginError" style="color:var(--red);font-size:.82rem;margin-bottom:.8rem;display:none">Senha incorreta. Tente novamente.</div>
+      <button class="btn-primary" onclick="doAdminLogin()" style="width:100%;justify-content:center">Entrar no Painel</button>
+      <p style="font-size:.72rem;color:var(--muted);margin-top:1rem;text-align:center">Senha padrão: <strong>SpCarClean@2025</strong><br/>Altere após o primeiro acesso.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================
+     BOOKING DETAIL MODAL (Admin)
+=================================================== -->
+<div id="detailModal" class="modal-overlay" style="display:none">
+  <div class="modal-box detail-modal">
+    <div class="modal-hdr"><div><h3>Detalhes do Agendamento</h3></div><button class="modal-close" onclick="closeModal('detailModal')">✕</button></div>
+    <div class="modal-body" id="detailBody"></div>
+    <div class="modal-footer" id="detailFooter"></div>
+  </div>
+</div>
+
+<!-- ===================================================
+     ADMIN PANEL (full screen)
+=================================================== -->
+<div id="adminPanel" class="admin-overlay" style="display:none">
+  <div class="admin-nav">
+    <div class="brand">SP <span>Car</span> Clean <span style="font-weight:400;font-size:.75rem;opacity:.5;margin-left:.5rem">Painel Admin</span></div>
+    <div class="admin-nav-actions">
+      <span style="font-size:.72rem;color:rgba(255,255,255,.4)" id="adminDate"></span>
+      <button class="admin-logout" onclick="doAdminLogout()">Sair</button>
+    </div>
+  </div>
+  <div class="admin-body">
+    <div class="admin-sidebar">
+      <div class="admin-tab active" onclick="switchAdminTab('calendario',this)" id="tab-calendario">
+        <span class="admin-tab-icon">📅</span><span>&nbsp;Calendário</span>
+      </div>
+      <div class="admin-tab" onclick="switchAdminTab('agendamentos',this)" id="tab-agendamentos">
+        <span class="admin-tab-icon">📋</span><span>&nbsp;Agendamentos</span>
+      </div>
+      <div class="admin-tab" onclick="switchAdminTab('estatisticas',this)" id="tab-estatisticas">
+        <span class="admin-tab-icon">📊</span><span>&nbsp;Estatísticas</span>
+      </div>
+      <div class="admin-tab" onclick="switchAdminTab('config',this)" id="tab-config">
+        <span class="admin-tab-icon">⚙️</span><span>&nbsp;Configurações</span>
+      </div>
+    </div>
+    <div class="admin-content" id="adminContent"></div>
+  </div>
+</div>
+
+<!-- ===================================================
+     JAVASCRIPT
+=================================================== -->
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const CFG = {
+  whatsapp: '5511926697474',
+  location: 'A definir — São Paulo, SP',
+  dropoffTime: '08:00',
+  pickupTime: '18:00',
+  adminPassword: 'SpCarClean@2025',
+  maxPerDay: 2,
+};
+
+// ============================================================
+// SERVICES DATA
+// ============================================================
+const SVCS = {
+  'lavagem-motor':       { name:'Lavagem de Motor',          icon:'⚙️',  cat:'Serviços Especiais',   pq:80,  gr:130,  daysExtra:0, desc:'Remoção de graxa e oxidação. Proteção elétrica e verniz de motor.' },
+  'lavagem-detalhada':   { name:'Lavagem Detalhada e Motor', icon:'🚿',  cat:'Estética Externa',     pq:180, gr:300,  daysExtra:0, desc:'Snow Foam, emblemas, grades, dobradiças, caixas de roda, pneus.' },
+  'higienizacao-tecido': { name:'Higienização de Tecidos',   icon:'🧼',  cat:'Estética Interna',     pq:300, gr:450,  daysExtra:0, desc:'Deep Clean com extratora. Ácaros, fungos, manchas e odores.' },
+  'higienizacao-couro':  { name:'Tratamento de Couro',       icon:'🛋️',  cat:'Estética Interna',     pq:250, gr:420,  daysExtra:0, desc:'Limpeza profunda + hidratação. Evita rachaduras no couro.' },
+  'polimento-geral':     { name:'Polimento Geral',            icon:'✨',  cat:'Estética Externa',     pq:320, gr:520,  daysExtra:1, desc:'Clay Bar, corte, refino e lustre. Remove riscos e devolve brilho.' },
+  'polimento-preto':     { name:'Polimento Carro Preto',     icon:'⬛', cat:'Estética Externa',     pq:500, gr:750,  daysExtra:1, desc:'Boinas ultra-macias e compostos nano. Elimina hologramas.' },
+  'polimento-cristal':   { name:'Polimento & Cristalização', icon:'💎',  cat:'Estética Externa',     pq:600, gr:1300, daysExtra:2, desc:'Correção completa + selante contra UV, poluição e chuva ácida.' },
+  'polimento-vidros':    { name:'Polimento de Vidros',        icon:'🔍',  cat:'Serviços Especiais',   pq:120, gr:180,  daysExtra:0, desc:'Óxido de cério remove manchas e micro-riscos. Melhor visibilidade.' },
+  'reparo-trinca':       { name:'Reparo de Trinca',           icon:'🔧',  cat:'Serviços Especiais',   pq:80,  gr:150,  daysExtra:0, desc:'Resina estrutural + cura UV. Economize até 90% vs trocar o vidro.' },
+};
+
+const CATS_ORDER = ['Estética Interna','Estética Externa','Serviços Especiais'];
+
+// ============================================================
+// STORAGE — Firebase Realtime Database + cache em memória
+// ============================================================
+let _bookings = [];
+let _blocked  = [];
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef;
+
+// Sessão do admin continua local (não precisa ser compartilhada)
+const isAdmin  = () => { try { return JSON.parse(localStorage.getItem('spcc_admin')) ?? false; } catch { return false; } };
+const setAdmin = v => localStorage.setItem('spcc_admin', JSON.stringify(v));
+
+function getBookings() { return _bookings; }
+function getBlocked()  { return _blocked; }
+
+function setBookings(arr) {
+  _bookings = arr;
+  if(!_fbDB) return;
+  const obj = {};
+  arr.forEach(b => { obj[b.id] = b; });
+  _bookingsRef.set(obj).catch(e => console.error('Firebase setBookings:', e));
+}
+
+function setBlocked(arr) {
+  _blocked = arr;
+  if(!_fbDB) return;
+  const obj = {};
+  arr.forEach(d => { obj[d] = true; });
+  _blockedRef.set(arr.length ? obj : null).catch(e => console.error('Firebase setBlocked:', e));
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function fmtDate(d) {
+  const dt = new Date(d+'T12:00:00');
+  return dt.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+}
+function fmtDateShort(d) {
+  const dt = new Date(d+'T12:00:00');
+  return dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+}
+function addDays(dateStr, n) {
+  const d = new Date(dateStr+'T12:00:00');
+  d.setDate(d.getDate()+n);
+  return d.toISOString().split('T')[0];
+}
+function toDateStr(y, m, d) {
+  return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+function genId() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let r = 'SPC-';
+  for(let i=0;i<6;i++) r += chars[Math.floor(Math.random()*chars.length)];
+  return r;
+}
+function fmtMoney(v) { return 'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:0}); }
+
+// ============================================================
+// CALENDAR RENDER (shared)
+// ============================================================
+function renderCalendar(opts) {
+  // opts: { containerId, month, year, mode ('book'|'admin'), selectedDate, onSelect, onToggle }
+  const { containerId, month, year, mode, selectedDate, onSelect, onToggle } = opts;
+  const container = document.getElementById(containerId);
+  if(!container) return;
+
+  const bookings = getBookings();
+  const blocked = getBlocked();
+  const today = todayStr();
+  const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const dayNames = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+
+  function getDateStatus(ds) {
+    if(ds < today) return 'past';
+    if(blocked.includes(ds)) return 'blocked';
+    // confirmed bookings block by startDate→endDate range
+    const confirmedSlots = bookings.filter(b => {
+      if(b.status !== 'confirmed') return false;
+      const s = b.startDate || b.date;
+      const e = b.endDate || b.pickup;
+      return ds >= s && ds <= e;
+    }).length;
+    // approved bookings pre-reserve by startDate→endDate range
+    const approvedSlots = bookings.filter(b => {
+      if(b.status !== 'approved') return false;
+      const s = b.startDate || b.date;
+      const e = b.endDate || b.pickup;
+      return ds >= s && ds <= e;
+    }).length;
+    const total = confirmedSlots + approvedSlots;
+    if(total >= CFG.maxPerDay) return 'full';
+    if(total > 0) return 'partial';
+    return 'available';
+  }
+
+  let html = `<div class="cal-nav">
+    <button onclick="calPrev('${containerId}',${month},${year},'${mode}')">◀</button>
+    <span class="month-label">${monthNames[month]} ${year}</span>
+    <button onclick="calNext('${containerId}',${month},${year},'${mode}')">▶</button>
+  </div>
+  <div class="cal-grid">`;
+
+  dayNames.forEach(d => { html += `<div class="cal-day-hdr">${d}</div>`; });
+
+  for(let i=0;i<firstDay;i++) html += `<div class="cal-day empty"></div>`;
+
+  for(let d=1; d<=daysInMonth; d++) {
+    const ds = toDateStr(year, month, d);
+    const status = getDateStatus(ds);
+    let cls = 'cal-day ';
+    let click = '';
+
+    if(mode === 'book') {
+      if(status === 'past') cls += 'past';
+      else if(status === 'blocked') cls += 'blocked';
+      else if(status === 'full') cls += 'full';
+      else if(status === 'partial') { cls += 'available'; click = `onclick="calSelect('${ds}')"` } // still allow for admin review
+      else { cls += 'available'; click = `onclick="calSelect('${ds}')"` }
+      if(ds === selectedDate) cls += ' selected';
+    } else if(mode === 'admin') {
+      if(status === 'past') cls += 'past';
+      else if(status === 'blocked') cls += 'admin-blocked admin-toggle';
+      else if(status === 'full' || status === 'partial') cls += 'admin-has-booking admin-toggle';
+      else cls += 'admin-available admin-toggle';
+      click = `onclick="adminCalToggle('${ds}')"`;
+      if(ds === today) cls += ' selected';
+    }
+
+    const dot = (mode==='admin' && bookings.filter(b => {
+      if(b.status==='rejected') return false;
+      const s = b.startDate || b.date;
+      const e = b.endDate || b.pickup;
+      return ds >= s && ds <= e;
+    }).length > 0)
+      ? `<span style="position:absolute;bottom:2px;right:2px;width:5px;height:5px;background:var(--blue);border-radius:50%"></span>` : '';
+
+    html += `<div class="${cls}" ${click} title="${ds}">${d}${dot}</div>`;
+  }
+
+  html += `</div>`;
+
+  if(mode === 'book') {
+    html += `<div class="cal-legend">
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--green-lt);border:1px solid var(--green)"></div> Disponível</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#fdf0f0;border:1px solid var(--red)"></div> Indisponível</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--blue)"></div> Selecionado</div>
+    </div>`;
+  } else {
+    html += `<div class="cal-legend">
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--green-lt);border:1px solid var(--green)"></div> Livre</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#fef3f3;border:1px solid #ffcdd2"></div> Bloqueado</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--blue-lt);border:1px solid var(--blue-mid)"></div> Com agendamento</div>
+    </div>
+    <p style="font-size:.75rem;color:var(--muted);margin-top:.8rem">Clique em um dia para bloquear/desbloquear. Dias com ponto azul têm agendamentos.</p>`;
+  }
+
+  container.innerHTML = html;
+}
+
+// Global cal state for booking
+let calState = { month: new Date().getMonth(), year: new Date().getFullYear() };
+
+function calPrev(cid, m, y, mode) {
+  let nm = m-1, ny = y;
+  if(nm < 0) { nm = 11; ny--; }
+  calState = { month: nm, year: ny };
+  renderCalendar({ containerId: cid, month: nm, year: ny, mode, selectedDate: booking.date, onSelect: calSelect });
+}
+function calNext(cid, m, y, mode) {
+  let nm = m+1, ny = y;
+  if(nm > 11) { nm = 0; ny++; }
+  calState = { month: nm, year: ny };
+  renderCalendar({ containerId: cid, month: nm, year: ny, mode, selectedDate: booking.date, onSelect: calSelect });
+}
+function calSelect(ds) {
+  booking.date = ds;
+  renderCalendar({ containerId: 'bookingCal', month: calState.month, year: calState.year, mode: 'book', selectedDate: ds });
+  updateStep2Footer();
+}
+function updateStep2Footer() {
+  const footer = document.getElementById('bookingFooter');
+  if(booking.date) {
+    const svc = SVCS[booking.service];
+    const pickup = svc.daysExtra > 0 ? addDays(booking.date, svc.daysExtra) : booking.date;
+    footer.innerHTML = `
+      <div style="font-size:.8rem;color:var(--muted)">
+        📅 Entrega: <strong>${fmtDateShort(booking.date)}</strong> às ${CFG.dropoffTime} &nbsp;|&nbsp;
+        🚗 Retirada: <strong>${fmtDateShort(pickup)}</strong> às ${CFG.pickupTime}
+      </div>
+      <button class="btn-primary" onclick="nextStep()">Próximo →</button>`;
+  } else {
+    footer.innerHTML = `<span style="font-size:.8rem;color:var(--muted)">Selecione uma data no calendário</span><button class="btn-primary" onclick="nextStep()" disabled style="opacity:.4;cursor:not-allowed">Próximo →</button>`;
+  }
+}
+
+// Admin calendar toggle
+let adminCalState = { month: new Date().getMonth(), year: new Date().getFullYear() };
+function adminCalToggle(ds) {
+  if(ds < todayStr()) return;
+  const blocked = getBlocked();
+  const idx = blocked.indexOf(ds);
+  if(idx >= 0) blocked.splice(idx, 1);
+  else blocked.push(ds);
+  setBlocked(blocked);
+  renderAdminCalendar();
+}
+function calPrev_admin(cid, m, y, mode) {
+  let nm = m-1, ny = y;
+  if(nm<0){nm=11;ny--;}
+  adminCalState={month:nm,year:ny};
+  renderCalendar({containerId:'adminCal',month:nm,year:ny,mode:'admin'});
+}
+function calNext_admin(cid, m, y, mode) {
+  let nm = m+1, ny = y;
+  if(nm>11){nm=0;ny++;}
+  adminCalState={month:nm,year:ny};
+  renderCalendar({containerId:'adminCal',month:nm,year:ny,mode:'admin'});
+}
+
+// Override calPrev/calNext for admin cal
+window.calPrev = function(cid, m, y, mode) {
+  let nm = m-1, ny = y; if(nm<0){nm=11;ny--;}
+  if(mode==='admin') { adminCalState={month:nm,year:ny}; renderCalendar({containerId:cid,month:nm,year:ny,mode:'admin'}); }
+  else { calState={month:nm,year:ny}; renderCalendar({containerId:cid,month:nm,year:ny,mode:'book',selectedDate:booking.date}); }
+};
+window.calNext = function(cid, m, y, mode) {
+  let nm = m+1, ny = y; if(nm>11){nm=0;ny++;}
+  if(mode==='admin') { adminCalState={month:nm,year:ny}; renderCalendar({containerId:cid,month:nm,year:ny,mode:'admin'}); }
+  else { calState={month:nm,year:ny}; renderCalendar({containerId:cid,month:nm,year:ny,mode:'book',selectedDate:booking.date}); }
+};
+
+// ============================================================
+// BOOKING FLOW
+// ============================================================
+let booking = { service: null, carSize: 'pq', date: null, step: 1 };
+
+function openBooking(preService) {
+  booking = { service: preService || null, carSize: 'pq', date: null, step: preService ? 2 : 1 };
+  if(preService) { booking.carSize = currentSizeGlobal || 'pq'; }
+  document.getElementById('bookingModal').style.display = 'flex';
+  renderBookingStep();
+}
+function closeBooking() {
+  document.getElementById('bookingModal').style.display = 'none';
+}
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+function renderBookingStep() {
+  const subtitles = ['Passo 1 de 4 — Escolha o serviço','Passo 2 de 4 — Escolha a data','Passo 3 de 4 — Seus dados','Solicitação enviada!'];
+  document.getElementById('bookingSubtitle').textContent = subtitles[booking.step-1];
+  document.getElementById('bookingTitle').textContent = booking.step === 4 ? '✅ Quase lá!' : 'Agendar Serviço';
+
+  const body = document.getElementById('bookingBody');
+  const footer = document.getElementById('bookingFooter');
+
+  const progress = [1,2,3,4].map(i => `<div class="step-dot ${i<booking.step?'done':i===booking.step?'active':''}"></div>`).join('');
+
+  if(booking.step === 1) {
+    // Service selection
+    const sizeToggle = `<div class="size-toggle" style="margin-bottom:1.2rem">
+      <button class="${booking.carSize==='pq'?'active':''}" onclick="setBCarSize('pq',this)">🚗 Pequeno</button>
+      <button class="${booking.carSize==='gr'?'active':''}" onclick="setBCarSize('gr',this)">🚙 Grande</button>
+    </div>`;
+
+    const cards = Object.entries(SVCS).map(([id,s]) => `
+      <div class="svc-pick-card ${booking.service===id?'selected':''}" onclick="selectService('${id}')">
+        <div class="svc-pick-icon">${s.icon}</div>
+        <div>
+          <div class="svc-pick-name">${s.name}</div>
+          <div class="svc-pick-meta">${s.daysExtra===0?'Entrega no mesmo dia':s.daysExtra===1?'Retirada no dia seguinte':'Retirada em 2 dias'}</div>
+        </div>
+        <div class="svc-pick-price">${fmtMoney(s[booking.carSize])}</div>
+      </div>`).join('');
+
+    body.innerHTML = `<div class="step-indicator">${progress}</div>
+      <div class="step-label">Selecione o serviço</div>
+      ${sizeToggle}
+      <div class="svc-pick-grid">${cards}</div>`;
+    footer.innerHTML = `<span></span><button class="btn-primary" onclick="nextStep()" ${!booking.service?'disabled style="opacity:.4;cursor:not-allowed"':''}>Próximo →</button>`;
+
+  } else if(booking.step === 2) {
+    // Calendar
+    body.innerHTML = `<div class="step-indicator">${progress}</div>
+      <div class="step-label">Escolha a data</div>
+      <div id="bookingCal"></div>`;
+    calState = { month: new Date().getMonth(), year: new Date().getFullYear() };
+    renderCalendar({ containerId: 'bookingCal', month: calState.month, year: calState.year, mode: 'book', selectedDate: booking.date });
+    updateStep2Footer();
+
+  } else if(booking.step === 3) {
+    // Customer form
+    const svc = SVCS[booking.service];
+    const price = fmtMoney(svc[booking.carSize]);
+    const pickup = svc.daysExtra > 0 ? addDays(booking.date, svc.daysExtra) : booking.date;
+    body.innerHTML = `<div class="step-indicator">${progress}</div>
+      <div class="booking-summary">
+        <h4>Resumo do Agendamento</h4>
+        <div class="summary-row"><strong>Serviço</strong><span>${svc.icon} ${svc.name}</span></div>
+        <div class="summary-row"><strong>Entrega do veículo</strong><span>${fmtDate(booking.date)} às ${CFG.dropoffTime}</span></div>
+        <div class="summary-row"><strong>Previsão de retirada</strong><span>${fmtDate(pickup)} às ${CFG.pickupTime}</span></div>
+        <div class="summary-row"><strong>Valor</strong><span style="font-weight:800;color:var(--blue)">${price}</span></div>
+      </div>
+      <div class="step-label">Seus dados para contato</div>
+      <div class="form-row"><div class="form-group"><label>Nome completo</label><input id="fName" placeholder="João da Silva"/></div><div class="form-group"><label>Telefone / WhatsApp</label><input id="fPhone" placeholder="(11) 99999-9999"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>E-mail</label><input id="fEmail" type="email" placeholder="joao@email.com"/></div></div>
+      <div class="form-row"><div class="form-group"><label>Veículo (modelo/ano)</label><input id="fCar" placeholder="Honda Civic 2020"/></div><div class="form-group"><label>Placa</label><input id="fPlate" placeholder="ABC-1234"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Observações (opcional)</label><textarea id="fObs" placeholder="Informe alguma particularidade do veículo, manchas específicas, etc."></textarea></div></div>
+      <p style="font-size:.75rem;color:var(--muted)">Ao enviar você concorda que seus dados serão usados para finalizar o agendamento.</p>`;
+    footer.innerHTML = `<button class="btn-ghost" onclick="prevStep()">← Voltar</button><button class="btn-primary" onclick="submitBooking()">Enviar Solicitação ✓</button>`;
+
+  } else if(booking.step === 4) {
+    // Success
+    body.innerHTML = `<div class="step-indicator">${progress}</div>
+      <div class="success-screen">
+        <div class="success-icon">📅</div>
+        <h3 style="font-family:Montserrat,sans-serif;font-size:1.2rem;font-weight:800;color:var(--dark)">Solicitação Enviada!</h3>
+        <p style="color:var(--muted);margin-top:.5rem;font-size:.9rem">Guarde seu código de reserva:</p>
+        <div class="booking-id-badge" id="newBookingId"></div>
+        <div class="pending-note">
+          ⏳ <strong>Aguardando aprovação.</strong><br/>
+          O administrador irá confirmar sua solicitação em breve. Você receberá os detalhes por e-mail após a aprovação.<br/>
+          Você também pode consultar o status a qualquer momento com o código acima.
+        </div>
+      </div>`;
+    footer.innerHTML = `<button class="btn-ghost" onclick="closeBooking()">Fechar</button><button class="btn-primary" onclick="closeBooking();openStatusCheck()">Consultar Status</button>`;
+  }
+}
+
+function setBCarSize(size, btn) {
+  booking.carSize = size;
+  document.querySelectorAll('#bookingBody .size-toggle button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderBookingStep();
+}
+function selectService(id) {
+  booking.service = id;
+  renderBookingStep();
+}
+function nextStep() {
+  if(booking.step === 2 && !booking.date) return;
+  booking.step++;
+  renderBookingStep();
+}
+function prevStep() {
+  booking.step--;
+  renderBookingStep();
+}
+
+function submitBooking() {
+  const name = document.getElementById('fName').value.trim();
+  const email = document.getElementById('fEmail').value.trim();
+  const phone = document.getElementById('fPhone').value.trim();
+  const car = document.getElementById('fCar').value.trim();
+  const plate = document.getElementById('fPlate').value.trim();
+  const obs = document.getElementById('fObs').value.trim();
+  if(!name||!email||!phone||!car) { alert('Preencha todos os campos obrigatórios.'); return; }
+
+  const svc = SVCS[booking.service];
+  const id = genId();
+  const b = {
+    id, service: booking.service, carSize: booking.carSize,
+    date: booking.date, pickup: svc.daysExtra > 0 ? addDays(booking.date, svc.daysExtra) : booking.date,
+    price: svc[booking.carSize],
+    name, email, phone, car, plate, obs,
+    status: 'pending',
+    submittedAt: new Date().toISOString(),
+    adminNotes: '',
+  };
+  const bookings = getBookings();
+  bookings.push(b);
+  setBookings(bookings);
+
+  booking.step = 4;
+  renderBookingStep();
+  document.getElementById('newBookingId').textContent = id;
+}
+
+// ============================================================
+// STATUS CHECK
+// ============================================================
+function openStatusCheck() {
+  document.getElementById('statusModal').style.display = 'flex';
+  document.getElementById('statusResult').innerHTML = '';
+  document.getElementById('statusInput').value = '';
+}
+
+function checkStatus() {
+  const code = document.getElementById('statusInput').value.trim().toUpperCase();
+  const b = getBookings().find(x => x.id === code);
+  const res = document.getElementById('statusResult');
+  if(!b) {
+    res.innerHTML = `<div style="background:var(--red-lt);border:1px solid #f5c6c3;border-radius:8px;padding:1rem;font-size:.85rem;color:var(--red)">Código não encontrado. Verifique e tente novamente.</div>`;
+    return;
+  }
+  const svc = SVCS[b.service];
+  const statusMap = { pending:'Aguardando análise', approved:'Orçamento enviado — Confirme abaixo', rejected:'Não aprovado', confirmed:'Confirmado ✓' };
+  const statusClass = { pending:'status-pending', approved:'status-approved', rejected:'status-rejected', confirmed:'status-confirmed' };
+
+  const displayPrice = (b.status==='approved'||b.status==='confirmed') && b.finalPrice ? b.finalPrice : b.price;
+  const priceChanged = b.finalPrice && b.finalPrice !== b.price;
+
+  let confirmBtn = '';
+  if(b.status === 'approved') {
+    confirmBtn = `
+      <div style="background:var(--green-lt);border:1px solid #a8e6c1;border-radius:8px;padding:1rem;margin-top:1rem;font-size:.84rem;color:#1a6b3a;line-height:1.5">
+        ✅ <strong>Orçamento aprovado!</strong><br/>
+        Confira os dados acima e clique em confirmar para reservar seu agendamento.
+      </div>
+      <button class="btn-primary" onclick="customerConfirm('${b.id}')" style="width:100%;justify-content:center;margin-top:.8rem">✓ Confirmar Agendamento</button>`;
+  }
+
+  res.innerHTML = `
+    <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <div style="background:var(--off);padding:.8rem 1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.4rem">
+        <span style="font-family:Montserrat,sans-serif;font-size:.78rem;font-weight:800;color:var(--blue);letter-spacing:.1em">${b.id}</span>
+        <span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span>
+      </div>
+      <div style="padding:1rem">
+        <div class="summary-row"><strong>Serviço</strong><span>${svc.icon} ${svc.name}</span></div>
+        <div class="summary-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
+        ${b.startDate
+          ? `<div class="summary-row"><strong>Entrega do veículo</strong><span>${fmtDate(b.startDate)} às ${CFG.dropoffTime}</span></div>`
+          : `<div class="summary-row"><strong>Data solicitada</strong><span>${fmtDate(b.date)} às ${CFG.dropoffTime}</span></div>`
+        }
+        ${b.endDate
+          ? `<div class="summary-row"><strong>Previsão de retirada</strong><span>${fmtDate(b.endDate)} às ${CFG.pickupTime}</span></div>`
+          : `<div class="summary-row"><strong>Previsão de retirada</strong><span>${fmtDate(b.pickup)} às ${CFG.pickupTime}</span></div>`
+        }
+        <div class="summary-row">
+          <strong>Valor</strong>
+          <span style="font-weight:800;color:var(--blue)">${fmtMoney(displayPrice)}</span>
+        </div>
+        ${priceChanged ? `<div style="font-size:.75rem;color:var(--muted);text-align:right;margin-top:-4px">(estimativa inicial: ${fmtMoney(b.price)})</div>` : ''}
+        ${(b.status==='approved'||b.status==='confirmed') && b.approvedLocation
+          ? `<div class="summary-row"><strong>Local de entrega</strong><span>${b.approvedLocation}</span></div>`
+          : ''}
+        ${b.adminNotes
+          ? `<div style="margin-top:.8rem;background:var(--blue-lt);border-radius:6px;padding:.7rem;font-size:.8rem"><strong>Nota:</strong> ${b.adminNotes}</div>`
+          : ''}
+      </div>
+    </div>
+    ${confirmBtn}`;
+}
+
+function customerConfirm(id) {
+  const bookings = getBookings();
+  const b = bookings.find(x=>x.id===id);
+  if(b) { b.status = 'confirmed'; setBookings(bookings); checkStatus(); }
+}
+
+// ============================================================
+// ADMIN LOGIN
+// ============================================================
+function openAdminLogin() {
+  document.getElementById('adminLoginModal').style.display = 'flex';
+  setTimeout(()=>document.getElementById('adminPass').focus(), 100);
+}
+function doAdminLogin() {
+  const pw = document.getElementById('adminPass').value;
+  if(pw === CFG.adminPassword) {
+    setAdmin(true);
+    closeModal('adminLoginModal');
+    openAdminPanel();
+  } else {
+    document.getElementById('loginError').style.display = 'block';
+    document.getElementById('adminPass').value = '';
+    document.getElementById('adminPass').focus();
+  }
+}
+function doAdminLogout() {
+  setAdmin(false);
+  document.getElementById('adminPanel').style.display = 'none';
+}
+function openAdminPanel() {
+  document.getElementById('adminPanel').style.display = 'flex';
+  document.getElementById('adminDate').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  switchAdminTab('calendario', document.getElementById('tab-calendario'));
+}
+
+// ============================================================
+// ADMIN TABS
+// ============================================================
+let currentAdminTab = 'calendario';
+function switchAdminTab(tab, el) {
+  currentAdminTab = tab;
+  document.querySelectorAll('.admin-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  const content = document.getElementById('adminContent');
+  if(tab==='calendario') renderAdminCalendar();
+  else if(tab==='agendamentos') renderAdminBookings();
+  else if(tab==='estatisticas') renderAdminStats();
+  else if(tab==='config') renderAdminConfig();
+}
+
+function renderAdminCalendar() {
+  document.getElementById('adminContent').innerHTML = `
+    <h2>📅 Gerenciar Calendário</h2>
+    <div class="admin-panel" style="max-width:520px">
+      <h3>Disponibilidade de Datas</h3>
+      <div id="adminCal"></div>
+    </div>
+    <div class="admin-panel" style="max-width:520px">
+      <h3>Bloquear Período</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Data início</label><input type="date" id="blockFrom" min="${todayStr()}"/></div>
+        <div class="form-group"><label>Data fim</label><input type="date" id="blockTo" min="${todayStr()}"/></div>
+      </div>
+      <button class="btn-primary" onclick="blockRange()">Bloquear período</button>
+      &nbsp;<button class="btn-ghost" onclick="unblockRange()" style="font-size:.8rem">Liberar período</button>
+    </div>`;
+  renderCalendar({ containerId: 'adminCal', month: adminCalState.month, year: adminCalState.year, mode: 'admin' });
+}
+
+function blockRange() {
+  const from = document.getElementById('blockFrom').value;
+  const to = document.getElementById('blockTo').value;
+  if(!from||!to) return alert('Selecione as datas.');
+  const blocked = getBlocked();
+  let d = new Date(from+'T12:00:00');
+  const end = new Date(to+'T12:00:00');
+  while(d <= end) {
+    const ds = d.toISOString().split('T')[0];
+    if(!blocked.includes(ds)) blocked.push(ds);
+    d.setDate(d.getDate()+1);
+  }
+  setBlocked(blocked);
+  renderAdminCalendar();
+}
+function unblockRange() {
+  const from = document.getElementById('blockFrom').value;
+  const to = document.getElementById('blockTo').value;
+  if(!from||!to) return alert('Selecione as datas.');
+  let blocked = getBlocked();
+  let d = new Date(from+'T12:00:00');
+  const end = new Date(to+'T12:00:00');
+  while(d <= end) {
+    const ds = d.toISOString().split('T')[0];
+    blocked = blocked.filter(x=>x!==ds);
+    d.setDate(d.getDate()+1);
+  }
+  setBlocked(blocked);
+  renderAdminCalendar();
+}
+
+function renderAdminBookings() {
+  const bookings = getBookings();
+  const filterEl = `<div style="display:flex;gap:.5rem;margin-bottom:1.2rem;flex-wrap:wrap">
+    ${['all','pending','approved','confirmed','rejected'].map(f=>`<button onclick="filterBookings('${f}',this)" class="${f==='all'?'btn-primary':'btn-ghost'}" style="font-size:.72rem;padding:.4rem 1rem" id="filter-${f}">${{all:'Todos',pending:'⏳ Pendentes',approved:'✅ Aprovados',confirmed:'🔒 Confirmados',rejected:'❌ Rejeitados'}[f]}</button>`).join('')}
+  </div>`;
+  document.getElementById('adminContent').innerHTML = `<h2>📋 Agendamentos</h2>${filterEl}<div id="bookingsList"></div>`;
+  renderBookingsList('all');
+}
+
+let currentFilter = 'all';
+function filterBookings(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('[id^="filter-"]').forEach(b=>{b.className='btn-ghost';b.style.fontSize='.72rem';b.style.padding='.4rem 1rem';});
+  btn.className='btn-primary';btn.style.fontSize='.72rem';btn.style.padding='.4rem 1rem';
+  renderBookingsList(f);
+}
+
+function renderBookingsList(filter) {
+  let bookings = getBookings();
+  if(filter !== 'all') bookings = bookings.filter(b=>b.status===filter);
+  bookings.sort((a,b)=>b.submittedAt.localeCompare(a.submittedAt));
+  const el = document.getElementById('bookingsList');
+  if(!bookings.length) { el.innerHTML = `<p style="color:var(--muted);font-size:.9rem">Nenhum agendamento encontrado.</p>`; return; }
+  const statusMap = {pending:'⏳ Pendente',approved:'✅ Aprovado',rejected:'❌ Rejeitado',confirmed:'🔒 Confirmado'};
+  const statusColor = {pending:'var(--orange)',approved:'var(--green)',rejected:'var(--red)',confirmed:'var(--blue-dk)'};
+  el.innerHTML = bookings.map(b => {
+    const svc = SVCS[b.service];
+    return `<div class="booking-item">
+      <div class="booking-item-info">
+        <div style="display:flex;align-items:center;gap:.6rem">
+          <div class="booking-item-id">${b.id}</div>
+          <span style="font-size:.7rem;font-weight:700;color:${statusColor[b.status]}">${statusMap[b.status]}</span>
+        </div>
+        <div class="booking-item-name">${b.name} — ${b.car}</div>
+        <div class="booking-item-detail">${svc.icon} ${svc.name} · ${fmtDateShort(b.startDate||b.date)} · ${fmtMoney(b.finalPrice||b.price)}</div>
+      </div>
+      <div class="booking-item-actions">
+        <button class="btn-view" onclick="viewBooking('${b.id}')">Ver</button>
+        ${b.status==='pending'?`<button class="btn-approve" onclick="openApprove('${b.id}')">Aprovar</button><button class="btn-reject" onclick="rejectBooking('${b.id}')">Rejeitar</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function viewBooking(id) {
+  const b = getBookings().find(x=>x.id===id);
+  if(!b) return;
+  const svc = SVCS[b.service];
+  const statusMap = {pending:'⏳ Aguardando aprovação',approved:'✅ Aprovado — aguardando confirmação do cliente',rejected:'❌ Rejeitado',confirmed:'🔒 Confirmado pelo cliente'};
+  const statusClass = {pending:'status-pending',approved:'status-approved',rejected:'status-rejected',confirmed:'status-confirmed'};
+
+  const rawPhone = b.phone.replace(/\D/g,'');
+  const waPhone = rawPhone.length <= 11 ? '55'+rawPhone : rawPhone;
+  const waMsg = encodeURIComponent(`Olá ${b.name}! Referente ao seu agendamento *${b.id}* na SP Car Clean. `);
+  const waLink = `https://wa.me/${waPhone}?text=${waMsg}`;
+
+  const hasFinalPrice = b.finalPrice && b.finalPrice !== b.price;
+
+  document.getElementById('detailBody').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.6rem;margin-bottom:1.4rem">
+      <div class="booking-id-badge" style="font-size:.95rem;padding:.5rem 1.2rem">${b.id}</div>
+      <span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span>
+    </div>
+
+    <div style="background:var(--off);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
+      <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">👤 Dados do Cliente</div>
+      <div class="summary-row"><strong>Nome</strong><span>${b.name}</span></div>
+      <div class="summary-row"><strong>E-mail</strong><span>${b.email}</span></div>
+      <div class="summary-row"><strong>Telefone</strong><span>${b.phone}</span></div>
+      <a href="${waLink}" target="_blank" style="display:inline-flex;align-items:center;gap:.5rem;margin-top:.8rem;background:#25D366;color:#fff;padding:.45rem 1rem;border-radius:4px;font-family:Montserrat,sans-serif;font-size:.72rem;font-weight:700;text-decoration:none;letter-spacing:.04em;transition:opacity .2s" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+        <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+        Contatar no WhatsApp
+      </a>
+    </div>
+
+    <div style="background:var(--off);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
+      <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">🚗 Veículo & Serviço</div>
+      <div class="summary-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
+      <div class="summary-row"><strong>Porte</strong><span>${b.carSize==='pq'?'Carro Pequeno':'Carro Grande'}</span></div>
+      <div class="summary-row"><strong>Serviço</strong><span>${svc.icon} ${svc.name}</span></div>
+      <div class="summary-row"><strong>Valor estimado</strong><span>${fmtMoney(b.price)}</span></div>
+      ${hasFinalPrice ? `<div class="summary-row"><strong>Valor final (adm)</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.finalPrice)}</span></div>` : ''}
+      ${b.obs ? `<div class="summary-row"><strong>Obs. cliente</strong><span style="font-style:italic">${b.obs}</span></div>` : ''}
+    </div>
+
+    ${(b.startDate || b.endDate) ? `
+    <div style="background:var(--blue-lt);border:1px solid var(--blue-mid);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
+      <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--blue-dk);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">📅 Datas Confirmadas</div>
+      ${b.startDate ? `<div class="summary-row"><strong>Entrega do veículo</strong><span>${fmtDate(b.startDate)} às ${CFG.dropoffTime}</span></div>` : ''}
+      ${b.endDate ? `<div class="summary-row"><strong>Previsão de retirada</strong><span>${fmtDate(b.endDate)} às ${CFG.pickupTime}</span></div>` : ''}
+      ${b.approvedLocation ? `<div class="summary-row"><strong>Local</strong><span>${b.approvedLocation}</span></div>` : ''}
+    </div>` : ''}
+
+    ${b.adminNotes ? `<div style="background:var(--off);border-radius:8px;padding:.8rem;font-size:.82rem;margin-bottom:1rem"><strong>📝 Notas do admin:</strong> ${b.adminNotes}</div>` : ''}
+
+    <hr style="border:none;border-top:1px solid var(--border);margin:.8rem 0"/>
+    <p style="font-size:.72rem;color:var(--muted)">Enviado em ${new Date(b.submittedAt).toLocaleString('pt-BR')}</p>`;
+
+  const footer = document.getElementById('detailFooter');
+  footer.innerHTML = b.status==='pending'
+    ? `<button class="btn-reject" onclick="rejectBooking('${b.id}');closeModal('detailModal')">Rejeitar</button>
+       <button class="btn-approve" onclick="closeModal('detailModal');openApprove('${b.id}')">Aprovar & Definir Orçamento</button>`
+    : `<span></span><button class="btn-primary" onclick="closeModal('detailModal')">Fechar</button>`;
+  document.getElementById('detailModal').style.display = 'flex';
+}
+
+// ============================================================
+// DATE CAPACITY CHECK (admin approval)
+// ============================================================
+function checkApprovalDateCapacity() {
+  const startEl = document.getElementById('approveStart');
+  const endEl   = document.getElementById('approveEnd');
+  const warnEl  = document.getElementById('dateCapacityWarning');
+  if(!startEl || !warnEl) return;
+
+  const startDate = startEl.value;
+  const endDate   = endEl ? endEl.value : startDate;
+  if(!startDate) return;
+
+  const bookings = getBookings();
+  const overloaded = [];
+  let maxLoad = 0;
+
+  // walk every date in the selected range
+  let d = new Date(startDate + 'T12:00:00');
+  const rangeEnd = endDate ? new Date(endDate + 'T12:00:00') : d;
+  while(d <= rangeEnd) {
+    const ds = d.toISOString().split('T')[0];
+    const load = bookings.filter(b => {
+      if(b.status === 'rejected' || b.status === 'pending') return false;
+      const s = b.startDate || b.date;
+      const e = b.endDate   || b.pickup;
+      return ds >= s && ds <= e;
+    }).length;
+    if(load >= CFG.maxPerDay) overloaded.push(ds);
+    maxLoad = Math.max(maxLoad, load);
+    d.setDate(d.getDate() + 1);
+  }
+
+  if(overloaded.length > 0) {
+    // suggest extending end date by the number of overloaded days
+    const suggestedEnd = addDays(endDate || startDate, overloaded.length);
+    const dateList = overloaded.map(fmtDateShort).join(', ');
+    warnEl.innerHTML = `
+      <div style="background:#FEF5E7;border:1.5px solid #F39C12;border-radius:8px;padding:1rem;font-size:.82rem;color:#7a5500;line-height:1.6;margin-top:.5rem">
+        ⚠️ <strong>${overloaded.length > 1 ? 'Os dias' : 'O dia'} ${dateList} já ${overloaded.length > 1 ? 'estão' : 'está'} no limite de agendamentos (${CFG.maxPerDay} por dia).</strong><br/>
+        Com a agenda cheia, o serviço pode levar mais tempo. Recomendamos estender o prazo de conclusão.
+        <div style="margin-top:.7rem">
+          <button onclick="document.getElementById('approveEnd').value='${suggestedEnd}';checkApprovalDateCapacity()"
+            style="background:var(--orange);color:#fff;border:none;padding:.4rem 1rem;border-radius:4px;font-family:Montserrat,sans-serif;font-size:.72rem;font-weight:700;cursor:pointer;letter-spacing:.04em;margin-right:.5rem">
+            📅 Estender prazo para ${fmtDateShort(suggestedEnd)}
+          </button>
+          <span style="font-size:.72rem;color:#a07000">ou ajuste manualmente abaixo.</span>
+        </div>
+      </div>`;
+  } else if(maxLoad > 0) {
+    warnEl.innerHTML = `
+      <div style="background:var(--blue-lt);border:1px solid var(--blue-mid);border-radius:8px;padding:.65rem 1rem;font-size:.8rem;color:var(--blue-dk);margin-top:.5rem">
+        ℹ️ Período com <strong>${maxLoad}</strong> agendamento(s) ativo(s). Ainda há capacidade disponível.
+      </div>`;
+  } else {
+    warnEl.innerHTML = `
+      <div style="background:var(--green-lt);border:1px solid #a8e6c1;border-radius:8px;padding:.65rem 1rem;font-size:.8rem;color:var(--green);margin-top:.5rem">
+        ✓ Período livre — sem conflitos de agenda.
+      </div>`;
+  }
+}
+
+function openApprove(id) {
+  const b = getBookings().find(x=>x.id===id);
+  const svc = SVCS[b.service];
+  const defaultEnd = svc.daysExtra > 0 ? addDays(b.date, svc.daysExtra) : b.date;
+  document.getElementById('detailBody').innerHTML = `
+    <div class="confirm-card">
+      <h4>Definir Orçamento & Datas</h4>
+      <div class="confirm-row"><strong>Cliente</strong><span>${b.name}</span></div>
+      <div class="confirm-row"><strong>WhatsApp</strong><span>${b.phone}</span></div>
+      <div class="confirm-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
+      <div class="confirm-row"><strong>Serviço</strong><span>${svc.icon} ${svc.name} · ${b.carSize==='pq'?'Pequeno':'Grande'}</span></div>
+      <div class="confirm-price" style="font-size:1.1rem;opacity:.7">Estimativa: ${fmtMoney(b.price)}</div>
+    </div>
+
+    <div style="background:var(--orange-lt);border:1px solid #f6d39b;border-radius:8px;padding:.8rem 1rem;margin-bottom:1.2rem;font-size:.82rem;color:#8a6200">
+      ⚠️ Defina o <strong>valor final</strong> e as <strong>datas reais</strong> do serviço. Essas datas ficarão pré-reservadas no calendário e serão confirmadas somente após o aceite do cliente.
+    </div>
+
+    <div class="form-row full" style="margin-bottom:1rem">
+      <div class="form-group">
+        <label>💰 Valor Final do Serviço (R$)</label>
+        <input id="approvePrice" type="number" value="${b.price}" min="0" step="10" style="font-family:Montserrat,sans-serif;font-size:1.1rem;font-weight:700;color:var(--blue)"/>
+        <span style="font-size:.72rem;color:var(--muted);margin-top:2px">Ajuste conforme marca, cor e características do veículo.</span>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>📅 Data de Início (entrega do veículo)</label>
+        <input id="approveStart" type="date" value="${b.date}" min="${todayStr()}" onchange="checkApprovalDateCapacity()"/>
+      </div>
+      <div class="form-group">
+        <label>🏁 Data de Conclusão (retirada)</label>
+        <input id="approveEnd" type="date" value="${defaultEnd}" min="${b.date}" onchange="checkApprovalDateCapacity()"/>
+      </div>
+    </div>
+
+    <div id="dateCapacityWarning"></div>
+
+    <div class="form-row full" style="margin-bottom:1rem;margin-top:1rem">
+      <div class="form-group">
+        <label>📍 Local de entrega do veículo</label>
+        <input id="approveLocation" value="${CFG.location}" placeholder="Endereço completo"/>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label>📝 Notas para o cliente (opcional)</label>
+      <textarea id="approveNotes" placeholder="Ex: Traga o documento do veículo. Estacionamento disponível."></textarea>
+    </div>
+    <p style="font-size:.75rem;color:var(--muted)">Ao aprovar, o cliente verá o valor final e as datas ao consultar o código de reserva.</p>`;
+  document.getElementById('detailFooter').innerHTML = `
+    <button class="btn-ghost" onclick="closeModal('detailModal')">Cancelar</button>
+    <button class="btn-approve" style="padding:.7rem 1.5rem;font-size:.82rem" onclick="doApprove('${id}')">✅ Enviar Orçamento ao Cliente</button>`;
+  document.getElementById('detailModal').style.display = 'flex';
+  // run capacity check immediately after render
+  setTimeout(checkApprovalDateCapacity, 50);
+}
+
+function doApprove(id) {
+  const bookings = getBookings();
+  const b = bookings.find(x=>x.id===id);
+  if(!b) return;
+  const startDate = document.getElementById('approveStart').value;
+  const endDate   = document.getElementById('approveEnd').value;
+  if(!startDate || !endDate) { alert('Preencha as datas de início e conclusão.'); return; }
+  if(endDate < startDate) { alert('A data de conclusão deve ser igual ou posterior ao início.'); return; }
+
+  // Check for overloaded days and warn before confirming
+  const overloaded = [];
+  let d = new Date(startDate + 'T12:00:00');
+  const rangeEnd = new Date(endDate + 'T12:00:00');
+  while(d <= rangeEnd) {
+    const ds = d.toISOString().split('T')[0];
+    const load = bookings.filter(bk => {
+      if(bk.status === 'rejected' || bk.status === 'pending' || bk.id === id) return false;
+      const s = bk.startDate || bk.date;
+      const e = bk.endDate   || bk.pickup;
+      return ds >= s && ds <= e;
+    }).length;
+    if(load >= CFG.maxPerDay) overloaded.push(ds);
+    d.setDate(d.getDate() + 1);
+  }
+
+  if(overloaded.length > 0) {
+    const msg = `⚠️ ATENÇÃO: ${overloaded.length > 1 ? 'Os dias' : 'O dia'} ${overloaded.map(fmtDateShort).join(', ')} já ${overloaded.length > 1 ? 'estão' : 'está'} no limite de capacidade (${CFG.maxPerDay} agendamento(s)/dia).\n\nAo confirmar assim mesmo, o prazo de entrega ao cliente pode aumentar.\n\nDeseja confirmar mesmo assim?`;
+    if(!confirm(msg)) return;
+  }
+
+  b.status = 'approved';
+  b.finalPrice = parseFloat(document.getElementById('approvePrice').value) || b.price;
+  b.startDate = startDate;
+  b.endDate = endDate;
+  b.adminNotes = (document.getElementById('approveNotes')||{}).value || '';
+  b.approvedLocation = (document.getElementById('approveLocation')||{}).value || CFG.location;
+  b.approvedAt = new Date().toISOString();
+  setBookings(bookings);
+  closeModal('detailModal');
+  renderAdminBookings();
+  alert(`✅ Orçamento enviado!\nDatas ${fmtDateShort(startDate)} → ${fmtDateShort(endDate)} pré-reservadas no calendário.\nAguardando confirmação do cliente.`);
+}
+
+function rejectBooking(id) {
+  if(!confirm('Rejeitar este agendamento?')) return;
+  const bookings = getBookings();
+  const b = bookings.find(x=>x.id===id);
+  if(b) { b.status = 'rejected'; b.rejectedAt = new Date().toISOString(); }
+  setBookings(bookings);
+  renderAdminBookings();
+}
+
+function renderAdminStats() {
+  const bookings = getBookings();
+  const total = bookings.length;
+  const confirmed = bookings.filter(b=>b.status==='confirmed'||b.status==='approved').length;
+  const revenue = bookings.filter(b=>b.status==='confirmed'||b.status==='approved').reduce((s,b)=>s+(b.finalPrice||b.price),0);
+  const pending = bookings.filter(b=>b.status==='pending').length;
+
+  // Services breakdown
+  const svcCount = {};
+  bookings.filter(b=>b.status!=='rejected').forEach(b=>{
+    svcCount[b.service] = (svcCount[b.service]||0)+1;
+  });
+  const svcBars = Object.entries(svcCount).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{
+    const pct = total > 0 ? Math.round(v/total*100) : 0;
+    return `<div class="chart-bar-row">
+      <div class="chart-bar-label">${SVCS[k].icon} ${SVCS[k].name}</div>
+      <div class="chart-bar-wrap"><div class="chart-bar-fill" style="width:${pct}%"><span class="chart-bar-val">${v}</span></div></div>
+    </div>`;
+  }).join('') || '<p style="color:var(--muted);font-size:.85rem">Sem dados ainda.</p>';
+
+  // Return clients
+  const emailCount = {};
+  bookings.filter(b=>b.status!=='rejected').forEach(b=>{ emailCount[b.email]=(emailCount[b.email]||0)+1; });
+  const returning = Object.values(emailCount).filter(c=>c>1).length;
+  const unique = Object.keys(emailCount).length;
+
+  document.getElementById('adminContent').innerHTML = `
+    <h2>📊 Estatísticas do Negócio</h2>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="num">${total}</div><div class="lbl">Total de Solicitações</div></div>
+      <div class="stat-card"><div class="num">${confirmed}</div><div class="lbl">Aprovados / Confirmados</div></div>
+      <div class="stat-card"><div class="num">${pending}</div><div class="lbl">Aguardando Aprovação</div></div>
+      <div class="stat-card"><div class="num">${fmtMoney(revenue)}</div><div class="lbl">Receita Projetada</div></div>
+      <div class="stat-card"><div class="num">${unique}</div><div class="lbl">Clientes Únicos</div></div>
+      <div class="stat-card"><div class="num">${returning}</div><div class="lbl">Clientes Recorrentes</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;flex-wrap:wrap">
+      <div class="admin-panel">
+        <h3>Serviços Mais Vendidos</h3>
+        ${svcBars}
+      </div>
+      <div class="admin-panel">
+        <h3>Indicadores de Fidelização</h3>
+        <div class="summary-row" style="margin-bottom:.6rem"><strong>Taxa de retorno</strong><span style="font-weight:800;color:var(--blue)">${unique>0?Math.round(returning/unique*100):0}%</span></div>
+        <div class="summary-row" style="margin-bottom:.6rem"><strong>Ticket médio</strong><span style="font-weight:800;color:var(--blue)">${confirmed>0?fmtMoney(Math.round(revenue/confirmed)):'—'}</span></div>
+        <div class="summary-row"><strong>Taxa de aprovação</strong><span style="font-weight:800;color:var(--green)">${total>0?Math.round(confirmed/total*100):0}%</span></div>
+        <div style="margin-top:1.2rem;padding:1rem;background:var(--blue-lt);border-radius:8px;font-size:.78rem;color:var(--blue-dk)">
+          <strong>📈 Em breve:</strong> Gráficos de sazonalidade, market share por serviço, e análise de zona de fidelização por bairro.
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderAdminConfig() {
+  document.getElementById('adminContent').innerHTML = `
+    <h2>⚙️ Configurações</h2>
+    <div class="admin-panel" style="max-width:520px">
+      <h3>Dados da Empresa</h3>
+      <div class="form-row full"><div class="form-group"><label>WhatsApp</label><input id="cfgWa" value="${CFG.whatsapp}" placeholder="5511999999999"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Endereço / Local de entrega</label><input id="cfgLoc" value="${CFG.location}" placeholder="Rua X, nº Y — São Paulo, SP"/></div></div>
+      <div class="form-row"><div class="form-group"><label>Horário de entrega</label><input id="cfgDrop" value="${CFG.dropoffTime}" placeholder="08:00"/></div><div class="form-group"><label>Horário de retirada</label><input id="cfgPickup" value="${CFG.pickupTime}" placeholder="18:00"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Máx. agendamentos por dia</label><input id="cfgMaxDay" type="number" value="${CFG.maxPerDay}" min="1" max="10"/></div></div>
+      <button class="btn-primary" onclick="saveConfig()">Salvar Configurações</button>
+    </div>
+    <div class="admin-panel" style="max-width:520px">
+      <h3>Segurança</h3>
+      <div class="form-row full"><div class="form-group"><label>Nova senha de administrador</label><input id="cfgNewPw" type="password" placeholder="Mínimo 8 caracteres"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Confirmar senha</label><input id="cfgConfPw" type="password" placeholder="Repita a nova senha"/></div></div>
+      <button class="btn-primary" onclick="changePw()">Alterar Senha</button>
+    </div>
+    <div class="admin-panel" style="max-width:520px">
+      <h3>⚠️ Dados do Sistema</h3>
+      <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Exportar todos os agendamentos em formato JSON para backup ou integração futura com sistema de gestão.</p>
+      <button class="btn-ghost" onclick="exportData()">⬇️ Exportar Dados (JSON)</button>
+      &nbsp;<button class="btn-reject" style="font-size:.78rem" onclick="clearAllData()">🗑️ Limpar Todos os Dados</button>
+    </div>`;
+}
+
+function saveConfig() {
+  CFG.whatsapp    = document.getElementById('cfgWa').value.trim();
+  CFG.location    = document.getElementById('cfgLoc').value.trim();
+  CFG.dropoffTime = document.getElementById('cfgDrop').value.trim();
+  CFG.pickupTime  = document.getElementById('cfgPickup').value.trim();
+  CFG.maxPerDay   = parseInt(document.getElementById('cfgMaxDay').value) || 2;
+  updateWaLink();
+  if(_cfgRef) _cfgRef.update({
+    whatsapp: CFG.whatsapp, location: CFG.location,
+    dropoffTime: CFG.dropoffTime, pickupTime: CFG.pickupTime,
+    maxPerDay: CFG.maxPerDay
+  }).then(() => alert('Configurações salvas!')).catch(() => alert('Erro ao salvar. Verifique a conexão.'));
+  else alert('Configurações salvas localmente!');
+}
+function changePw() {
+  const np = document.getElementById('cfgNewPw').value;
+  const cp = document.getElementById('cfgConfPw').value;
+  if(np.length < 8) { alert('Senha deve ter pelo menos 8 caracteres.'); return; }
+  if(np !== cp) { alert('As senhas não coincidem.'); return; }
+  CFG.adminPassword = np;
+  if(_cfgRef) _cfgRef.update({ adminPassword: np });
+  alert('Senha alterada com sucesso!');
+  document.getElementById('cfgNewPw').value = '';
+  document.getElementById('cfgConfPw').value = '';
+}
+function exportData() {
+  const data = { bookings: getBookings(), blocked: getBlocked(), exportedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='spcarclean-dados.json'; a.click();
+}
+
+// ============================================================
+// LANDING PAGE RENDERS
+// ============================================================
+let currentSizeGlobal = 'pq';
+const CATS_DATA = [
+  { label:'Estética Interna', keys:['higienizacao-tecido','higienizacao-couro'] },
+  { label:'Estética Externa', keys:['lavagem-detalhada','polimento-geral','polimento-preto','polimento-cristal'] },
+  { label:'Serviços Especiais', keys:['lavagem-motor','polimento-vidros','reparo-trinca'] },
+];
+
+function setSize(size, btn) {
+  currentSizeGlobal = size;
+  document.querySelectorAll('#servicos .size-toggle button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderServices();
+}
+
+function renderServices() {
+  document.getElementById('catWrap').innerHTML = CATS_DATA.map(cat => `
+    <div>
+      <div class="cat-label">${cat.label}</div>
+      <div class="svcs-grid">
+        ${cat.keys.map(id => {
+          const s = SVCS[id];
+          const price = s[currentSizeGlobal];
+          return `<div class="svc-card" onclick="openBooking('${id}')">
+            <div class="svc-top">
+              <div class="svc-icon">${s.icon}</div>
+              <div class="svc-price-tag">
+                <div class="price-from">a partir de</div>
+                <div class="price-val"><span class="cur">R$</span>${price.toLocaleString('pt-BR')}</div>
+              </div>
+            </div>
+            <div class="svc-name">${s.name}</div>
+            <div class="svc-desc">${s.desc}</div>
+            <div class="svc-agendar">Agendar este serviço →</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function updateWaLink() {
+  const msg = encodeURIComponent('Olá! Gostaria de agendar um serviço na SP Car Clean.');
+  const url = `https://wa.me/${CFG.whatsapp}?text=${msg}`;
+  document.getElementById('waBtn').href = url;
+  const fmt = CFG.whatsapp.replace('55','').replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+  document.getElementById('phoneDisplay').textContent = fmt;
+}
+
+// ============================================================
+// FIREBASE INIT
+// ============================================================
+(function initFirebase() {
+  const firebaseConfig = {
+    apiKey: "AIzaSyDa4Mu7M7GXRtNa5YvnaKXw1rl7dM1mFYQ",
+    authDomain: "sp-car-clean.firebaseapp.com",
+    databaseURL: "https://sp-car-clean-default-rtdb.firebaseio.com",
+    projectId: "sp-car-clean",
+    storageBucket: "sp-car-clean.firebasestorage.app",
+    messagingSenderId: "726947312422",
+    appId: "1:726947312422:web:f6a0bcebc57f19b3f107e7"
+  };
+  try {
+    firebase.initializeApp(firebaseConfig);
+    _fbDB        = firebase.database();
+    _bookingsRef = _fbDB.ref('bookings');
+    _blockedRef  = _fbDB.ref('blocked');
+    _cfgRef      = _fbDB.ref('config');
+
+    // ── Agendamentos: escuta em tempo real ──
+    _bookingsRef.on('value', snap => {
+      const data = snap.val();
+      _bookings = data ? Object.values(data) : [];
+      // Atualiza painel admin se estiver aberto
+      if(isAdmin() && document.getElementById('adminPanel').style.display !== 'none') {
+        if(currentAdminTab === 'agendamentos')  renderAdminBookings();
+        else if(currentAdminTab === 'calendario')  renderAdminCalendar();
+        else if(currentAdminTab === 'estatisticas') renderAdminStats();
+      }
+    }, e => console.error('Firebase bookings:', e));
+
+    // ── Datas bloqueadas: escuta em tempo real ──
+    _blockedRef.on('value', snap => {
+      const data = snap.val();
+      _blocked = data ? Object.keys(data) : [];
+    }, e => console.error('Firebase blocked:', e));
+
+    // ── Configurações: carrega uma vez ──
+    _cfgRef.once('value', snap => {
+      const d = snap.val();
+      if(!d) return;
+      if(d.whatsapp)       CFG.whatsapp       = d.whatsapp;
+      if(d.location)       CFG.location       = d.location;
+      if(d.dropoffTime)    CFG.dropoffTime    = d.dropoffTime;
+      if(d.pickupTime)     CFG.pickupTime     = d.pickupTime;
+      if(d.maxPerDay)      CFG.maxPerDay      = d.maxPerDay;
+      if(d.adminPassword)  CFG.adminPassword  = d.adminPassword;
+      updateWaLink();
+    }, e => console.error('Firebase config:', e));
+
+    console.log('✅ Firebase conectado — sp-car-clean');
+  } catch(e) {
+    console.error('Firebase init error:', e);
+  }
+})();
+
+// ============================================================
+// CLEAR ALL DATA
+// ============================================================
+function clearAllData() {
+  if(!confirm('Limpar TODOS os dados? Agendamentos e bloqueios serão removidos do Firebase. Isso não pode ser desfeito!')) return;
+  Promise.all([
+    _bookingsRef ? _bookingsRef.remove() : Promise.resolve(),
+    _blockedRef  ? _blockedRef.remove()  : Promise.resolve(),
+  ]).then(() => {
+    localStorage.removeItem('spcc_admin');
+    _bookings = []; _blocked = [];
+    alert('Dados limpos com sucesso.');
+    doAdminLogout();
+  }).catch(e => { console.error(e); alert('Erro ao limpar dados: ' + e.message); });
+}
+
+// ============================================================
+// INIT
+// ============================================================
+renderServices();
+updateWaLink();
+
+// Auto-open admin if ?admin in URL
+if(window.location.search.includes('admin')) openAdminLogin();
+</script>
+</body>
+</html>
