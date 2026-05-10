@@ -168,9 +168,10 @@ footer p{font-size:.7rem;color:rgba(255,255,255,.3)}
 
 /* Service picker */
 .svc-pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
-.svc-pick-card{border:2px solid var(--border);border-radius:8px;padding:1rem;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:.8rem}
+.svc-pick-card{border:2px solid var(--border);border-radius:8px;padding:1rem;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:.8rem;position:relative}
 .svc-pick-card:hover{border-color:var(--blue-mid);background:var(--blue-lt)}
 .svc-pick-card.selected{border-color:var(--blue);background:var(--blue-lt)}
+.svc-pick-card.selected::after{content:'✓';position:absolute;top:.4rem;right:.5rem;width:18px;height:18px;background:var(--blue);color:#fff;border-radius:50%;font-size:.65rem;font-weight:900;display:flex;align-items:center;justify-content:center;line-height:18px;text-align:center}
 .svc-pick-icon{font-size:1.4rem;min-width:28px}
 .svc-pick-name{font-family:'Montserrat',sans-serif;font-size:.82rem;font-weight:700;color:var(--dark)}
 .svc-pick-meta{font-size:.7rem;color:var(--muted);margin-top:1px}
@@ -778,8 +779,8 @@ function calSelect(ds) {
 function updateStep2Footer() {
   const footer = document.getElementById('bookingFooter');
   if(booking.date) {
-    const svc = SVCS[booking.service];
-    const pickup = svc.daysExtra > 0 ? addDays(booking.date, svc.daysExtra) : booking.date;
+    const maxDays = bkMaxDays(booking);
+    const pickup = maxDays > 0 ? addDays(booking.date, maxDays) : booking.date;
     footer.innerHTML = `
       <div style="font-size:.8rem;color:var(--muted)">
         📅 Entrega: <strong>${fmtDateShort(booking.date)}</strong> às ${CFG.dropoffTime} &nbsp;|&nbsp;
@@ -828,13 +829,18 @@ window.calNext = function(cid, m, y, mode) {
 };
 
 // ============================================================
+// Helpers — suporte a agendamentos com 1 ou mais serviços
+function bkSvcs(b)      { return (b.services||[b.service]).filter(Boolean).map(id=>SVCS[id]).filter(Boolean); }
+function bkPrice(b,sz)  { return bkSvcs(b).reduce((s,sv)=>s+(sv[sz||b.carSize]||0),0); }
+function bkMaxDays(b)   { return Math.max(0,...bkSvcs(b).map(sv=>sv.daysExtra||0)); }
+function bkLabel(b)     { return bkSvcs(b).map(sv=>`${sv.icon} ${sv.name}`).join(' + '); }
+
 // BOOKING FLOW
 // ============================================================
-let booking = { service: null, carSize: 'pq', date: null, step: 1 };
+let booking = { services: [], carSize: 'pq', date: null, step: 1 };
 
 function openBooking(preService) {
-  booking = { service: preService || null, carSize: 'pq', date: null, step: preService ? 2 : 1 };
-  if(preService) { booking.carSize = currentSizeGlobal || 'pq'; }
+  booking = { services: preService ? [preService] : [], carSize: currentSizeGlobal||'pq', date: null, step: preService ? 2 : 1 };
   document.getElementById('bookingModal').style.display = 'flex';
   renderBookingStep();
 }
@@ -861,7 +867,7 @@ function renderBookingStep() {
     </div>`;
 
     const cards = Object.entries(SVCS).map(([id,s]) => `
-      <div class="svc-pick-card ${booking.service===id?'selected':''}" onclick="selectService('${id}')">
+      <div class="svc-pick-card ${booking.services.includes(id)?'selected':''}" onclick="selectService('${id}')">
         <div class="svc-pick-icon">${s.icon}</div>
         <div>
           <div class="svc-pick-name">${s.name}</div>
@@ -870,11 +876,19 @@ function renderBookingStep() {
         <div class="svc-pick-price">${fmtMoney(s[booking.carSize])}</div>
       </div>`).join('');
 
+    const total = booking.services.reduce((s,id)=>s+(SVCS[id]?SVCS[id][booking.carSize]:0),0);
+    const totalBar = booking.services.length
+      ? `<div style="background:var(--blue-lt);border:1px solid var(--blue-mid);border-radius:8px;padding:.6rem 1rem;margin-top:.8rem;display:flex;justify-content:space-between;align-items:center;font-family:Montserrat,sans-serif;font-size:.8rem">
+           <span style="color:var(--blue-dk);font-weight:600">${booking.services.length} serviço(s) selecionado(s)</span>
+           <span style="font-weight:900;color:var(--blue);font-size:.95rem">${fmtMoney(total)}</span>
+         </div>` : '';
+
     body.innerHTML = `<div class="step-indicator">${progress}</div>
-      <div class="step-label">Selecione o serviço</div>
+      <div class="step-label">Selecione os serviços <span style="font-weight:400;color:var(--muted);font-size:.8em">(pode escolher mais de um)</span></div>
       ${sizeToggle}
-      <div class="svc-pick-grid">${cards}</div>`;
-    footer.innerHTML = `<span></span><button class="btn-primary" onclick="nextStep()" ${!booking.service?'disabled style="opacity:.4;cursor:not-allowed"':''}>Próximo →</button>`;
+      <div class="svc-pick-grid">${cards}</div>
+      ${totalBar}`;
+    footer.innerHTML = `<span></span><button class="btn-primary" onclick="nextStep()" ${!booking.services.length?'disabled style="opacity:.4;cursor:not-allowed"':''}>Próximo →</button>`;
 
   } else if(booking.step === 2) {
     // Calendar
@@ -887,16 +901,17 @@ function renderBookingStep() {
 
   } else if(booking.step === 3) {
     // Customer form
-    const svc = SVCS[booking.service];
-    const price = fmtMoney(svc[booking.carSize]);
-    const pickup = svc.daysExtra > 0 ? addDays(booking.date, svc.daysExtra) : booking.date;
+    const totalPrice = bkPrice(booking, booking.carSize);
+    const maxDays3 = bkMaxDays(booking);
+    const pickup = maxDays3 > 0 ? addDays(booking.date, maxDays3) : booking.date;
+    const svcsRows = bkSvcs(booking).map(sv=>`<div class="summary-row"><strong>${sv.icon} ${sv.name}</strong><span>${fmtMoney(sv[booking.carSize])}</span></div>`).join('');
     body.innerHTML = `<div class="step-indicator">${progress}</div>
       <div class="booking-summary">
         <h4>Resumo do Agendamento</h4>
-        <div class="summary-row"><strong>Serviço</strong><span>${svc.icon} ${svc.name}</span></div>
-        <div class="summary-row"><strong>Entrega do veículo</strong><span>${fmtDate(booking.date)} às ${CFG.dropoffTime}</span></div>
+        ${svcsRows}
+        <div class="summary-row" style="border-top:1px solid var(--blue-mid);margin-top:.4rem;padding-top:.4rem"><strong>Entrega do veículo</strong><span>${fmtDate(booking.date)} às ${CFG.dropoffTime}</span></div>
         <div class="summary-row"><strong>Previsão de retirada</strong><span>${fmtDate(pickup)} às ${CFG.pickupTime}</span></div>
-        <div class="summary-row"><strong>Valor</strong><span style="font-weight:800;color:var(--blue)">${price}</span></div>
+        <div class="summary-row"><strong>Total estimado</strong><span style="font-weight:800;color:var(--blue)">${fmtMoney(totalPrice)}</span></div>
       </div>
       <div class="step-label">Seus dados para contato</div>
       <div class="form-row"><div class="form-group"><label>Nome completo</label><input id="fName" placeholder="João da Silva"/></div><div class="form-group"><label>Telefone / WhatsApp</label><input id="fPhone" placeholder="(11) 99999-9999"/></div></div>
@@ -933,7 +948,8 @@ function setBCarSize(size, btn) {
   renderBookingStep();
 }
 function selectService(id) {
-  booking.service = id;
+  const i = booking.services.indexOf(id);
+  if(i >= 0) booking.services.splice(i,1); else booking.services.push(id);
   renderBookingStep();
 }
 function nextStep() {
@@ -955,12 +971,12 @@ function submitBooking() {
   const obs = document.getElementById('fObs').value.trim();
   if(!name||!email||!phone||!car) { alert('Preencha todos os campos obrigatórios.'); return; }
 
-  const svc = SVCS[booking.service];
   const id = genId();
+  const _maxDaysSub = bkMaxDays(booking);
   const b = {
-    id, service: booking.service, carSize: booking.carSize,
-    date: booking.date, pickup: svc.daysExtra > 0 ? addDays(booking.date, svc.daysExtra) : booking.date,
-    price: svc[booking.carSize],
+    id, services: booking.services, service: booking.services[0], carSize: booking.carSize,
+    date: booking.date, pickup: _maxDaysSub > 0 ? addDays(booking.date, _maxDaysSub) : booking.date,
+    price: bkPrice(booking, booking.carSize),
     name, email, phone, car, plate, obs,
     status: 'pending',
     submittedAt: new Date().toISOString(),
@@ -976,7 +992,7 @@ function submitBooking() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       id, name, phone, car, plate,
-      service: svc.name, carSize: b.carSize,
+      service: bkLabel(b), carSize: b.carSize,
       date: fmtDate(booking.date),
       price: fmtMoney(b.price), obs
     })
@@ -1028,7 +1044,7 @@ function checkStatus() {
         <span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span>
       </div>
       <div style="padding:1rem">
-        <div class="summary-row"><strong>Serviço</strong><span>${svc.icon} ${svc.name}</span></div>
+        <div class="summary-row"><strong>Serviço(s)</strong><span>${bkLabel(b)}</span></div>
         <div class="summary-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
         ${b.startDate
           ? `<div class="summary-row"><strong>Entrega do veículo</strong><span>${fmtDate(b.startDate)} às ${CFG.dropoffTime}</span></div>`
@@ -1188,7 +1204,7 @@ function renderBookingsList(filter) {
           <span style="font-size:.7rem;font-weight:700;color:${statusColor[b.status]}">${statusMap[b.status]}</span>
         </div>
         <div class="booking-item-name">${b.name} — ${b.car}</div>
-        <div class="booking-item-detail">${svc.icon} ${svc.name} · 📅 ${b.status==='pending'?`<span style="color:var(--orange);font-weight:700">Solicitado: ${fmtDateShort(b.date)}</span>`:`Confirmado: ${fmtDateShort(b.startDate||b.date)}`} · ${fmtMoney(b.finalPrice||b.price)}</div>
+        <div class="booking-item-detail">${bkLabel(b)} · 📅 ${b.status==='pending'?`<span style="color:var(--orange);font-weight:700">Solicitado: ${fmtDateShort(b.date)}</span>`:`Confirmado: ${fmtDateShort(b.startDate||b.date)}`} · ${fmtMoney(b.finalPrice||b.price)}</div>
       </div>
       <div class="booking-item-actions">
         <button class="btn-view" onclick="viewBooking('${b.id}')">Ver</button>
@@ -1233,7 +1249,7 @@ function viewBooking(id) {
       <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">🚗 Veículo & Serviço</div>
       <div class="summary-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
       <div class="summary-row"><strong>Porte</strong><span>${b.carSize==='pq'?'Carro Pequeno':'Carro Grande'}</span></div>
-      <div class="summary-row"><strong>Serviço</strong><span>${svc.icon} ${svc.name}</span></div>
+      <div class="summary-row"><strong>Serviço(s)</strong><span>${bkLabel(b)}</span></div>
       <div class="summary-row"><strong>📅 Data solicitada</strong><span style="font-weight:700;color:var(--orange)">${fmtDate(b.date)}</span></div>
       <div class="summary-row"><strong>Solicitação recebida</strong><span>${new Date(b.submittedAt).toLocaleString('pt-BR')}</span></div>
       <div class="summary-row"><strong>Valor estimado</strong><span>${fmtMoney(b.price)}</span></div>
@@ -1338,7 +1354,7 @@ function openApprove(id) {
       <div class="confirm-row"><strong>Cliente</strong><span>${b.name}</span></div>
       <div class="confirm-row"><strong>WhatsApp</strong><span>${b.phone}</span></div>
       <div class="confirm-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
-      <div class="confirm-row"><strong>Serviço</strong><span>${svc.icon} ${svc.name} · ${b.carSize==='pq'?'Pequeno':'Grande'}</span></div>
+      <div class="confirm-row"><strong>Serviço(s)</strong><span>${bkLabel(b)} · ${b.carSize==='pq'?'Pequeno':'Grande'}</span></div>
       <div class="confirm-price" style="font-size:1.1rem;opacity:.7">Estimativa: ${fmtMoney(b.price)}</div>
     </div>
 
@@ -1428,14 +1444,13 @@ function doApprove(id) {
   renderAdminBookings();
 
   // Abrir WhatsApp do cliente com mensagem de orçamento
-  const _svcApprove = SVCS[b.service];
   const _rawPhone = b.phone.replace(/\D/g,'');
   const _waPhone = _rawPhone.length <= 11 ? '55'+_rawPhone : _rawPhone;
   const _waMsg = encodeURIComponent(
     `Olá *${b.name}*! 👋\n\n` +
     `Seu orçamento na *SP Car Clean* está pronto:\n\n` +
     `📋 *Código:* ${b.id}\n` +
-    `🔧 *Serviço:* ${_svcApprove.name}\n` +
+    `🔧 *Serviço(s):* ${bkLabel(b)}\n` +
     `🚗 *Veículo:* ${b.car}${b.plate ? ' | ' + b.plate : ''}\n` +
     `📅 *Entrega:* ${fmtDate(startDate)} às ${CFG.dropoffTime}\n` +
     `🏁 *Retirada:* ${fmtDate(endDate)} às ${CFG.pickupTime}\n` +
@@ -1521,7 +1536,7 @@ function renderAdminStats() {
   // Services breakdown
   const svcCount = {};
   bookings.filter(b=>b.status!=='rejected').forEach(b=>{
-    svcCount[b.service] = (svcCount[b.service]||0)+1;
+    (b.services||[b.service]).filter(Boolean).forEach(id=>{ svcCount[id]=(svcCount[id]||0)+1; });
   });
   const svcBars = Object.entries(svcCount).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{
     const pct = total > 0 ? Math.round(v/total*100) : 0;
