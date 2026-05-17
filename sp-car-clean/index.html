@@ -371,6 +371,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 .ripple{position:absolute;border-radius:50%;transform:scale(0);animation:rippleAnim .55s linear;background:rgba(255,255,255,.25);pointer-events:none}
 @keyframes rippleAnim{to{transform:scale(4);opacity:0}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -1199,7 +1200,21 @@ function checkStatus() {
 function customerConfirm(id) {
   const bookings = getBookings();
   const b = bookings.find(x=>x.id===id);
-  if(b) { b.status = 'confirmed'; setBookings(bookings); checkStatus(); }
+  if(!b) return;
+  b.status = 'confirmed';
+  setBookings(bookings);
+  sendEmail('template_confirm', {
+    to_email: b.email, to_name: b.name,
+    booking_id: b.id,
+    service: SVCS[b.service]?.name || b.service,
+    date_dropoff: fmtDate(b.startDate || b.date),
+    time_dropoff: CFG.dropoffTime,
+    date_pickup:  fmtDate(b.endDate   || b.date),
+    time_pickup:  CFG.pickupTime,
+    price:        fmtMoney(b.finalPrice || b.price),
+    location:     b.approvedLocation || CFG.location,
+  });
+  checkStatus();
 }
 
 function confirmClientCancel(id) {
@@ -1241,6 +1256,12 @@ function submitClientCancel(id, refund) {
       refund
     })
   }).catch(() => {});
+  sendEmail('template_update', {
+    to_email: b.email, to_name: b.name,
+    booking_id: b.id,
+    titulo:   '🚫 Cancelamento do seu agendamento',
+    mensagem: `Seu agendamento ${b.id} (${SVCS[b.service]?.name || b.service}) marcado para ${fmtDateShort(b.startDate || b.date)} foi cancelado.\n\n${refund ? 'Seu valor de reserva (50%) será reembolsado em breve.' : 'Conforme nossa política, o valor de reserva não será reembolsado (cancelamento fora do prazo de 1 dia útil).'}`,
+  });
   document.getElementById('statusResult').innerHTML = `
     <div style="background:var(--red-lt);border:1px solid #f5c6c3;border-radius:10px;padding:1rem;font-size:.85rem;color:var(--red);text-align:center;line-height:1.6">
       🚫 <strong>Agendamento cancelado.</strong><br/>
@@ -1284,6 +1305,12 @@ function submitReschedule() {
     })
   }).catch(() => {});
 
+  sendEmail('template_update', {
+    to_email: b.email, to_name: b.name,
+    booking_id: b.id,
+    titulo:   '📅 Solicitação de reagendamento recebida',
+    mensagem: `Recebemos sua solicitação de reagendamento para o agendamento ${b.id}.\n\nData atual: ${fmtDateShort(b.startDate || b.date)}\nNova data solicitada: ${fmtDateShort(newDate)}${note ? `\nMotivo: ${note}` : ''}\n\nO estabelecimento analisará e entrará em contato.`,
+  });
   closeModal('rescheduleModal');
   alert('Solicitação enviada! O estabelecimento analisará e entrará em contato.');
 }
@@ -2126,6 +2153,7 @@ function updateWaLink() {
     }, e => console.error('Firebase config:', e));
 
     console.log('✅ Firebase conectado — sp-car-clean');
+
   } catch(e) {
     console.error('Firebase init error:', e);
   }
@@ -2144,6 +2172,21 @@ function clearAllData() {
     alert('Dados limpos com sucesso.');
     doAdminLogout();
   }).catch(e => { console.error(e); alert('Erro ao limpar dados: ' + e.message); });
+}
+
+// ============================================================
+// EMAILJS
+// ============================================================
+const EMAILJS_SERVICE = '%%EMAILJS_SERVICE_ID%%';
+(function() {
+  if(typeof emailjs === 'undefined') return;
+  emailjs.init({ publicKey: '%%EMAILJS_PUBLIC_KEY%%' });
+})();
+
+function sendEmail(templateId, params) {
+  if(typeof emailjs === 'undefined' || EMAILJS_SERVICE.startsWith('%%')) return;
+  emailjs.send(EMAILJS_SERVICE, templateId, params)
+    .catch(e => console.warn('EmailJS:', e));
 }
 
 // ============================================================

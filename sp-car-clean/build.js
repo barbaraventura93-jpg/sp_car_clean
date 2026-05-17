@@ -1,7 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const key = process.env.FIREBASE_API_KEY;
+const key           = process.env.FIREBASE_API_KEY;
+const ejsService    = process.env.EMAILJS_SERVICE_ID  || '';
+const ejsPublicKey  = process.env.EMAILJS_PUBLIC_KEY  || '';
+
 if (!key) {
   console.error('Erro: variável FIREBASE_API_KEY não configurada no Netlify.');
   process.exit(1);
@@ -10,7 +13,9 @@ if (!key) {
 fs.mkdirSync('dist', { recursive: true });
 
 let html = fs.readFileSync('index.html', 'utf8');
-html = html.replace('%%FIREBASE_API_KEY%%', key);
+html = html.replace('%%FIREBASE_API_KEY%%',   key);
+html = html.replace('%%EMAILJS_SERVICE_ID%%', ejsService);
+html = html.replace('%%EMAILJS_PUBLIC_KEY%%', ejsPublicKey);
 fs.writeFileSync(path.join('dist', 'index.html'), html);
 
 function copyDir(src, dest) {
