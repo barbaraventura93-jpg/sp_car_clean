@@ -3,11 +3,11 @@ exports.handler = async (event) => {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
-  const instanceId = process.env.ZAPI_INSTANCE_ID;
-  const token      = process.env.ZAPI_TOKEN;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId   = process.env.TELEGRAM_CHAT_ID;
 
-  if (!instanceId || !token) {
-    return { statusCode: 500, body: JSON.stringify({ ok: false, error: 'ZAPI_INSTANCE_ID ou ZAPI_TOKEN não configurado' }) };
+  if (!botToken || !chatId) {
+    return { statusCode: 500, body: JSON.stringify({ ok: false, error: 'TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID não configurado' }) };
   }
 
   let data;
@@ -16,30 +16,30 @@ exports.handler = async (event) => {
 
   const { id, name, phone, car, plate, service, carSize, date, price, obs } = data;
 
-  const message =
+  const text =
     `🔔 *Nova Solicitação — SP Car Clean*\n\n` +
     `📋 *Código:* ${id}\n` +
     `👤 *Cliente:* ${name}\n` +
     `📱 *WhatsApp:* ${phone}\n` +
     `🚗 *Veículo:* ${car}${plate ? ' | ' + plate : ''}\n` +
-    `🔧 *Serviço:* ${service} (${carSize === 'pq' ? 'Pequeno' : 'Grande'})\n` +
+    `🔧 *Serviço:* ${service} \\(${carSize === 'pq' ? 'Pequeno' : 'Grande'}\\)\n` +
     `📅 *Data solicitada:* ${date}\n` +
     `💰 *Valor estimado:* ${price}` +
     (obs ? `\n📝 *Obs:* ${obs}` : '');
 
-  const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
   try {
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: '5511926697474', message })
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
     });
     const body = await resp.json();
-    if (!resp.ok) {
+    if (!body.ok) {
       return { statusCode: 502, body: JSON.stringify({ ok: false, error: body }) };
     }
-    return { statusCode: 200, body: JSON.stringify({ ok: true, zapi: body }) };
+    return { statusCode: 200, body: JSON.stringify({ ok: true, telegram: body }) };
   } catch (err) {
     return { statusCode: 500, body: JSON.stringify({ ok: false, error: err.message }) };
   }

@@ -373,6 +373,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 </head>
 <body>
 
@@ -583,11 +584,9 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <button class="modal-close" onclick="closeModal('adminLoginModal')">✕</button>
     </div>
     <div class="modal-body">
-      <div class="form-row full"><div class="form-group"><label>Usuário</label><input id="adminUser" value="admin" readonly style="background:var(--off)"/></div></div>
       <div class="form-row full"><div class="form-group"><label>Senha</label><input id="adminPass" type="password" placeholder="Digite a senha" onkeydown="if(event.key==='Enter')doAdminLogin()"/></div></div>
       <div id="loginError" style="color:var(--red);font-size:.82rem;margin-bottom:.8rem;display:none">Senha incorreta. Tente novamente.</div>
       <button class="btn-primary" onclick="doAdminLogin()" style="width:100%;justify-content:center">Entrar no Painel</button>
-      <p style="font-size:.72rem;color:var(--muted);margin-top:1rem;text-align:center">Senha padrão: <strong>SpCarClean@2025</strong><br/>Altere após o primeiro acesso.</p>
     </div>
   </div>
 </div>
@@ -645,7 +644,7 @@ const CFG = {
   location: 'A definir — São Paulo, SP',
   dropoffTime: '08:00',
   pickupTime: '18:00',
-  adminPassword: 'SpCarClean@2025',
+  adminEmail: 'barbaraventura93@gmail.com',
   maxPerDay: 2,
 };
 
@@ -672,10 +671,9 @@ const CATS_ORDER = ['Estética Interna','Estética Externa','Serviços Especiais
 let _bookings = [];
 let _blocked  = [];
 let _fbDB, _bookingsRef, _blockedRef, _cfgRef;
+let _authUser = null;
 
-// Sessão do admin continua local (não precisa ser compartilhada)
-const isAdmin  = () => { try { return JSON.parse(localStorage.getItem('spcc_admin')) ?? false; } catch { return false; } };
-const setAdmin = v => localStorage.setItem('spcc_admin', JSON.stringify(v));
+const isAdmin = () => _authUser != null;
 
 function getBookings() { return _bookings; }
 function getBlocked()  { return _blocked; }
@@ -1003,7 +1001,7 @@ function renderBookingStep() {
         <p style="color:var(--muted);margin-top:.5rem;font-size:.9rem">Guarde seu código de reserva:</p>
         <div class="booking-id-badge" id="newBookingId"></div>
         <div style="background:var(--green-lt);border:1px solid #a8e6c1;border-radius:8px;padding:.9rem 1rem;margin-top:.8rem;font-size:.83rem;color:#1a6b3a;line-height:1.5">
-          📱 <strong>Estabelecimento notificado via WhatsApp!</strong>
+          📱 <strong>Estabelecimento notificado via Telegram!</strong>
         </div>
         <div class="pending-note" style="margin-top:.7rem">
           ⏳ <strong>Aguardando aprovação.</strong><br/>
@@ -1157,19 +1155,22 @@ function openAdminLogin() {
   setTimeout(()=>document.getElementById('adminPass').focus(), 100);
 }
 function doAdminLogin() {
-  const pw = document.getElementById('adminPass').value;
-  if(pw === CFG.adminPassword) {
-    setAdmin(true);
-    closeModal('adminLoginModal');
-    openAdminPanel();
-  } else {
-    document.getElementById('loginError').style.display = 'block';
-    document.getElementById('adminPass').value = '';
-    document.getElementById('adminPass').focus();
-  }
+  const pw    = document.getElementById('adminPass').value;
+  const errEl = document.getElementById('loginError');
+  errEl.style.display = 'none';
+  firebase.auth().signInWithEmailAndPassword(CFG.adminEmail, pw)
+    .then(() => {
+      closeModal('adminLoginModal');
+      openAdminPanel();
+    })
+    .catch(() => {
+      errEl.style.display = 'block';
+      document.getElementById('adminPass').value = '';
+      document.getElementById('adminPass').focus();
+    });
 }
 function doAdminLogout() {
-  setAdmin(false);
+  firebase.auth().signOut();
   document.getElementById('adminPanel').style.display = 'none';
 }
 function openAdminPanel() {
@@ -1692,15 +1693,19 @@ function saveConfig() {
   else alert('Configurações salvas localmente!');
 }
 function changePw() {
-  const np = document.getElementById('cfgNewPw').value;
-  const cp = document.getElementById('cfgConfPw').value;
+  const np   = document.getElementById('cfgNewPw').value;
+  const cp   = document.getElementById('cfgConfPw').value;
   if(np.length < 8) { alert('Senha deve ter pelo menos 8 caracteres.'); return; }
   if(np !== cp) { alert('As senhas não coincidem.'); return; }
-  CFG.adminPassword = np;
-  if(_cfgRef) _cfgRef.update({ adminPassword: np });
-  alert('Senha alterada com sucesso!');
-  document.getElementById('cfgNewPw').value = '';
-  document.getElementById('cfgConfPw').value = '';
+  const user = firebase.auth().currentUser;
+  if(!user) { alert('Sessão expirada. Faça login novamente.'); return; }
+  user.updatePassword(np)
+    .then(() => {
+      alert('Senha alterada com sucesso!');
+      document.getElementById('cfgNewPw').value = '';
+      document.getElementById('cfgConfPw').value = '';
+    })
+    .catch(e => alert('Erro ao alterar senha: ' + e.message));
 }
 function exportData() {
   const data = { bookings: getBookings(), blocked: getBlocked(), exportedAt: new Date().toISOString() };
@@ -1879,6 +1884,13 @@ function updateWaLink() {
     _blockedRef  = _fbDB.ref('blocked');
     _cfgRef      = _fbDB.ref('config');
 
+    firebase.auth().onAuthStateChanged(user => {
+      _authUser = user;
+      if(!user && document.getElementById('adminPanel').style.display !== 'none') {
+        document.getElementById('adminPanel').style.display = 'none';
+      }
+    });
+
     // ── Agendamentos: escuta em tempo real ──
     _bookingsRef.on('value', snap => {
       const data = snap.val();
@@ -1901,12 +1913,11 @@ function updateWaLink() {
     _cfgRef.once('value', snap => {
       const d = snap.val();
       if(!d) return;
-      if(d.whatsapp)       CFG.whatsapp       = d.whatsapp.replace(/^55/,'');
-      if(d.location)       CFG.location       = d.location;
-      if(d.dropoffTime)    CFG.dropoffTime    = d.dropoffTime;
-      if(d.pickupTime)     CFG.pickupTime     = d.pickupTime;
-      if(d.maxPerDay)      CFG.maxPerDay      = d.maxPerDay;
-      if(d.adminPassword)  CFG.adminPassword  = d.adminPassword;
+      if(d.whatsapp)    CFG.whatsapp    = d.whatsapp.replace(/^55/,'');
+      if(d.location)    CFG.location    = d.location;
+      if(d.dropoffTime) CFG.dropoffTime = d.dropoffTime;
+      if(d.pickupTime)  CFG.pickupTime  = d.pickupTime;
+      if(d.maxPerDay)   CFG.maxPerDay   = d.maxPerDay;
       updateWaLink();
     }, e => console.error('Firebase config:', e));
 
@@ -1925,7 +1936,6 @@ function clearAllData() {
     _bookingsRef ? _bookingsRef.remove() : Promise.resolve(),
     _blockedRef  ? _blockedRef.remove()  : Promise.resolve(),
   ]).then(() => {
-    localStorage.removeItem('spcc_admin');
     _bookings = []; _blocked = [];
     alert('Dados limpos com sucesso.');
     doAdminLogout();
