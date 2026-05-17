@@ -16,6 +16,8 @@ exports.handler = async (event) => {
 
   const { id, name, phone, car, plate, service, carSize, date, price, obs } = data;
 
+  const portalUrl = `${process.env.URL || 'https://sp-car-clean.web.app'}/?admin`;
+
   const text =
     `🔔 *Nova Solicitação — SP Car Clean*\n\n` +
     `📋 *Código:* ${id}\n` +
@@ -25,7 +27,8 @@ exports.handler = async (event) => {
     `🔧 *Serviço:* ${service} \\(${carSize === 'pq' ? 'Pequeno' : 'Grande'}\\)\n` +
     `📅 *Data solicitada:* ${date}\n` +
     `💰 *Valor estimado:* ${price}` +
-    (obs ? `\n📝 *Obs:* ${obs}` : '');
+    (obs ? `\n📝 *Obs:* ${obs}` : '') +
+    `\n\n🔗 [Abrir portal admin](${portalUrl})`;
 
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
