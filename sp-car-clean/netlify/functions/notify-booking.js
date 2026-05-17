@@ -39,6 +39,20 @@ exports.handler = async (event) => {
       `🗓️ *Nova data confirmada:* ${newDate}\n\n` +
       `🔗 [Abrir portal admin](${portalUrl})`;
 
+  } else if (data.type === 'client-cancel') {
+    const { id, name, phone, service, date, refund } = data;
+    text =
+      `🚫 *Cancelamento pelo Cliente — SP Car Clean*\n\n` +
+      `📋 *Código:* ${id}\n` +
+      `👤 *Cliente:* ${name}\n` +
+      `📱 *WhatsApp:* ${phone}\n` +
+      `🔧 *Serviço:* ${service}\n` +
+      `📅 *Data do agendamento:* ${date}\n` +
+      (refund
+        ? `💰 *Reembolso:* ✅ Aplicável \\(cancelamento dentro do prazo\\)`
+        : `💰 *Reembolso:* ❌ Não aplicável \\(fora do prazo de 1 dia útil\\)`) +
+      `\n\n🔗 [Abrir portal admin](${portalUrl})`;
+
   } else if (data.type === 'reschedule-rejected') {
     const { id, name, phone } = data;
     text =

@@ -731,6 +731,14 @@ function toDateStr(y, m, d) {
   return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 }
 function todayStr() { return new Date().toISOString().split('T')[0]; }
+function businessDaysUntil(dateStr) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const target = new Date(dateStr + 'T00:00:00');
+  let count = 0, d = new Date(today);
+  while(d < target) { if(d.getDay()!==0 && d.getDay()!==6) count++; d.setDate(d.getDate()+1); }
+  return count;
+}
+function cancellationHasRefund(dateStr) { return businessDaysUntil(dateStr) > 1; }
 function genId() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let r = 'SPC-';
@@ -1006,7 +1014,8 @@ function renderBookingStep() {
       <div class="form-row full"><div class="form-group"><label>E-mail</label><input id="fEmail" type="email" placeholder="joao@email.com"/></div></div>
       <div class="form-row"><div class="form-group"><label>Veículo (modelo/ano)</label><input id="fCar" placeholder="Honda Civic 2020"/></div><div class="form-group"><label>Placa</label><input id="fPlate" placeholder="ABC-1234"/></div></div>
       <div class="form-row full"><div class="form-group"><label>Observações (opcional)</label><textarea id="fObs" placeholder="Informe alguma particularidade do veículo, manchas específicas, etc."></textarea></div></div>
-      <p style="font-size:.75rem;color:var(--muted)">Ao enviar você concorda que seus dados serão usados para finalizar o agendamento.</p>`;
+      <p style="font-size:.75rem;color:var(--muted)">Ao enviar você concorda que seus dados serão usados para finalizar o agendamento.</p>
+      <p style="font-size:.74rem;color:var(--orange);margin-top:.4rem;line-height:1.5">⚠️ <strong>Política de cancelamento:</strong> É cobrado 50% do valor do serviço como reserva de horário. Cancelamentos com mais de 1 dia útil de antecedência têm reembolso integral desse valor. Dentro deste prazo, o valor de reserva não é reembolsado.</p>`;
     footer.innerHTML = `<button class="btn-ghost" onclick="prevStep()">← Voltar</button><button class="btn-primary" onclick="submitBooking()">Enviar Solicitação ✓</button>`;
 
   } else if(booking.step === 4) {
@@ -1023,6 +1032,9 @@ function renderBookingStep() {
         <div class="pending-note" style="margin-top:.7rem">
           ⏳ <strong>Aguardando aprovação.</strong><br/>
           O administrador irá analisar sua solicitação e enviar o orçamento. Consulte o status com o código acima.
+        </div>
+        <div style="margin-top:.6rem;font-size:.73rem;color:var(--muted);line-height:1.5;text-align:left;background:var(--off);border-radius:8px;padding:.7rem .9rem">
+          📋 <strong>Política de cancelamento:</strong> Cancelamentos com mais de 1 dia útil de antecedência têm reembolso do valor de reserva (50%). Dentro desse prazo, o valor não é reembolsado.
         </div>
       </div>`;
     footer.innerHTML = `<button class="btn-ghost" onclick="closeBooking()">Fechar</button><button class="btn-primary" onclick="closeBooking();openStatusCheck()">Consultar Status</button>`;
@@ -1109,8 +1121,8 @@ function checkStatus() {
     return;
   }
   const svc = SVCS[b.service];
-  const statusMap = { pending:'Aguardando análise', approved:'Orçamento enviado — Confirme abaixo', rejected:'Não aprovado', confirmed:'Confirmado ✓' };
-  const statusClass = { pending:'status-pending', approved:'status-approved', rejected:'status-rejected', confirmed:'status-confirmed' };
+  const statusMap = { pending:'Aguardando análise', approved:'Orçamento enviado — Confirme abaixo', rejected:'Não aprovado', confirmed:'Confirmado ✓', cancelled:'Cancelado' };
+  const statusClass = { pending:'status-pending', approved:'status-approved', rejected:'status-rejected', confirmed:'status-confirmed', cancelled:'status-cancelled' };
 
   const displayPrice = (b.status==='approved'||b.status==='confirmed') && b.finalPrice ? b.finalPrice : b.price;
   const priceChanged = b.finalPrice && b.finalPrice !== b.price;
@@ -1125,13 +1137,28 @@ function checkStatus() {
       <button class="btn-primary" onclick="customerConfirm('${b.id}')" style="width:100%;justify-content:center;margin-top:.8rem">✓ Confirmar Agendamento</button>`;
   }
 
+  const _canAct = ['pending','approved','confirmed'].includes(b.status);
   let rescheduleBtn = '';
-  if(['pending','approved','confirmed'].includes(b.status)) {
+  if(_canAct) {
     if(b.rescheduleRequest) {
       rescheduleBtn = `<div style="background:var(--orange-lt);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:.8rem 1rem;margin-top:.8rem;font-size:.83rem;color:var(--orange)">⏳ <strong>Reagendamento solicitado</strong> para ${fmtDate(b.rescheduleRequest.date)} — aguardando análise do estabelecimento.</div>`;
     } else {
       rescheduleBtn = `<button class="btn-ghost" onclick="openReschedule('${b.id}')" style="width:100%;justify-content:center;margin-top:.6rem">📅 Solicitar Reagendamento</button>`;
     }
+  }
+
+  let cancelBtn = '';
+  if(_canAct) {
+    const _appointDate = b.startDate || b.date;
+    const _refund = cancellationHasRefund(_appointDate);
+    const _refundLabel = _refund
+      ? `✅ Cancelamento dentro do prazo — <strong>reembolso de 50%</strong> aplicável.`
+      : `⚠️ Cancelamento fora do prazo — <strong>valor de reserva não reembolsável</strong>.`;
+    cancelBtn = `
+      <div style="border-top:1px solid var(--border);margin-top:1rem;padding-top:.8rem">
+        <p style="font-size:.75rem;color:var(--muted);margin-bottom:.4rem">${_refundLabel}</p>
+        <button onclick="confirmClientCancel('${b.id}')" style="width:100%;justify-content:center;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;padding:.45rem;font-family:Montserrat,sans-serif;font-size:.75rem;font-weight:700;cursor:pointer;letter-spacing:.04em">🚫 Cancelar Agendamento</button>
+      </div>`;
   }
 
   res.innerHTML = `
@@ -1165,13 +1192,60 @@ function checkStatus() {
       </div>
     </div>
     ${confirmBtn}
-    ${rescheduleBtn}`;
+    ${rescheduleBtn}
+    ${cancelBtn}`;
 }
 
 function customerConfirm(id) {
   const bookings = getBookings();
   const b = bookings.find(x=>x.id===id);
   if(b) { b.status = 'confirmed'; setBookings(bookings); checkStatus(); }
+}
+
+function confirmClientCancel(id) {
+  const b = getBookings().find(x => x.id === id);
+  if(!b) return;
+  const appointDate = b.startDate || b.date;
+  const refund = cancellationHasRefund(appointDate);
+  const refundBox = refund
+    ? `<div style="background:var(--green-lt);border:1px solid #a8e6c1;border-radius:8px;padding:.9rem;font-size:.84rem;color:#1a6b3a;line-height:1.5">✅ <strong>Cancelamento com reembolso</strong><br/>Você está cancelando com mais de 1 dia útil de antecedência. O valor de reserva (50%) será reembolsado.</div>`
+    : `<div style="background:var(--red-lt);border:1px solid #f5c6c3;border-radius:8px;padding:.9rem;font-size:.84rem;color:var(--red);line-height:1.5">⚠️ <strong>Cancelamento sem reembolso</strong><br/>O cancelamento está sendo feito dentro de 1 dia útil do agendamento. Conforme nossa política, o valor de reserva (50%) não será reembolsado.</div>`;
+  document.getElementById('statusResult').innerHTML = `
+    <div style="background:var(--off);border-radius:10px;padding:.9rem;margin-bottom:.8rem;font-size:.85rem">
+      <strong>Confirmar cancelamento:</strong><br/>${bkLabel(b)} — ${fmtDate(appointDate)}
+    </div>
+    ${refundBox}
+    <div style="display:flex;gap:.6rem;margin-top:.8rem">
+      <button class="btn-ghost" onclick="checkStatus()" style="flex:1;justify-content:center">← Voltar</button>
+      <button onclick="submitClientCancel('${id}',${refund})" style="flex:1;justify-content:center;background:var(--red);color:#fff;border:none;border-radius:6px;padding:.5rem;font-family:Montserrat,sans-serif;font-size:.75rem;font-weight:700;cursor:pointer;letter-spacing:.04em">Confirmar cancelamento</button>
+    </div>`;
+}
+
+function submitClientCancel(id, refund) {
+  const bookings = getBookings();
+  const b = bookings.find(x => x.id === id);
+  if(!b) return;
+  b.status = 'cancelled';
+  b.cancelledAt = new Date().toISOString();
+  b.cancelledBy = 'client';
+  b.refundApplies = refund;
+  setBookings(bookings);
+  fetch('/.netlify/functions/notify-booking', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'client-cancel',
+      id: b.id, name: b.name, phone: b.phone,
+      service: (SVCS[b.service]?.name || b.service),
+      date: fmtDateShort(b.startDate || b.date),
+      refund
+    })
+  }).catch(() => {});
+  document.getElementById('statusResult').innerHTML = `
+    <div style="background:var(--red-lt);border:1px solid #f5c6c3;border-radius:10px;padding:1rem;font-size:.85rem;color:var(--red);text-align:center;line-height:1.6">
+      🚫 <strong>Agendamento cancelado.</strong><br/>
+      ${refund ? 'O reembolso de 50% do valor de reserva será processado em breve.' : 'Conforme nossa política, o valor de reserva não será reembolsado.'}
+    </div>`;
 }
 
 let _rescheduleId = null;
@@ -1402,6 +1476,11 @@ function viewBooking(id) {
     </div>` : ''}
 
     ${b.adminNotes ? `<div style="background:var(--off);border-radius:8px;padding:.8rem;font-size:.82rem;margin-bottom:1rem"><strong>📝 Notas do admin:</strong> ${b.adminNotes}</div>` : ''}
+    ${b.cancelledBy === 'client' ? `
+    <div style="background:var(--red-lt);border:1px solid #f5c6c3;border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.82rem;color:var(--red)">
+      🚫 <strong>Cancelado pelo cliente</strong> em ${new Date(b.cancelledAt).toLocaleString('pt-BR')}<br/>
+      Reembolso: ${b.refundApplies ? '✅ Aplicável (cancelamento dentro do prazo)' : '❌ Não aplicável (fora do prazo de 1 dia útil)'}
+    </div>` : ''}
 
     ${b.rescheduleRequest ? `
     <div style="background:var(--orange-lt);border:2px solid var(--orange);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
