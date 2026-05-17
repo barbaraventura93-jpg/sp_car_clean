@@ -1731,6 +1731,12 @@ function approveReschedule(id) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: 'reschedule-approved', id: b.id, name: b.name, phone: b.phone, newDate: fmtDateShort(newDate) })
   }).catch(() => {});
+  sendEmail('template_update', {
+    to_email: b.email, to_name: b.name,
+    booking_id: b.id,
+    titulo:   '✅ Reagendamento aprovado — SP Car Clean',
+    mensagem: `Seu pedido de reagendamento para o agendamento ${b.id} foi aprovado!\n\nNova data confirmada: ${fmtDate(newDate)}\n\nAguardamos você!`,
+  });
   closeModal('detailModal');
   renderAdminBookings();
   alert('Reagendamento aprovado!');
@@ -1747,6 +1753,12 @@ function rejectReschedule(id) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: 'reschedule-rejected', id: b.id, name: b.name, phone: b.phone })
   }).catch(() => {});
+  sendEmail('template_update', {
+    to_email: b.email, to_name: b.name,
+    booking_id: b.id,
+    titulo:   '❌ Reagendamento não aprovado — SP Car Clean',
+    mensagem: `Seu pedido de reagendamento para o agendamento ${b.id} não pôde ser aprovado.\n\nA data original será mantida. Em caso de dúvidas, entre em contato pelo WhatsApp.`,
+  });
   viewBooking(id);
 }
 
@@ -1763,8 +1775,16 @@ function cancelBooking(id) {
   if(!confirm('Cancelar este agendamento? O cliente será removido do calendário.')) return;
   const bookings = getBookings();
   const b = bookings.find(x=>x.id===id);
-  if(b) { b.status = 'cancelled'; b.cancelledAt = new Date().toISOString(); }
+  if(!b) return;
+  b.status = 'cancelled';
+  b.cancelledAt = new Date().toISOString();
   setBookings(bookings);
+  sendEmail('template_update', {
+    to_email: b.email, to_name: b.name,
+    booking_id: b.id,
+    titulo:   '🚫 Agendamento cancelado — SP Car Clean',
+    mensagem: `Seu agendamento ${b.id} (${SVCS[b.service]?.name || b.service}) foi cancelado pelo estabelecimento.\n\nEm caso de dúvidas ou para reagendar, entre em contato pelo WhatsApp.`,
+  });
   closeModal('detailModal');
   renderAdminBookings();
 }
@@ -1807,6 +1827,12 @@ function doEditDate(id) {
   b.endDate   = endDate;
   b.dateEditedAt = new Date().toISOString();
   setBookings(bookings);
+  sendEmail('template_update', {
+    to_email: b.email, to_name: b.name,
+    booking_id: b.id,
+    titulo:   '📅 Data do agendamento alterada — SP Car Clean',
+    mensagem: `A data do seu agendamento ${b.id} (${SVCS[b.service]?.name || b.service}) foi atualizada pelo estabelecimento.\n\nNova entrega do veículo: ${fmtDate(startDate)} às ${CFG.dropoffTime}\nNova previsão de retirada: ${fmtDate(endDate)} às ${CFG.pickupTime}`,
+  });
   closeModal('detailModal');
   renderAdminBookings();
   alert(`✅ Data atualizada!\n${fmtDateShort(startDate)} → ${fmtDateShort(endDate)}`);
