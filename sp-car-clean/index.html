@@ -575,6 +575,23 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 </div>
 
 <!-- ===================================================
+     RESCHEDULE MODAL (cliente)
+=================================================== -->
+<div id="rescheduleModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-hdr">
+      <div><h3>📅 Solicitar Reagendamento</h3><div class="sub">Informe a nova data desejada</div></div>
+      <button class="modal-close" onclick="closeModal('rescheduleModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row full"><div class="form-group"><label>Nova data preferida</label><input type="date" id="rescheduleDate"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Motivo (opcional)</label><input id="rescheduleNote" placeholder="Ex: viagem, compromisso de trabalho..."/></div></div>
+      <button class="btn-primary" onclick="submitReschedule()" style="width:100%;justify-content:center">Enviar Solicitação</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================
      ADMIN LOGIN MODAL
 =================================================== -->
 <div id="adminLoginModal" class="modal-overlay" style="display:none">
@@ -1108,6 +1125,15 @@ function checkStatus() {
       <button class="btn-primary" onclick="customerConfirm('${b.id}')" style="width:100%;justify-content:center;margin-top:.8rem">✓ Confirmar Agendamento</button>`;
   }
 
+  let rescheduleBtn = '';
+  if(['pending','approved','confirmed'].includes(b.status)) {
+    if(b.rescheduleRequest) {
+      rescheduleBtn = `<div style="background:var(--orange-lt);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:.8rem 1rem;margin-top:.8rem;font-size:.83rem;color:var(--orange)">⏳ <strong>Reagendamento solicitado</strong> para ${fmtDate(b.rescheduleRequest.date)} — aguardando análise do estabelecimento.</div>`;
+    } else {
+      rescheduleBtn = `<button class="btn-ghost" onclick="openReschedule('${b.id}')" style="width:100%;justify-content:center;margin-top:.6rem">📅 Solicitar Reagendamento</button>`;
+    }
+  }
+
   res.innerHTML = `
     <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
       <div style="background:var(--off);padding:.8rem 1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.4rem">
@@ -1138,13 +1164,54 @@ function checkStatus() {
           : ''}
       </div>
     </div>
-    ${confirmBtn}`;
+    ${confirmBtn}
+    ${rescheduleBtn}`;
 }
 
 function customerConfirm(id) {
   const bookings = getBookings();
   const b = bookings.find(x=>x.id===id);
   if(b) { b.status = 'confirmed'; setBookings(bookings); checkStatus(); }
+}
+
+let _rescheduleId = null;
+
+function openReschedule(id) {
+  _rescheduleId = id;
+  const dateEl = document.getElementById('rescheduleDate');
+  dateEl.min = addDays(todayStr(), 1);
+  dateEl.value = '';
+  document.getElementById('rescheduleNote').value = '';
+  closeModal('statusModal');
+  document.getElementById('rescheduleModal').style.display = 'flex';
+}
+
+function submitReschedule() {
+  const newDate = document.getElementById('rescheduleDate').value;
+  const note    = document.getElementById('rescheduleNote').value.trim();
+  if(!newDate) { alert('Selecione a nova data.'); return; }
+
+  const bookings = getBookings();
+  const b = bookings.find(x => x.id === _rescheduleId);
+  if(!b) return;
+
+  b.rescheduleRequest = { date: newDate, note, requestedAt: new Date().toISOString() };
+  setBookings(bookings);
+
+  fetch('/.netlify/functions/notify-booking', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'reschedule',
+      id: b.id, name: b.name, phone: b.phone,
+      currentDate: fmtDateShort(b.startDate || b.date),
+      newDate: fmtDateShort(newDate),
+      note
+    })
+  }).catch(() => {});
+
+  closeModal('rescheduleModal');
+  alert('Solicitação enviada! O estabelecimento analisará e entrará em contato.');
 }
 
 // ============================================================
@@ -1335,6 +1402,18 @@ function viewBooking(id) {
     </div>` : ''}
 
     ${b.adminNotes ? `<div style="background:var(--off);border-radius:8px;padding:.8rem;font-size:.82rem;margin-bottom:1rem"><strong>📝 Notas do admin:</strong> ${b.adminNotes}</div>` : ''}
+
+    ${b.rescheduleRequest ? `
+    <div style="background:var(--orange-lt);border:2px solid var(--orange);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
+      <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--orange);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">📅 Solicitação de Reagendamento</div>
+      <div class="summary-row"><strong>Nova data pedida</strong><span style="font-weight:800;color:var(--orange)">${fmtDate(b.rescheduleRequest.date)}</span></div>
+      ${b.rescheduleRequest.note ? `<div class="summary-row"><strong>Motivo</strong><span>${b.rescheduleRequest.note}</span></div>` : ''}
+      <div class="summary-row"><strong>Solicitado em</strong><span>${new Date(b.rescheduleRequest.requestedAt).toLocaleString('pt-BR')}</span></div>
+      <div style="display:flex;gap:.6rem;margin-top:.8rem">
+        <button class="btn-reject" onclick="rejectReschedule('${b.id}')">Manter data atual</button>
+        <button class="btn-approve" onclick="approveReschedule('${b.id}')">✓ Aprovar novo dia</button>
+      </div>
+    </div>` : ''}
 
     <hr style="border:none;border-top:1px solid var(--border);margin:.8rem 0"/>
     <p style="font-size:.72rem;color:var(--muted)">Enviado em ${new Date(b.submittedAt).toLocaleString('pt-BR')}</p>`;
@@ -1530,6 +1609,39 @@ function doApprove(id) {
     `Clique em *"Consultar Agendamento"* e informe o código *${b.id}* para confirmar.`
   );
   window.open(`https://wa.me/${_waPhone}?text=${_waMsg}`, '_blank');
+}
+
+function approveReschedule(id) {
+  const bookings = getBookings();
+  const b = bookings.find(x => x.id === id);
+  if(!b || !b.rescheduleRequest) return;
+  const newDate = b.rescheduleRequest.date;
+  b.date = newDate;
+  if(b.startDate) b.startDate = newDate;
+  delete b.rescheduleRequest;
+  setBookings(bookings);
+  fetch('/.netlify/functions/notify-booking', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'reschedule-approved', id: b.id, name: b.name, phone: b.phone, newDate: fmtDateShort(newDate) })
+  }).catch(() => {});
+  closeModal('detailModal');
+  renderAdminBookings();
+  alert('Reagendamento aprovado!');
+}
+
+function rejectReschedule(id) {
+  const bookings = getBookings();
+  const b = bookings.find(x => x.id === id);
+  if(!b) return;
+  delete b.rescheduleRequest;
+  setBookings(bookings);
+  fetch('/.netlify/functions/notify-booking', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'reschedule-rejected', id: b.id, name: b.name, phone: b.phone })
+  }).catch(() => {});
+  viewBooking(id);
 }
 
 function rejectBooking(id) {
