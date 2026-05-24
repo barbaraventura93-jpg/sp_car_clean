@@ -370,6 +370,50 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 .reveal-d1{transition-delay:.1s}.reveal-d2{transition-delay:.18s}.reveal-d3{transition-delay:.28s}.reveal-d4{transition-delay:.38s}
 .ripple{position:absolute;border-radius:50%;transform:scale(0);animation:rippleAnim .55s linear;background:rgba(255,255,255,.25);pointer-events:none}
 @keyframes rippleAnim{to{transform:scale(4);opacity:0}}
+
+/* ====== CLIENTES ADMIN ====== */
+.client-search{display:flex;gap:.8rem;margin-bottom:1.2rem;align-items:center;flex-wrap:wrap}
+.client-search input{flex:1;min-width:180px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:.6rem 1rem;border-radius:8px;font-size:.85rem;font-family:'Open Sans',sans-serif}
+.client-search input:focus{outline:none;border-color:var(--accent)}
+.clients-list{display:flex;flex-direction:column;gap:.6rem}
+.client-row{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1rem 1.2rem;cursor:pointer;transition:border-color .2s,transform .15s,box-shadow .2s;display:flex;align-items:center;gap:1.2rem}
+.client-row:hover{border-color:rgba(72,201,245,.3);transform:translateX(3px);box-shadow:0 4px 20px rgba(42,159,214,.1)}
+.client-row-avatar{width:42px;height:42px;border-radius:50%;background:var(--blue-lt);border:1px solid var(--border-glow);display:flex;align-items:center;justify-content:center;font-family:'Montserrat',sans-serif;font-size:1rem;font-weight:800;color:var(--accent);flex-shrink:0}
+.client-row-info{flex:1;min-width:0}
+.client-row-name{font-family:'Montserrat',sans-serif;font-size:.88rem;font-weight:700;color:var(--white);display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.client-row-sub{font-size:.76rem;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.client-row-meta{display:flex;flex-direction:column;align-items:flex-end;gap:.2rem;flex-shrink:0;text-align:right}
+.client-row-spent{font-family:'Montserrat',sans-serif;font-size:.92rem;font-weight:800;color:var(--blue)}
+.client-row-visits{font-size:.72rem;color:var(--muted)}
+.vip-badge{background:linear-gradient(135deg,#F59E0B,#FBBF24);color:#1a0a00;font-family:'Montserrat',sans-serif;font-size:.58rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:.18rem .5rem;border-radius:50px;white-space:nowrap}
+.client-profile-back{display:inline-flex;align-items:center;gap:.4rem;color:var(--accent);cursor:pointer;font-size:.78rem;font-weight:700;margin-bottom:1.2rem;background:none;border:none;font-family:'Montserrat',sans-serif;letter-spacing:.06em;text-transform:uppercase;padding:.2rem 0;transition:color .2s}
+.client-profile-back:hover{color:var(--white)}
+.client-profile-header{display:flex;align-items:center;gap:1.2rem;margin-bottom:1.5rem;flex-wrap:wrap}
+.client-profile-avatar{width:60px;height:60px;border-radius:50%;background:var(--blue-lt);border:2px solid var(--border-glow);display:flex;align-items:center;justify-content:center;font-family:'Montserrat',sans-serif;font-size:1.4rem;font-weight:800;color:var(--accent);flex-shrink:0}
+.client-profile-name{font-family:'Montserrat',sans-serif;font-size:1.2rem;font-weight:800;color:var(--white);display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.client-profile-contact{font-size:.8rem;color:var(--muted);margin-top:.3rem}
+.profile-section{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.3rem;margin-bottom:1rem}
+.profile-section h3{font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:700;color:var(--accent);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.9rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
+.profile-field{display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:.83rem;gap:.5rem}
+.profile-field:last-child{border-bottom:none}
+.profile-field strong{color:var(--muted);font-size:.74rem;font-weight:600;flex-shrink:0}
+.profile-field span{color:var(--text);text-align:right;word-break:break-all}
+.vehicle-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.7rem;margin-top:.2rem}
+.vehicle-card{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:.85rem 1rem}
+.vehicle-card-label{font-family:'Montserrat',sans-serif;font-size:.82rem;font-weight:700;color:var(--white);line-height:1.3}
+.vehicle-card-plate{font-family:'Montserrat',sans-serif;font-size:.66rem;font-weight:800;color:var(--accent);letter-spacing:.1em;margin-top:.35rem;background:var(--blue-lt);display:inline-block;padding:.15rem .55rem;border-radius:4px;text-transform:uppercase}
+.history-table{width:100%;border-collapse:collapse;font-size:.8rem}
+.history-table th{color:var(--muted);font-family:'Montserrat',sans-serif;font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:.5rem .7rem;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+.history-table td{padding:.6rem .7rem;border-bottom:1px solid rgba(255,255,255,.04);color:var(--text);vertical-align:middle}
+.history-table tr:last-child td{border-bottom:none}
+.history-table tr:hover td{background:rgba(255,255,255,.02)}
+.notes-textarea{width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:.75rem 1rem;border-radius:8px;font-size:.83rem;font-family:'Open Sans',sans-serif;resize:vertical;min-height:88px;line-height:1.6}
+.notes-textarea:focus{outline:none;border-color:var(--accent)}
+.financials-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.7rem}
+.fin-card{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:.85rem 1rem;text-align:center}
+.fin-card .num{font-family:'Montserrat',sans-serif;font-size:1.05rem;font-weight:800;color:var(--blue);word-break:break-word;line-height:1.2}
+.fin-card .lbl{font-size:.64rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-top:.3rem;font-family:'Montserrat',sans-serif}
+.profile-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -642,6 +686,9 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <div class="admin-tab" onclick="switchAdminTab('estatisticas',this)" id="tab-estatisticas">
         <span class="admin-tab-icon">📊</span><span>&nbsp;Estatísticas</span>
       </div>
+      <div class="admin-tab" onclick="switchAdminTab('clientes',this)" id="tab-clientes">
+        <span class="admin-tab-icon">👥</span><span>&nbsp;Clientes</span>
+      </div>
       <div class="admin-tab" onclick="switchAdminTab('config',this)" id="tab-config">
         <span class="admin-tab-icon">⚙️</span><span>&nbsp;Configurações</span>
       </div>
@@ -690,6 +737,8 @@ let _bookings = [];
 let _blocked  = [];
 let _fbDB, _bookingsRef, _blockedRef, _cfgRef;
 let _authUser = null;
+let _clientNotes = {};
+let _clientNotesRef = null;
 
 const isAdmin = () => _authUser != null;
 
@@ -1359,6 +1408,7 @@ function switchAdminTab(tab, el) {
   if(tab==='calendario') renderAdminCalendar();
   else if(tab==='agendamentos') renderAdminBookings();
   else if(tab==='estatisticas') renderAdminStats();
+  else if(tab==='clientes') renderAdminClients();
   else if(tab==='config') renderAdminConfig();
 }
 
@@ -1838,6 +1888,186 @@ function doEditDate(id) {
   alert(`✅ Data atualizada!\n${fmtDateShort(startDate)} → ${fmtDateShort(endDate)}`);
 }
 
+// ============================================================
+// CLIENTES
+// ============================================================
+function _buildClientMap() {
+  const bookings = getBookings();
+  const clientMap = {};
+  bookings.forEach(b => {
+    if(!b.email) return;
+    const key = b.email.toLowerCase();
+    if(!clientMap[key]) clientMap[key] = { name: b.name, phone: b.phone, email: b.email, bookings: [], vehicles: {} };
+    if(b.name) clientMap[key].name = b.name;
+    if(b.phone) clientMap[key].phone = b.phone;
+    clientMap[key].bookings.push(b);
+    const vKey = (b.plate || b.car || '').trim().toUpperCase();
+    if(vKey && !clientMap[key].vehicles[vKey]) clientMap[key].vehicles[vKey] = { car: b.car || '', plate: b.plate || '' };
+  });
+  return Object.values(clientMap).map(c => {
+    const done = c.bookings.filter(b => ['confirmed','approved','completed'].includes(b.status));
+    const totalSpent = done.reduce((s,b) => s + (b.finalPrice || b.price || 0), 0);
+    const dates = c.bookings.map(b => b.startDate || b.date).filter(Boolean).sort();
+    const lastVisit = dates[dates.length - 1] || null;
+    const vip = totalSpent >= 1000 || done.length >= 3;
+    return { ...c, totalSpent, lastVisit, completedCount: done.length, vip };
+  });
+}
+
+function renderAdminClients(filter) {
+  filter = filter || '';
+  let clients = _buildClientMap();
+  const q = filter.toLowerCase();
+  if(q) clients = clients.filter(c =>
+    c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || (c.phone||'').includes(q)
+  );
+  clients.sort((a,b) => b.totalSpent - a.totalSpent || (b.lastVisit||'').localeCompare(a.lastVisit||''));
+
+  const rows = clients.map(c => {
+    const initials = c.name.split(' ').filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase();
+    const vipBadge = c.vip ? '<span class="vip-badge">★ VIP</span>' : '';
+    return `<div class="client-row" onclick="openClientProfile('${encodeURIComponent(c.email)}')">
+      <div class="client-row-avatar">${initials}</div>
+      <div class="client-row-info">
+        <div class="client-row-name">${c.name} ${vipBadge}</div>
+        <div class="client-row-sub">${c.email} · ${c.phone||'—'}</div>
+      </div>
+      <div class="client-row-meta">
+        <div class="client-row-spent">${c.totalSpent > 0 ? fmtMoney(c.totalSpent) : '—'}</div>
+        <div class="client-row-visits">${c.completedCount} atend. · ${c.lastVisit ? fmtDateShort(c.lastVisit) : 'sem data'}</div>
+      </div>
+    </div>`;
+  }).join('') || '<p style="color:var(--muted);font-size:.85rem;text-align:center;padding:2.5rem 0">Nenhum cliente encontrado.</p>';
+
+  document.getElementById('adminContent').innerHTML = `
+    <h2>👥 Clientes</h2>
+    <div class="client-search">
+      <input type="text" id="clientSearchInput" placeholder="Buscar por nome, e-mail ou telefone..." value="${filter.replace(/"/g,'&quot;')}" oninput="renderAdminClients(this.value)" />
+      <span style="font-size:.8rem;color:var(--muted);white-space:nowrap">${clients.length} cliente${clients.length!==1?'s':''}</span>
+    </div>
+    <div class="clients-list">${rows}</div>`;
+}
+
+function openClientProfile(encodedEmail) {
+  const email = decodeURIComponent(encodedEmail);
+  const all = _buildClientMap();
+  const c = all.find(x => x.email.toLowerCase() === email.toLowerCase());
+  if(!c) return;
+
+  const initials = c.name.split(' ').filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase();
+  const vipBadge = c.vip ? '<span class="vip-badge">★ VIP</span>' : '';
+
+  // Vehicles
+  const vehicleCards = Object.values(c.vehicles).map(v =>
+    `<div class="vehicle-card">
+      <div class="vehicle-card-label">🚗 ${v.car || 'Veículo'}</div>
+      ${v.plate ? `<div class="vehicle-card-plate">${v.plate}</div>` : ''}
+    </div>`
+  ).join('') || '<p style="color:var(--muted);font-size:.82rem;margin:0">Nenhum veículo registrado.</p>';
+
+  // Average frequency
+  const done = c.bookings.filter(b => ['confirmed','approved','completed'].includes(b.status));
+  let freqText = '—';
+  if(done.length >= 2) {
+    const dts = done.map(b => new Date((b.startDate||b.date)+'T12:00:00')).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
+    if(dts.length >= 2) {
+      let sum = 0;
+      for(let i=1;i<dts.length;i++) sum += (dts[i]-dts[i-1])/(86400000);
+      freqText = Math.round(sum/(dts.length-1)) + ' dias';
+    }
+  }
+
+  // Notes
+  const noteKey = email.replace(/[.#$[\]]/g,'_');
+  const currentNote = _clientNotes[noteKey] || '';
+
+  // History rows (newest first)
+  const sorted = [...c.bookings].sort((a,b)=>((b.startDate||b.date||'') > (a.startDate||a.date||'')) ? 1 : -1);
+  const statusLabel = {
+    pending:'<span style="color:var(--orange)">Pendente</span>',
+    approved:'<span style="color:var(--blue)">Aprovado</span>',
+    confirmed:'<span style="color:var(--green)">Confirmado</span>',
+    completed:'<span style="color:var(--green)">Concluído</span>',
+    rejected:'<span style="color:var(--red)">Recusado</span>',
+    cancelled:'<span style="color:var(--muted)">Cancelado</span>',
+  };
+  const histRows = sorted.map(b => {
+    const svc = (b.services||[b.service]).filter(Boolean).map(id => SVCS[id]?SVCS[id].name:id).join(', ');
+    const valor = b.finalPrice || b.price || 0;
+    const dateStr = b.startDate || b.date;
+    return `<tr>
+      <td style="white-space:nowrap">${dateStr ? fmtDateShort(dateStr) : '—'}</td>
+      <td>${svc}</td>
+      <td style="color:var(--muted);white-space:nowrap">${b.car||'—'}${b.plate?' ('+b.plate+')':''}</td>
+      <td style="font-weight:700;color:var(--blue);white-space:nowrap">${valor>0?fmtMoney(valor):'—'}</td>
+      <td>${statusLabel[b.status]||b.status}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1.2rem">Sem atendimentos.</td></tr>';
+
+  document.getElementById('adminContent').innerHTML = `
+    <button type="button" class="client-profile-back" onclick="renderAdminClients()">← Voltar à lista</button>
+    <div class="client-profile-header">
+      <div class="client-profile-avatar">${initials}</div>
+      <div>
+        <div class="client-profile-name">${c.name} ${vipBadge}</div>
+        <div class="client-profile-contact">📧 ${c.email} &nbsp;·&nbsp; 📞 ${c.phone||'—'}</div>
+      </div>
+    </div>
+    <div class="profile-cols">
+      <div>
+        <div class="profile-section">
+          <h3>Identificação</h3>
+          <div class="profile-field"><strong>Nome</strong><span>${c.name}</span></div>
+          <div class="profile-field"><strong>Telefone</strong><span>${c.phone||'—'}</span></div>
+          <div class="profile-field"><strong>E-mail</strong><span>${c.email}</span></div>
+        </div>
+        <div class="profile-section">
+          <h3>Financeiro</h3>
+          <div class="financials-grid">
+            <div class="fin-card"><div class="num">${fmtMoney(c.totalSpent)}</div><div class="lbl">Total Gasto</div></div>
+            <div class="fin-card"><div class="num">${c.completedCount}</div><div class="lbl">Atendimentos</div></div>
+            <div class="fin-card"><div class="num">${c.lastVisit ? fmtDateShort(c.lastVisit) : '—'}</div><div class="lbl">Último Atend.</div></div>
+            <div class="fin-card"><div class="num">${freqText}</div><div class="lbl">Freq. Média</div></div>
+          </div>
+        </div>
+        <div class="profile-section">
+          <h3>Observações / Preferências</h3>
+          <textarea class="notes-textarea" id="clientNotesArea" placeholder="Preferências de contato, observações sobre o veículo, produtos a evitar...">${currentNote}</textarea>
+          <button type="button" class="btn-primary" style="margin-top:.7rem;font-size:.78rem;padding:.5rem 1.2rem" onclick="saveClientNotes('${noteKey}')">Salvar observações</button>
+        </div>
+      </div>
+      <div>
+        <div class="profile-section">
+          <h3>Frota de Veículos</h3>
+          <div class="vehicle-cards">${vehicleCards}</div>
+        </div>
+        <div class="profile-section">
+          <h3>Histórico de Atendimentos</h3>
+          <div style="overflow-x:auto">
+            <table class="history-table">
+              <thead><tr><th>Data</th><th>Serviço</th><th>Veículo</th><th>Valor</th><th>Status</th></tr></thead>
+              <tbody>${histRows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function saveClientNotes(noteKey) {
+  const notes = (document.getElementById('clientNotesArea').value || '').trim();
+  _clientNotes[noteKey] = notes;
+  const btn = document.querySelector('#adminContent .btn-primary');
+  const persist = () => {
+    if(btn) { const t = btn.textContent; btn.textContent = '✓ Salvo!'; btn.style.background='var(--green)'; setTimeout(()=>{btn.textContent=t;btn.style.background='';},1600); }
+  };
+  if(_clientNotesRef) {
+    _clientNotesRef.child(noteKey).set(notes).then(persist).catch(err => alert('Erro ao salvar: '+err.message));
+  } else {
+    persist();
+  }
+}
+
 function renderAdminStats() {
   const bookings = getBookings();
   const total = bookings.length;
@@ -2140,6 +2370,8 @@ function updateWaLink() {
     _bookingsRef = _fbDB.ref('bookings');
     _blockedRef  = _fbDB.ref('blocked');
     _cfgRef      = _fbDB.ref('config');
+    _clientNotesRef = _fbDB.ref('clientNotes');
+    _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
 
     firebase.auth().onAuthStateChanged(user => {
       _authUser = user;
