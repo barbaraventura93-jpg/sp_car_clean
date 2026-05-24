@@ -1,0 +1,31 @@
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Clients collection: staff can read and create minimal data; only admins can update sensitive aggregates
+    match /clients/{clientId} {
+      allow read: if request.auth != null && request.auth.token.role in ['admin','staff'];
+      allow create: if request.auth != null && request.auth.token.role in ['admin','staff'];
+      allow update: if request.auth != null && request.auth.token.role == 'admin';
+      allow delete: if request.auth != null && request.auth.token.role == 'admin';
+    }
+
+    // Subcollections: appointments can be created/updated by staff (appointments are application-managed)
+    match /clients/{clientId}/appointments/{apptId} {
+      allow read: if request.auth != null && request.auth.token.role in ['admin','staff'];
+      allow create, update, delete: if request.auth != null && request.auth.token.role in ['admin','staff'];
+    }
+
+    // Vehicles: staff can read; only admin can change vehicle core data
+    match /clients/{clientId}/vehicles/{vehId} {
+      allow read: if request.auth != null && request.auth.token.role in ['admin','staff'];
+      allow create: if request.auth != null && request.auth.token.role in ['admin','staff'];
+      allow update, delete: if request.auth != null && request.auth.token.role == 'admin';
+    }
+
+    // bookings managed by application; attendees can read their own booking
+    match /bookings/{bookingId} {
+      allow read: if request.auth != null && request.auth.token.email == resource.data.email;
+      allow create: if request.auth != null; // users can create bookings
+      allow update, delete: if request.auth != null && request.auth.token.role in ['admin','staff'];
+    }
+  }
+}
