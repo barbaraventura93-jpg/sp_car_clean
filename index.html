@@ -414,6 +414,21 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 .fin-card .num{font-family:'Montserrat',sans-serif;font-size:1.05rem;font-weight:800;color:var(--blue);word-break:break-word;line-height:1.2}
 .fin-card .lbl{font-size:.64rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-top:.3rem;font-family:'Montserrat',sans-serif}
 .profile-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem}
+
+/* ====== MAPA GEOGRÁFICO ====== */
+#clientMap{height:360px;border-radius:10px;border:1px solid var(--border);background:var(--surface);z-index:1}
+.geo-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;margin-top:1.2rem}
+.geo-metric{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:10px;padding:.9rem 1.1rem}
+.geo-metric h4{font-family:'Montserrat',sans-serif;font-size:.68rem;font-weight:700;color:var(--accent);letter-spacing:.1em;text-transform:uppercase;margin-bottom:.7rem}
+.bairro-bar-row{display:flex;align-items:center;gap:.7rem;margin-bottom:.55rem;font-size:.78rem}
+.bairro-bar-name{min-width:120px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bairro-bar-wrap{flex:1;background:rgba(255,255,255,.06);border-radius:4px;height:14px;overflow:hidden}
+.bairro-bar-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--accent));border-radius:4px;display:flex;align-items:center;justify-content:flex-end;padding-right:5px;min-width:18px;transition:width .5s ease}
+.bairro-bar-val{font-size:.64rem;font-weight:700;color:#fff}
+.radius-row{display:flex;justify-content:space-between;align-items:center;padding:.35rem 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:.8rem}
+.radius-row:last-child{border-bottom:none}
+.radius-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.market-insight{background:var(--blue-lt);border:1px solid var(--border-glow);border-radius:8px;padding:.8rem 1rem;font-size:.78rem;color:var(--accent);line-height:1.6;margin-top:.7rem}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -739,6 +754,7 @@ let _fbDB, _bookingsRef, _blockedRef, _cfgRef;
 let _authUser = null;
 let _clientNotes = {};
 let _clientNotesRef = null;
+let _geoCache = {};
 
 const isAdmin = () => _authUser != null;
 
@@ -796,6 +812,7 @@ function genId() {
   return r;
 }
 function fmtMoney(v) { return 'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:0}); }
+function fmtCep(el) { let v=el.value.replace(/\D/g,'').slice(0,8); el.value=v.length>5?v.slice(0,5)+'-'+v.slice(5):v; }
 
 // ============================================================
 // CALENDAR RENDER (shared)
@@ -1063,6 +1080,7 @@ function renderBookingStep() {
       <div class="form-row"><div class="form-group"><label>Nome completo</label><input id="fName" placeholder="João da Silva"/></div><div class="form-group"><label>Telefone / WhatsApp</label><input id="fPhone" placeholder="(11) 99999-9999"/></div></div>
       <div class="form-row full"><div class="form-group"><label>E-mail</label><input id="fEmail" type="email" placeholder="joao@email.com"/></div></div>
       <div class="form-row"><div class="form-group"><label>Veículo (modelo/ano)</label><input id="fCar" placeholder="Honda Civic 2020"/></div><div class="form-group"><label>Placa</label><input id="fPlate" placeholder="ABC-1234"/></div></div>
+      <div class="form-row"><div class="form-group"><label>Bairro *</label><input id="fBairro" placeholder="Moema, Brooklin, Vila Mariana..."/></div><div class="form-group"><label>CEP (opcional)</label><input id="fCep" placeholder="04543-000" maxlength="9" oninput="fmtCep(this)"/></div></div>
       <div class="form-row full"><div class="form-group"><label>Observações (opcional)</label><textarea id="fObs" placeholder="Informe alguma particularidade do veículo, manchas específicas, etc."></textarea></div></div>
       <p style="font-size:.75rem;color:var(--muted)">Ao enviar você concorda que seus dados serão usados para finalizar o agendamento.</p>
       <p style="font-size:.74rem;color:var(--orange);margin-top:.4rem;line-height:1.5">⚠️ <strong>Política de cancelamento:</strong> É cobrado 50% do valor do serviço como reserva de horário. Cancelamentos com mais de 1 dia útil de antecedência têm reembolso integral desse valor. Dentro deste prazo, o valor de reserva não é reembolsado.</p>`;
@@ -1118,8 +1136,10 @@ function submitBooking() {
   const phone = document.getElementById('fPhone').value.trim();
   const car = document.getElementById('fCar').value.trim();
   const plate = document.getElementById('fPlate').value.trim();
+  const bairro = document.getElementById('fBairro').value.trim();
+  const cep = document.getElementById('fCep').value.trim();
   const obs = document.getElementById('fObs').value.trim();
-  if(!name||!email||!phone||!car) { alert('Preencha todos os campos obrigatórios.'); return; }
+  if(!name||!email||!phone||!car||!bairro) { alert('Preencha todos os campos obrigatórios (incluindo o bairro).'); return; }
 
   const id = genId();
   const _maxDaysSub = bkMaxDays(booking);
@@ -1127,7 +1147,7 @@ function submitBooking() {
     id, services: booking.services, service: booking.services[0], carSize: booking.carSize,
     date: booking.date, pickup: _maxDaysSub > 0 ? addDays(booking.date, _maxDaysSub) : booking.date,
     price: bkPrice(booking, booking.carSize),
-    name, email, phone, car, plate, obs,
+    name, email, phone, car, plate, bairro, cep, obs,
     status: 'pending',
     submittedAt: new Date().toISOString(),
     adminNotes: '',
@@ -1897,9 +1917,11 @@ function _buildClientMap() {
   bookings.forEach(b => {
     if(!b.email) return;
     const key = b.email.toLowerCase();
-    if(!clientMap[key]) clientMap[key] = { name: b.name, phone: b.phone, email: b.email, bookings: [], vehicles: {} };
+    if(!clientMap[key]) clientMap[key] = { name: b.name, phone: b.phone, email: b.email, bairro: b.bairro||'', cep: b.cep||'', bookings: [], vehicles: {} };
     if(b.name) clientMap[key].name = b.name;
     if(b.phone) clientMap[key].phone = b.phone;
+    if(b.bairro) clientMap[key].bairro = b.bairro;
+    if(b.cep) clientMap[key].cep = b.cep;
     clientMap[key].bookings.push(b);
     const vKey = (b.plate || b.car || '').trim().toUpperCase();
     if(vKey && !clientMap[key].vehicles[vKey]) clientMap[key].vehicles[vKey] = { car: b.car || '', plate: b.plate || '' };
@@ -1926,11 +1948,15 @@ function renderAdminClients(filter) {
   const rows = clients.map(c => {
     const initials = c.name.split(' ').filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase();
     const vipBadge = c.vip ? '<span class="vip-badge">★ VIP</span>' : '';
+    const latestCar = Object.values(c.vehicles)[0];
+    const carInfo = latestCar ? (latestCar.car + (latestCar.plate ? ' · ' + latestCar.plate : '')) : '';
+    const bairroInfo = c.bairro ? ` · 📍 ${c.bairro}` : '';
     return `<div class="client-row" onclick="openClientProfile('${encodeURIComponent(c.email)}')">
       <div class="client-row-avatar">${initials}</div>
       <div class="client-row-info">
         <div class="client-row-name">${c.name} ${vipBadge}</div>
-        <div class="client-row-sub">${c.email} · ${c.phone||'—'}</div>
+        <div class="client-row-sub">${c.email} · ${c.phone||'—'}${bairroInfo}</div>
+        ${carInfo ? `<div class="client-row-sub" style="margin-top:1px">🚗 ${carInfo}</div>` : ''}
       </div>
       <div class="client-row-meta">
         <div class="client-row-spent">${c.totalSpent > 0 ? fmtMoney(c.totalSpent) : '—'}</div>
@@ -1957,13 +1983,23 @@ function openClientProfile(encodedEmail) {
   const initials = c.name.split(' ').filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase();
   const vipBadge = c.vip ? '<span class="vip-badge">★ VIP</span>' : '';
 
-  // Vehicles
-  const vehicleCards = Object.values(c.vehicles).map(v =>
-    `<div class="vehicle-card">
-      <div class="vehicle-card-label">🚗 ${v.car || 'Veículo'}</div>
-      ${v.plate ? `<div class="vehicle-card-plate">${v.plate}</div>` : ''}
-    </div>`
-  ).join('') || '<p style="color:var(--muted);font-size:.82rem;margin:0">Nenhum veículo registrado.</p>';
+  // Vehicles — enrich with saved vehicle notes
+  const vNoteKey = email.replace(/[.#$[\]]/g,'_') + '__vnotes';
+  const savedVNotes = _clientNotes[vNoteKey] || {};
+  const vehicleCards = Object.entries(c.vehicles).map(([vKey, v]) => {
+    const vn = savedVNotes[vKey] || '';
+    return `<div class="vehicle-card" style="width:100%">
+      <div style="display:flex;align-items:flex-start;gap:.6rem;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px">
+          <div class="vehicle-card-label">🚗 ${v.car || 'Veículo'}</div>
+          ${v.plate ? `<div class="vehicle-card-plate">${v.plate}</div>` : ''}
+        </div>
+      </div>
+      <textarea class="notes-textarea" style="margin-top:.6rem;min-height:60px;font-size:.76rem" placeholder="Observações do veículo: película, pintura sensível, amassados, cor especial..." data-vkey="${vKey}" onchange="saveVehicleNote('${email.replace(/[.#$[\]]/g,'_')}','${vKey}',this.value)">${vn}</textarea>
+    </div>`;
+  }).join('') || '<p style="color:var(--muted);font-size:.82rem;margin:0">Nenhum veículo registrado.</p>';
+
+  const allDates = c.bookings.map(b => b.startDate || b.date).filter(Boolean).sort();
 
   // Average frequency
   const done = c.bookings.filter(b => ['confirmed','approved','completed'].includes(b.status));
@@ -2020,14 +2056,18 @@ function openClientProfile(encodedEmail) {
           <div class="profile-field"><strong>Nome</strong><span>${c.name}</span></div>
           <div class="profile-field"><strong>Telefone</strong><span>${c.phone||'—'}</span></div>
           <div class="profile-field"><strong>E-mail</strong><span>${c.email}</span></div>
+          ${c.bairro?`<div class="profile-field"><strong>Bairro</strong><span>📍 ${c.bairro}${c.cep?' · '+c.cep:''}</span></div>`:''}
+          <div class="profile-field"><strong>Classificação</strong><span>${c.vip?'<span class="vip-badge">★ VIP</span>':c.completedCount>=1?'<span style="color:var(--green);font-size:.8rem">Recorrente</span>':'<span style="color:var(--muted);font-size:.8rem">Novo</span>'}</span></div>
         </div>
         <div class="profile-section">
           <h3>Financeiro</h3>
           <div class="financials-grid">
             <div class="fin-card"><div class="num">${fmtMoney(c.totalSpent)}</div><div class="lbl">Total Gasto</div></div>
             <div class="fin-card"><div class="num">${c.completedCount}</div><div class="lbl">Atendimentos</div></div>
+            <div class="fin-card"><div class="num">${allDates[0] ? fmtDateShort(allDates[0]) : '—'}</div><div class="lbl">Primeiro Atend.</div></div>
             <div class="fin-card"><div class="num">${c.lastVisit ? fmtDateShort(c.lastVisit) : '—'}</div><div class="lbl">Último Atend.</div></div>
             <div class="fin-card"><div class="num">${freqText}</div><div class="lbl">Freq. Média</div></div>
+            <div class="fin-card"><div class="num">${c.vip?'⭐ VIP':c.completedCount===0?'Novo':c.completedCount>=1?'Recorrente':'Novo'}</div><div class="lbl">Classificação</div></div>
           </div>
         </div>
         <div class="profile-section">
@@ -2039,7 +2079,7 @@ function openClientProfile(encodedEmail) {
       <div>
         <div class="profile-section">
           <h3>Frota de Veículos</h3>
-          <div class="vehicle-cards">${vehicleCards}</div>
+          <div style="display:flex;flex-direction:column;gap:.7rem;margin-top:.2rem">${vehicleCards}</div>
         </div>
         <div class="profile-section">
           <h3>Histórico de Atendimentos</h3>
@@ -2065,6 +2105,15 @@ function saveClientNotes(noteKey) {
     _clientNotesRef.child(noteKey).set(notes).then(persist).catch(err => alert('Erro ao salvar: '+err.message));
   } else {
     persist();
+  }
+}
+
+function saveVehicleNote(clientKey, vKey, value) {
+  const storeKey = clientKey + '__vnotes';
+  if(!_clientNotes[storeKey]) _clientNotes[storeKey] = {};
+  _clientNotes[storeKey][vKey] = value.trim();
+  if(_clientNotesRef) {
+    _clientNotesRef.child(storeKey).child(vKey).set(value.trim()).catch(err => console.warn('saveVehicleNote:', err));
   }
 }
 
@@ -2114,11 +2163,157 @@ function renderAdminStats() {
         <div class="summary-row" style="margin-bottom:.6rem"><strong>Taxa de retorno</strong><span style="font-weight:800;color:var(--blue)">${unique>0?Math.round(returning/unique*100):0}%</span></div>
         <div class="summary-row" style="margin-bottom:.6rem"><strong>Ticket médio</strong><span style="font-weight:800;color:var(--blue)">${confirmed>0?fmtMoney(Math.round(revenue/confirmed)):'—'}</span></div>
         <div class="summary-row"><strong>Taxa de aprovação</strong><span style="font-weight:800;color:var(--green)">${total>0?Math.round(confirmed/total*100):0}%</span></div>
-        <div style="margin-top:1.2rem;padding:1rem;background:var(--blue-lt);border-radius:8px;font-size:.78rem;color:var(--blue-dk)">
-          <strong>📈 Em breve:</strong> Gráficos de sazonalidade, market share por serviço, e análise de zona de fidelização por bairro.
-        </div>
+      </div>
+    </div>
+    <div class="admin-panel" style="margin-top:1.5rem">
+      <h3>📍 Alcance Geográfico</h3>
+      <div id="clientMap"></div>
+      <div class="geo-grid" id="geoMetrics"><p style="color:var(--muted);font-size:.82rem">Carregando dados geográficos...</p></div>
+    </div>`;
+
+  // Render geo section after DOM is ready
+  requestAnimationFrame(() => _renderGeoSection());
+}
+
+function _renderGeoSection() {
+  const bookings = getBookings();
+  // Neighborhood count
+  const bairroCount = {};
+  bookings.filter(b => b.bairro && b.status !== 'rejected').forEach(b => {
+    const k = b.bairro.trim();
+    bairroCount[k] = (bairroCount[k]||0) + 1;
+  });
+
+  const sorted = Object.entries(bairroCount).sort((a,b) => b[1]-a[1]);
+  const totalWithBairro = Object.values(bairroCount).reduce((s,v)=>s+v,0);
+
+  if(!sorted.length) {
+    document.getElementById('geoMetrics').innerHTML = `
+      <div style="color:var(--muted);font-size:.82rem;grid-column:1/-1;padding:.5rem 0">
+        Nenhum bairro registrado ainda. O campo "Bairro" nos próximos agendamentos preencherá este painel automaticamente.
+      </div>`;
+    return;
+  }
+
+  const maxCount = sorted[0][1];
+
+  // Bairro ranking bars
+  const barRows = sorted.slice(0,8).map(([name,count]) => {
+    const pct = Math.round(count/maxCount*100);
+    const share = Math.round(count/totalWithBairro*100);
+    return `<div class="bairro-bar-row">
+      <div class="bairro-bar-name" title="${name}">${name}</div>
+      <div class="bairro-bar-wrap"><div class="bairro-bar-fill" style="width:${pct}%"><span class="bairro-bar-val">${count}</span></div></div>
+      <span style="font-size:.7rem;color:var(--muted);min-width:32px;text-align:right">${share}%</span>
+    </div>`;
+  }).join('');
+
+  // Market insights
+  const top3 = sorted.slice(0,3).map(([n])=>n).join(', ');
+  const concentrated = sorted.length <= 3;
+  const vipZones = sorted.slice(0,3).reduce((s,[,v])=>s+v,0);
+  const vipShare = totalWithBairro>0?Math.round(vipZones/totalWithBairro*100):0;
+
+  document.getElementById('geoMetrics').innerHTML = `
+    <div class="geo-metric">
+      <h4>🏆 Ranking de Bairros</h4>
+      ${barRows}
+    </div>
+    <div class="geo-metric">
+      <h4>📐 Análise de Mercado</h4>
+      <div class="radius-row">
+        <span class="radius-dot" style="background:var(--green)"></span>
+        <span style="color:var(--text)">Zona primária (top 3)</span>
+        <span style="font-weight:700;color:var(--green)">${vipShare}% dos clientes</span>
+      </div>
+      <div class="radius-row">
+        <span class="radius-dot" style="background:var(--blue)"></span>
+        <span style="color:var(--text)">Bairros atendidos</span>
+        <span style="font-weight:700;color:var(--blue)">${sorted.length} bairros</span>
+      </div>
+      <div class="radius-row">
+        <span class="radius-dot" style="background:var(--orange)"></span>
+        <span style="color:var(--text)">Bairros com 1 cliente</span>
+        <span style="font-weight:700;color:var(--orange)">${sorted.filter(([,v])=>v===1).length} (expansão potencial)</span>
+      </div>
+      <div class="market-insight">
+        <strong>🎯 Zona primária:</strong> ${top3||'—'}<br/>
+        ${concentrated
+          ? '⚠️ Base concentrada — risco de dependência regional. Considere campanhas em bairros adjacentes.'
+          : '✅ Boa diversificação geográfica. Mantenha presença nas zonas primárias e expanda ações nos bairros secundários.'
+        }<br/><br/>
+        <strong>💡 Boas práticas:</strong> 60–70% dos clientes de estéticas automotivas estão a menos de 10 km. Bairros com 1–2 clientes são candidatos a campanhas de indicação — ofereça desconto para quem trouxer vizinhos.
       </div>
     </div>`;
+
+  // Load Leaflet and render map
+  _loadLeaflet().then(() => _renderMap(sorted));
+}
+
+function _loadLeaflet() {
+  if(window.L) return Promise.resolve();
+  return new Promise(resolve => {
+    if(!document.querySelector('link[href*="leaflet"]')) {
+      const css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(css);
+    }
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    s.onload = resolve;
+    document.head.appendChild(s);
+  });
+}
+
+async function _renderMap(sortedBairros) {
+  const mapEl = document.getElementById('clientMap');
+  if(!mapEl || !window.L) return;
+
+  // Destroy previous map instance if any
+  if(mapEl._leaflet_id) { mapEl._leaflet_id = null; mapEl.innerHTML = ''; }
+
+  const map = L.map('clientMap', { zoomControl: true, scrollWheelZoom: false })
+               .setView([-23.5505, -46.6333], 11);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 18
+  }).addTo(map);
+
+  // Reference: São Paulo center
+  L.circle([-23.5505, -46.6333], { radius: 5000,  color:'#22C55E', fillOpacity:.05, weight:1.5, dashArray:'5,5' }).addTo(map).bindTooltip('5 km');
+  L.circle([-23.5505, -46.6333], { radius: 10000, color:'#2A9FD6', fillOpacity:.03, weight:1.5, dashArray:'5,5' }).addTo(map).bindTooltip('10 km');
+  L.circle([-23.5505, -46.6333], { radius: 15000, color:'#8B5CF6', fillOpacity:.02, weight:1.5, dashArray:'5,5' }).addTo(map).bindTooltip('15 km');
+
+  const maxCount = sortedBairros[0]?.[1] || 1;
+
+  for(const [bairro, count] of sortedBairros) {
+    const coords = await _geocodeBairro(bairro);
+    if(!coords) continue;
+    const r = 400 + (count / maxCount) * 900;
+    const color = count >= 3 ? '#22C55E' : count === 2 ? '#2A9FD6' : '#F59E0B';
+    L.circleMarker(coords, { radius: Math.max(8, Math.min(22, 8 + count * 3)), color, fillColor: color, fillOpacity: 0.75, weight: 2 })
+     .addTo(map)
+     .bindPopup(`<strong>${bairro}</strong><br/>${count} cliente${count>1?'s':''}`);
+  }
+}
+
+async function _geocodeBairro(bairro) {
+  if(_geoCache[bairro]) return _geoCache[bairro];
+  try {
+    const q = encodeURIComponent(`${bairro}, São Paulo, SP, Brasil`);
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`, {
+      headers: { 'Accept-Language': 'pt-BR', 'User-Agent': 'SPCarCleanAdmin/1.0' }
+    });
+    const data = await res.json();
+    if(data[0]) {
+      const coords = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+      _geoCache[bairro] = coords;
+      return coords;
+    }
+  } catch(e) { /* silent */ }
+  return null;
 }
 
 function renderAdminConfig() {
