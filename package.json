@@ -5,5 +5,8 @@
   "scripts": {
     "build": "mkdir -p dist && cp index.html dist/ && cp -r assets dist/",
     "start": "npx serve ."
+  },
+  "dependencies": {
+    "firebase": "^12.13.0"
   }
 }
