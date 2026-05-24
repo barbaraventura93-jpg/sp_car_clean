@@ -1,4 +1,5 @@
 [build]
+  base = "."
   command = "node build.js"
   publish = "dist"
   functions = "netlify/functions"
