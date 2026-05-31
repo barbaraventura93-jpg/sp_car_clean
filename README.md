@@ -117,6 +117,10 @@ const CFG = {
 | `EMAILJS_PUBLIC_KEY` | Chave pública do EmailJS |
 | `TELEGRAM_BOT_TOKEN` | Token do bot de notificações via Telegram |
 | `TELEGRAM_CHAT_ID` | ID do chat para receber as notificações |
+| `INFINITEPAY_HANDLE` | InfiniteTag (usuário InfinitePay) para geração de links de pagamento |
+| `INFINITEPAY_FEE_RATE` | Taxa a embutir no preço (padrão: `0.0315` = 3,15% crédito à vista) |
+| `FIREBASE_DATABASE_URL` | URL do Realtime Database, ex: `https://projeto-default-rtdb.firebaseio.com` |
+| `FIREBASE_DATABASE_SECRET` | Token legado do Firebase para atualização via webhook (Console → Project Settings → Service Accounts → Database secrets) |
 
 ### Build
 
@@ -212,7 +216,7 @@ const accessToken = 'seu_token_aqui';
 | Estatísticas de receita e fidelização | ✅ |
 | Lista de espera | 🔜 |
 | Galeria antes/depois por atendimento | 🔜 |
-| Pagamento online (PIX + cartão) | 🔜 |
+| Pagamento online via InfinitePay (PIX + cartão) | ✅ |
 | Gráficos de receita por período | 🔜 |
 | FAQ por serviço | 🔜 |
 
