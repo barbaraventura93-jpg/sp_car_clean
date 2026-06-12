@@ -1878,10 +1878,10 @@ async function doApprove(id) {
       b.priceWithFee = priceWithFee;
       setBookings(bookings);
     } else {
-      alert('⚠️ Erro ao gerar link de pagamento:\n' + JSON.stringify(payResult.error, null, 2));
+      console.warn('create-payment retornou erro:', payResult.error);
     }
   } catch(e) {
-    alert('⚠️ Erro na chamada create-payment:\n' + e.message);
+    console.warn('create-payment falhou:', e.message);
   }
 
   closeModal('detailModal');
@@ -1901,7 +1901,7 @@ async function doApprove(id) {
     `📍 *Local:* ${b.approvedLocation}` +
     (b.adminNotes ? `\n📝 *Obs:* ${b.adminNotes}` : '') +
     (paymentUrl
-      ? `\n\n💳 *Para confirmar sua reserva, efetue o pagamento:*\n${paymentUrl}\n\n_Aceita PIX e cartão · Ambiente seguro InfinitePay_`
+      ? `\n\n💳 *Para confirmar sua reserva, efetue o pagamento:*\n${paymentUrl}\n\n⚠️ _Se o link não abrir, pressione e segure → "Abrir no navegador"_\n_Aceita PIX e cartão · Ambiente seguro InfinitePay_`
       : `\n\n⚠️ *Para confirmar, acesse o site e informe o código ${b.id}.*\n👉 https://sp-car-clean.netlify.app`) +
     `\n\n📋 *Política de cancelamento:* Em até 7 dias corridos do pagamento: reembolso integral (CDC Art. 49). Após 7 dias com mais de 1 dia útil de antecedência: reembolso de 50%. Dentro de 1 dia útil: sem reembolso.`
   );
