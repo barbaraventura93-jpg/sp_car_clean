@@ -130,6 +130,27 @@ h2{font-family:'Montserrat',sans-serif;font-size:clamp(1.8rem,3.5vw,3rem);font-w
 .pq-item h4{font-family:'Montserrat',sans-serif;font-size:.88rem;font-weight:700;color:var(--white);margin-bottom:.25rem}
 .pq-item p{font-size:.78rem;color:var(--muted);line-height:1.65}
 
+/* ====== ADMIN SERVIÇOS ====== */
+.svc-admin-card{background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.3rem;margin-bottom:.8rem;transition:border-color .2s}
+.svc-admin-card.inactive-svc{opacity:.55}
+.svc-admin-header{display:flex;align-items:flex-start;gap:.7rem;margin-bottom:.6rem}
+.svc-admin-icon{font-size:1.4rem;flex-shrink:0;margin-top:1px}
+.svc-admin-meta{flex:1;min-width:0}
+.svc-admin-name{font-family:'Montserrat',sans-serif;font-size:.88rem;font-weight:700;color:var(--white)}
+.svc-admin-sub{font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin-top:2px}
+.svc-pricing-grid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin:.6rem 0}
+.svc-pricing-cell{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;padding:.55rem .8rem;font-size:.75rem}
+.svc-pricing-cell b{color:var(--text);display:block;margin-bottom:3px;font-family:'Montserrat',sans-serif;font-size:.7rem}
+.svc-pricing-margin{color:var(--green);font-size:.68rem;margin-top:3px}
+.svc-admin-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem}
+.btn-toggle-svc{background:none;border:1px solid rgba(34,197,94,.4);color:var(--green);border-radius:6px;padding:.28rem .7rem;cursor:pointer;font-size:.7rem;font-family:'Montserrat',sans-serif;font-weight:700;letter-spacing:.04em}
+.btn-toggle-svc.off{border-color:rgba(239,68,68,.4);color:var(--red)}
+.btn-edit-svc{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:.28rem .7rem;cursor:pointer;font-size:.7rem}
+.btn-edit-svc:hover{border-color:var(--accent);color:var(--accent)}
+.svc-form-panel{background:var(--card);border:1px solid var(--border-glow);border-radius:14px;padding:1.4rem;margin-bottom:1.2rem}
+.svc-form-panel h4{font-family:'Montserrat',sans-serif;font-size:.8rem;font-weight:700;color:var(--accent);letter-spacing:.1em;text-transform:uppercase;margin-bottom:1rem}
+.svc-price-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem}
+
 /* ====== GALERIA ANTES/DEPOIS ====== */
 #galeria{padding:7rem 6%;background:var(--bg2)}
 .ba-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;margin-top:2.8rem}
@@ -740,6 +761,9 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <div class="admin-tab" onclick="switchAdminTab('clientes',this)" id="tab-clientes">
         <span class="admin-tab-icon">👥</span><span>&nbsp;Clientes</span>
       </div>
+      <div class="admin-tab" onclick="switchAdminTab('servicos',this)" id="tab-servicos">
+        <span class="admin-tab-icon">🔧</span><span>&nbsp;Serviços</span>
+      </div>
       <div class="admin-tab" onclick="switchAdminTab('galeria',this)" id="tab-galeria">
         <span class="admin-tab-icon">📸</span><span>&nbsp;Galeria</span>
       </div>
@@ -789,7 +813,7 @@ const CATS_ORDER = ['Estética Interna','Estética Externa','Serviços Especiais
 // ============================================================
 let _bookings = [];
 let _blocked  = [];
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage;
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef;
 let _authUser = null;
 let _clientNotes = {};
 let _clientNotesRef = null;
@@ -1498,6 +1522,7 @@ function switchAdminTab(tab, el) {
   else if(tab==='agendamentos') renderAdminBookings();
   else if(tab==='estatisticas') renderAdminStats();
   else if(tab==='clientes') renderAdminClients();
+  else if(tab==='servicos') renderAdminServices();
   else if(tab==='galeria') renderAdminGaleria();
   else if(tab==='config') renderAdminConfig();
 }
@@ -2447,6 +2472,173 @@ async function _geocodeBairro(bairro) {
   return null;
 }
 
+// ============================================================
+// ADMIN — SERVIÇOS
+// ============================================================
+const SVCS_CATS = ['Estética Interna', 'Estética Externa', 'Serviços Especiais'];
+
+function renderAdminServices() {
+  const svcs = Object.entries(SVCS);
+  document.getElementById('adminContent').innerHTML = `
+    <h2>🔧 Serviços</h2>
+    <div style="display:flex;gap:.8rem;margin-bottom:1.4rem;flex-wrap:wrap">
+      <button class="btn-primary" onclick="openServiceForm(null)">+ Novo Serviço</button>
+      <button class="btn-ghost" style="font-size:.78rem" onclick="seedServicesFromDefault()">⬇️ Importar serviços padrão</button>
+    </div>
+    <div id="svcFormWrap"></div>
+    <div id="svcList">${buildServiceList(svcs)}</div>`;
+}
+
+function buildServiceList(svcs) {
+  if (!svcs.length) return '<p style="color:var(--muted);font-size:.85rem">Nenhum serviço cadastrado. Clique em "+ Novo Serviço" ou importe os padrão.</p>';
+  return svcs.map(([id, s]) => {
+    const cpq = s._cost_pq || 0, cgr = s._cost_gr || 0;
+    const mpq = s.pq - cpq, mgr = s.gr - cgr;
+    const ppq = s.pq ? Math.round(mpq / s.pq * 100) : 0;
+    const pgr = s.gr ? Math.round(mgr / s.gr * 100) : 0;
+    const isActive = s.active !== false;
+    return `<div class="svc-admin-card${isActive ? '' : ' inactive-svc'}" id="sac-${id}">
+      <div class="svc-admin-header">
+        <span class="svc-admin-icon">${s.icon || '🔧'}</span>
+        <div class="svc-admin-meta">
+          <div class="svc-admin-name">${s.name}</div>
+          <div class="svc-admin-sub">${s.cat || ''}${s.daysExtra ? ' · ' + s.daysExtra + ' dia(s) extra' : ' · mesmo dia'}</div>
+        </div>
+        <button class="btn-toggle-svc${isActive ? '' : ' off'}" onclick="toggleService('${id}')">
+          ${isActive ? '✅ Ativo' : '⛔ Inativo'}
+        </button>
+      </div>
+      <div class="svc-pricing-grid">
+        <div class="svc-pricing-cell">
+          <b>🚗 Pequeno</b>
+          ${cpq ? `Custo: ${fmtMoney(cpq)}<br/>` : ''}Venda: ${fmtMoney(s.pq)}
+          ${cpq ? `<div class="svc-pricing-margin">Margem: ${fmtMoney(mpq)} (${ppq}%)</div>` : ''}
+        </div>
+        <div class="svc-pricing-cell">
+          <b>🚙 Grande</b>
+          ${cgr ? `Custo: ${fmtMoney(cgr)}<br/>` : ''}Venda: ${fmtMoney(s.gr)}
+          ${cgr ? `<div class="svc-pricing-margin">Margem: ${fmtMoney(mgr)} (${pgr}%)</div>` : ''}
+        </div>
+      </div>
+      <div class="svc-admin-actions">
+        <button class="btn-edit-svc" onclick="openServiceForm('${id}')">✏️ Editar</button>
+        <button class="ba-admin-del" onclick="deleteService('${id}')">🗑️ Excluir</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openServiceForm(id) {
+  const s = id ? SVCS[id] : null;
+  const wrap = document.getElementById('svcFormWrap');
+  if (!wrap) return;
+  const catOpts = SVCS_CATS.map(c => `<option${(s?.cat||'') === c ? ' selected' : ''}>${c}</option>`).join('');
+  wrap.innerHTML = `
+    <div class="svc-form-panel">
+      <h4>${id ? 'Editar Serviço' : 'Novo Serviço'}</h4>
+      <div class="form-row">
+        <div class="form-group" style="flex:3"><label>Nome do serviço</label><input id="sfName" value="${s?.name||''}"/></div>
+        <div class="form-group" style="flex:1"><label>Ícone (emoji)</label><input id="sfIcon" value="${s?.icon||'🔧'}" maxlength="4"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Categoria</label>
+          <select id="sfCat">${catOpts}</select>
+        </div>
+        <div class="form-group"><label>Dias extras</label><input id="sfDays" type="number" value="${s?.daysExtra||0}" min="0" max="10"/></div>
+        <div class="form-group"><label>Ativo</label>
+          <select id="sfActive"><option value="1"${s?.active!==false?' selected':''}>✅ Ativo</option><option value="0"${s?.active===false?' selected':''}>⛔ Inativo</option></select>
+        </div>
+      </div>
+      <div class="form-row full"><div class="form-group"><label>Descrição</label><input id="sfDesc" value="${s?.desc||''}"/></div></div>
+      <div class="form-row" style="margin-top:.4rem">
+        <div style="flex:1;font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;align-self:center">Preços</div>
+      </div>
+      <div class="svc-price-grid">
+        <div></div>
+        <div style="font-family:'Montserrat',sans-serif;font-size:.68rem;font-weight:700;color:var(--muted);text-align:center;padding-bottom:4px">🚗 Pequeno</div>
+        <div style="font-family:'Montserrat',sans-serif;font-size:.68rem;font-weight:700;color:var(--muted);text-align:center;padding-bottom:4px">🚙 Grande</div>
+        <div style="font-size:.75rem;color:var(--muted);padding-top:6px">Custo (R$)</div>
+        <div><input id="sfCostPq" type="number" value="${s?._cost_pq||0}" min="0" step="10"/></div>
+        <div><input id="sfCostGr" type="number" value="${s?._cost_gr||0}" min="0" step="10"/></div>
+        <div style="font-size:.75rem;color:var(--muted);padding-top:6px">Venda (R$)</div>
+        <div><input id="sfSalePq" type="number" value="${s?.pq||0}" min="0" step="10"/></div>
+        <div><input id="sfSaleGr" type="number" value="${s?.gr||0}" min="0" step="10"/></div>
+      </div>
+      <div style="display:flex;gap:.8rem;margin-top:1.2rem">
+        <button class="btn-primary" onclick="saveService('${id||''}')">💾 Salvar</button>
+        <button class="btn-ghost" onclick="document.getElementById('svcFormWrap').innerHTML=''">Cancelar</button>
+      </div>
+    </div>`;
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function slugify(str) {
+  return str.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+}
+
+async function saveService(id) {
+  const name    = document.getElementById('sfName')?.value.trim();
+  const icon    = document.getElementById('sfIcon')?.value.trim() || '🔧';
+  const cat     = document.getElementById('sfCat')?.value;
+  const days    = parseInt(document.getElementById('sfDays')?.value) || 0;
+  const active  = document.getElementById('sfActive')?.value === '1';
+  const desc    = document.getElementById('sfDesc')?.value.trim();
+  const costPq  = parseFloat(document.getElementById('sfCostPq')?.value) || 0;
+  const costGr  = parseFloat(document.getElementById('sfCostGr')?.value) || 0;
+  const salePq  = parseFloat(document.getElementById('sfSalePq')?.value) || 0;
+  const saleGr  = parseFloat(document.getElementById('sfSaleGr')?.value) || 0;
+
+  if (!name) { alert('Informe o nome do serviço.'); return; }
+  if (!salePq || !saleGr) { alert('Informe o preço de venda para ambos os portes.'); return; }
+  if (!_servicesRef) { alert('Firebase não conectado.'); return; }
+
+  const key = id || slugify(name);
+  const data = { name, icon, cat, daysExtra: days, active, desc,
+    pricing: { pq: { cost: costPq, sale: salePq }, gr: { cost: costGr, sale: saleGr } } };
+
+  try {
+    await _servicesRef.child(key).set(data);
+    document.getElementById('svcFormWrap').innerHTML = '';
+  } catch(e) { alert('Erro ao salvar: ' + e.message); }
+}
+
+async function deleteService(id) {
+  if (!confirm(`Excluir o serviço "${SVCS[id]?.name}"? Agendamentos existentes não são afetados.`)) return;
+  if (!_servicesRef) return;
+  try {
+    await _servicesRef.child(id).remove();
+  } catch(e) { alert('Erro ao excluir: ' + e.message); }
+}
+
+async function toggleService(id) {
+  if (!_servicesRef) return;
+  const current = SVCS[id]?.active !== false;
+  try {
+    await _servicesRef.child(id).update({ active: !current });
+  } catch(e) { alert('Erro ao atualizar: ' + e.message); }
+}
+
+async function seedServicesFromDefault() {
+  if (!_servicesRef) { alert('Firebase não conectado.'); return; }
+  if (!confirm('Importar os 9 serviços padrão para o Firebase? Serviços com mesmo ID serão sobrescritos.')) return;
+  const defaults = {
+    'lavagem-motor':       { name:'Lavagem de Motor',          icon:'⚙️',  cat:'Serviços Especiais', active:true, daysExtra:0, desc:'Remoção de graxa e oxidação. Proteção elétrica e verniz de motor.',       pricing:{pq:{cost:0,sale:80},  gr:{cost:0,sale:130}} },
+    'lavagem-detalhada':   { name:'Lavagem Detalhada e Motor', icon:'🚿',  cat:'Estética Externa',   active:true, daysExtra:0, desc:'Snow Foam, emblemas, grades, dobradiças, caixas de roda, pneus.',          pricing:{pq:{cost:0,sale:180}, gr:{cost:0,sale:300}} },
+    'higienizacao-tecido': { name:'Higienização de Tecidos',   icon:'🧼',  cat:'Estética Interna',   active:true, daysExtra:0, desc:'Deep Clean com extratora. Ácaros, fungos, manchas e odores.',              pricing:{pq:{cost:0,sale:300}, gr:{cost:0,sale:450}} },
+    'higienizacao-couro':  { name:'Tratamento de Couro',       icon:'🛋️',  cat:'Estética Interna',   active:true, daysExtra:0, desc:'Limpeza profunda + hidratação. Evita rachaduras no couro.',                pricing:{pq:{cost:0,sale:250}, gr:{cost:0,sale:420}} },
+    'polimento-geral':     { name:'Polimento Geral',            icon:'✨',  cat:'Estética Externa',   active:true, daysExtra:1, desc:'Clay Bar, corte, refino e lustre. Remove riscos e devolve brilho.',        pricing:{pq:{cost:0,sale:320}, gr:{cost:0,sale:520}} },
+    'polimento-preto':     { name:'Polimento Carro Preto',     icon:'⬛', cat:'Estética Externa',   active:true, daysExtra:1, desc:'Boinas ultra-macias e compostos nano. Elimina hologramas.',                pricing:{pq:{cost:0,sale:500}, gr:{cost:0,sale:750}} },
+    'polimento-cristal':   { name:'Polimento & Cristalização', icon:'💎',  cat:'Estética Externa',   active:true, daysExtra:2, desc:'Correção completa + selante contra UV, poluição e chuva ácida.',           pricing:{pq:{cost:0,sale:600}, gr:{cost:0,sale:1300}}},
+    'polimento-vidros':    { name:'Polimento de Vidros',        icon:'🔍',  cat:'Serviços Especiais', active:true, daysExtra:0, desc:'Óxido de cério remove manchas e micro-riscos. Melhor visibilidade.',       pricing:{pq:{cost:0,sale:120}, gr:{cost:0,sale:180}} },
+    'reparo-trinca':       { name:'Reparo de Trinca',           icon:'🔧',  cat:'Serviços Especiais', active:true, daysExtra:0, desc:'Resina estrutural + cura UV. Economize até 90% vs trocar o vidro.',        pricing:{pq:{cost:0,sale:80},  gr:{cost:0,sale:150}} },
+  };
+  try {
+    await _servicesRef.set(defaults);
+    alert('✅ 9 serviços importados! Agora preencha os custos para ver as margens.');
+  } catch(e) { alert('Erro: ' + e.message); }
+}
+
 function renderAdminGaleria() {
   document.getElementById('adminContent').innerHTML = `
     <h2>📸 Galeria Antes/Depois</h2>
@@ -2652,14 +2844,30 @@ function setSize(size, btn) {
   renderServices();
 }
 
+function getDisplayCats() {
+  const ORDER = ['Estética Interna', 'Estética Externa', 'Serviços Especiais'];
+  const groups = {};
+  Object.entries(SVCS).forEach(([id, s]) => {
+    if (s.active === false) return;
+    const cat = s.cat || 'Outros';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(id);
+  });
+  const result = [];
+  ORDER.forEach(c => { if (groups[c]) result.push({ label: c, keys: groups[c] }); });
+  Object.keys(groups).filter(c => !ORDER.includes(c)).forEach(c => result.push({ label: c, keys: groups[c] }));
+  return result;
+}
+
 function renderServices() {
-  document.getElementById('catWrap').innerHTML = CATS_DATA.map(cat => `
+  document.getElementById('catWrap').innerHTML = getDisplayCats().map(cat => `
     <div>
       <div class="cat-label">${cat.label}</div>
       <div class="svcs-grid">
         ${cat.keys.map(id => {
           const s = SVCS[id];
-          const price = s[currentSizeGlobal];
+          if (!s) return '';
+          const price = s[currentSizeGlobal] || s.pq || 0;
           return `<div class="svc-card" onclick="openBooking('${id}')">
             <div class="svc-top">
               <div class="svc-icon">${s.icon}</div>
@@ -2824,6 +3032,7 @@ function updateWaLink() {
     _blockedRef  = _fbDB.ref('blocked');
     _cfgRef      = _fbDB.ref('config');
     _galleryRef  = _fbDB.ref('gallery');
+    _servicesRef = _fbDB.ref('services');
     _storage     = firebase.storage();
     _clientNotesRef = _fbDB.ref('clientNotes');
     _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
@@ -2864,6 +3073,30 @@ function updateWaLink() {
       if(d.maxPerDay)   CFG.maxPerDay   = d.maxPerDay;
       updateWaLink();
     }, e => console.error('Firebase config:', e));
+
+    // Listener em tempo real: sincroniza SVCS com /services do Firebase
+    _servicesRef.on('value', snap => {
+      const val = snap.val();
+      if (val && Object.keys(val).length > 0) {
+        Object.keys(SVCS).forEach(k => delete SVCS[k]);
+        Object.entries(val).forEach(([id, s]) => {
+          SVCS[id] = {
+            name: s.name || id,
+            icon: s.icon || '🔧',
+            cat: s.cat || 'Outros',
+            pq: s.pricing?.pq?.sale ?? s.pq ?? 0,
+            gr: s.pricing?.gr?.sale ?? s.gr ?? 0,
+            daysExtra: s.daysExtra || 0,
+            desc: s.desc || '',
+            active: s.active !== false,
+            _cost_pq: s.pricing?.pq?.cost ?? 0,
+            _cost_gr: s.pricing?.gr?.cost ?? 0,
+          };
+        });
+        renderServices();
+        if (typeof currentAdminTab !== 'undefined' && currentAdminTab === 'servicos') renderAdminServices();
+      }
+    }, e => console.warn('Firebase services:', e));
 
     console.log('✅ Firebase conectado — sp-car-clean');
 
