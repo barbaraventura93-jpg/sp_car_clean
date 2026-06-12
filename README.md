@@ -40,6 +40,17 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - **Notificação em tempo real via Telegram** a cada novo agendamento, reagendamento ou cancelamento
 - **Exportação de dados** em JSON
 
+### Serviços (Admin)
+- Aba dedicada **🔧 Serviços** no painel administrativo
+- Cadastrar, editar, excluir e ativar/desativar serviços sem tocar no código
+- Campos: nome, ícone, categoria, descrição, dias extras, ativo/inativo
+- **Preço de custo + preço de venda** por porte (carro pequeno e grande)
+- **Margem calculada automaticamente** em R$ e percentual por serviço
+- Toggle ativo/inativo: remove da vitrine pública instantaneamente sem perder histórico
+- Importar os 9 serviços padrão com 1 clique (seed inicial)
+- Vitrine pública lê do Firebase em tempo real — mudanças aparecem no site sem redeploy
+- Agendamentos existentes **não são afetados** por mudanças de preço (valor congelado no registro)
+
 ### Galeria Antes/Depois (Admin)
 - Aba dedicada **📸 Galeria** no painel administrativo
 - Upload de foto **ANTES** + foto **DEPOIS** diretamente pelo admin (máx 5 MB cada)
@@ -202,6 +213,8 @@ sp-car-clean/
 | Galeria antes/depois com slider interativo | ✅ |
 | Gestão da galeria pelo painel admin | ✅ |
 | Domínio customizado (www.spcarclean.com.br) | ✅ |
+| CRUD de serviços com preços e margens pelo admin | ✅ |
+| Exclusão individual de agendamentos de teste | ✅ |
 | Lista de espera | 🔜 |
 | Gráficos de receita por período | 🔜 |
 | FAQ por serviço | 🔜 |
