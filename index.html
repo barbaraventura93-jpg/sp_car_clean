@@ -1878,10 +1878,10 @@ async function doApprove(id) {
       b.priceWithFee = priceWithFee;
       setBookings(bookings);
     } else {
-      console.warn('create-payment retornou erro:', payResult.error);
+      alert('⚠️ Erro ao gerar link de pagamento:\n' + JSON.stringify(payResult.error, null, 2));
     }
   } catch(e) {
-    console.warn('create-payment falhou:', e.message);
+    alert('⚠️ Erro na chamada create-payment:\n' + e.message);
   }
 
   closeModal('detailModal');
