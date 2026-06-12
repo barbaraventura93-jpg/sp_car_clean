@@ -32,9 +32,9 @@ exports.handler = async (event) => {
     redirect_url: redirectUrl,
     webhook_url: webhookUrl,
     items: [{
-      name: service || 'Serviço SP Car Clean',
+      description: service || 'Serviço SP Car Clean',
       quantity: 1,
-      unit_price: amountInCents
+      price: amountInCents
     }],
     customer: {
       name: customerName || '',
