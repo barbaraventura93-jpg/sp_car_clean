@@ -129,6 +129,35 @@ h2{font-family:'Montserrat',sans-serif;font-size:clamp(1.8rem,3.5vw,3rem);font-w
 .pq-item h4{font-family:'Montserrat',sans-serif;font-size:.88rem;font-weight:700;color:var(--white);margin-bottom:.25rem}
 .pq-item p{font-size:.78rem;color:var(--muted);line-height:1.65}
 
+/* ====== GALERIA ANTES/DEPOIS ====== */
+#galeria{padding:7rem 6%;background:var(--bg2)}
+.ba-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem;margin-top:2.8rem}
+.ba-card{position:relative;border-radius:16px;overflow:hidden;border:1px solid var(--border);background:var(--card);aspect-ratio:4/3;cursor:ew-resize;-webkit-user-select:none;user-select:none;touch-action:none}
+.ba-before{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;display:block}
+.ba-after-wrap{position:absolute;inset:0;clip-path:inset(0 0 0 50%)}
+.ba-after-wrap img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;display:block}
+.ba-handle{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);width:44px;z-index:4;display:flex;align-items:center;justify-content:center;cursor:ew-resize}
+.ba-handle-line{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);width:2px;background:rgba(255,255,255,.92);box-shadow:0 0 10px rgba(0,0,0,.55)}
+.ba-handle-btn{width:38px;height:38px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 14px rgba(0,0,0,.45);font-size:.82rem;color:#111;position:relative;z-index:1;flex-shrink:0}
+.ba-lbl{position:absolute;top:12px;z-index:5;font-family:'Montserrat',sans-serif;font-size:.55rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:.28rem .65rem;border-radius:4px;color:#fff;pointer-events:none}
+.ba-lbl-b{left:12px;background:rgba(0,0,0,.65)}
+.ba-lbl-a{right:12px;background:rgba(42,159,214,.8)}
+.ba-caption{position:absolute;bottom:0;left:0;right:0;z-index:5;padding:.75rem 1rem;background:linear-gradient(to top,rgba(0,0,0,.78),transparent);font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:600;color:#fff;letter-spacing:.04em;pointer-events:none}
+.ba-title-grad{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ba-admin-row{display:grid;grid-template-columns:64px 64px 1fr auto;gap:.8rem;align-items:center;padding:.75rem;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.02);margin-bottom:.6rem}
+.ba-admin-thumb{width:64px;height:48px;object-fit:cover;border-radius:6px;background:var(--card);border:1px solid var(--border)}
+.ba-admin-caption{font-size:.8rem;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ba-admin-del{background:none;border:1px solid rgba(239,68,68,.4);color:var(--red);border-radius:6px;padding:.3rem .65rem;cursor:pointer;font-size:.76rem;white-space:nowrap}
+.ba-admin-del:hover{background:var(--red-lt)}
+.ba-prev-pair{display:flex;gap:1rem;margin:.5rem 0 .8rem}
+.ba-prev-pair img{width:90px;height:68px;object-fit:cover;border-radius:8px;border:1px solid var(--border);background:var(--card)}
+.ba-progress-bar{height:4px;background:var(--border);border-radius:4px;overflow:hidden;margin:.5rem 0 .8rem}
+.ba-progress-fill{height:100%;width:0;background:var(--grad);transition:width .25s;border-radius:4px}
+input[type="file"].file-input{font-size:.78rem;color:var(--muted);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:.4rem .6rem;cursor:pointer;width:100%}
+.ba-subtitle{margin-top:.8rem;color:var(--muted);font-size:.9rem;max-width:460px;margin-inline:auto}
+@media(max-width:900px){.ba-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:580px){.ba-grid{grid-template-columns:1fr}.ba-card{aspect-ratio:3/2}}
+
 /* ====== DEPOIMENTOS ====== */
 #depoimentos{padding:7rem 6%;background:var(--bg)}
 .dep-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:1.4rem;margin-top:2.8rem}
@@ -434,6 +463,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
 </head>
 <body>
 
@@ -452,6 +482,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
   <ul class="nav-links">
     <li><a href="#servicos">Serviços</a></li>
     <li><a href="#porque">Diferenciais</a></li>
+    <li><a href="#galeria">Galeria</a></li>
     <li><a href="#depoimentos">Clientes</a></li>
     <li><a onclick="openBooking()" class="cta" style="cursor:pointer">Agendar</a></li>
   </ul>
@@ -547,6 +578,16 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <div class="pq-item"><div class="pq-icon">🛡️</div><div><h4>Proteção de longa duração</h4><p>A cristalização cria barreira contra UV, poluição e chuva ácida, evitando repinturas futuras.</p></div></div>
     </div>
   </div>
+</section>
+
+<!-- ===== GALERIA ANTES/DEPOIS ===== -->
+<section id="galeria">
+  <div class="sec-header">
+    <div class="sec-label">Resultados Reais</div>
+    <h2>Veja a <span class="ba-title-grad">transformação</span></h2>
+    <p class="ba-subtitle">Arraste a linha para comparar o antes e depois de cada serviço.</p>
+  </div>
+  <div class="ba-grid" id="baGrid"></div>
 </section>
 
 <!-- ===== DEPOIMENTOS ===== -->
@@ -704,6 +745,9 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <div class="admin-tab" onclick="switchAdminTab('clientes',this)" id="tab-clientes">
         <span class="admin-tab-icon">👥</span><span>&nbsp;Clientes</span>
       </div>
+      <div class="admin-tab" onclick="switchAdminTab('galeria',this)" id="tab-galeria">
+        <span class="admin-tab-icon">📸</span><span>&nbsp;Galeria</span>
+      </div>
       <div class="admin-tab" onclick="switchAdminTab('config',this)" id="tab-config">
         <span class="admin-tab-icon">⚙️</span><span>&nbsp;Configurações</span>
       </div>
@@ -750,7 +794,7 @@ const CATS_ORDER = ['Estética Interna','Estética Externa','Serviços Especiais
 // ============================================================
 let _bookings = [];
 let _blocked  = [];
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef;
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage;
 let _authUser = null;
 let _clientNotes = {};
 let _clientNotesRef = null;
@@ -1459,6 +1503,7 @@ function switchAdminTab(tab, el) {
   else if(tab==='agendamentos') renderAdminBookings();
   else if(tab==='estatisticas') renderAdminStats();
   else if(tab==='clientes') renderAdminClients();
+  else if(tab==='galeria') renderAdminGaleria();
   else if(tab==='config') renderAdminConfig();
 }
 
@@ -2397,6 +2442,133 @@ async function _geocodeBairro(bairro) {
   return null;
 }
 
+function renderAdminGaleria() {
+  document.getElementById('adminContent').innerHTML = `
+    <h2>📸 Galeria Antes/Depois</h2>
+    <div class="admin-panel" style="max-width:600px">
+      <h3>Nova comparação</h3>
+      <div class="form-row full"><div class="form-group">
+        <label>Legenda (ex: Polimento Completo — Civic Preto)</label>
+        <input id="gaCaption" placeholder="Descreva o serviço e o veículo"/>
+      </div></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Foto ANTES</label>
+          <input type="file" id="gaFileBefore" class="file-input" accept="image/*" onchange="gaPreview(this,'gaPrevBefore')"/>
+          <img id="gaPrevBefore" class="ba-admin-thumb" style="display:none;margin-top:.5rem;width:100%;height:80px"/>
+        </div>
+        <div class="form-group">
+          <label>Foto DEPOIS</label>
+          <input type="file" id="gaFileAfter" class="file-input" accept="image/*" onchange="gaPreview(this,'gaPrevAfter')"/>
+          <img id="gaPrevAfter" class="ba-admin-thumb" style="display:none;margin-top:.5rem;width:100%;height:80px"/>
+        </div>
+      </div>
+      <div class="ba-progress-bar" id="gaProgressBar" style="display:none"><div class="ba-progress-fill" id="gaProgressFill"></div></div>
+      <button class="btn-primary" onclick="saveGalleryItem()">Adicionar à Galeria</button>
+    </div>
+    <div class="admin-panel" style="max-width:600px">
+      <h3>Comparações salvas</h3>
+      <div id="gaList"><p style="color:var(--muted);font-size:.82rem">Carregando...</p></div>
+    </div>`;
+  loadGalleryAdminList();
+}
+
+function gaPreview(input, id) {
+  const img = document.getElementById(id);
+  if (!input.files || !input.files[0]) { img.style.display = 'none'; return; }
+  const r = new FileReader();
+  r.onload = e => { img.src = e.target.result; img.style.display = 'block'; };
+  r.readAsDataURL(input.files[0]);
+}
+
+function loadGalleryAdminList() {
+  const listEl = document.getElementById('gaList');
+  if (!listEl) return;
+  if (!_galleryRef) {
+    listEl.innerHTML = '<p style="color:var(--muted);font-size:.82rem">Firebase não conectado.</p>';
+    return;
+  }
+  _galleryRef.once('value', snap => {
+    const val = snap.val();
+    if (!val) {
+      listEl.innerHTML = '<p style="color:var(--muted);font-size:.82rem">Nenhuma comparação salva ainda.</p>';
+      return;
+    }
+    const entries = Object.entries(val).sort(([,a],[,b]) => (b.createdAt||0) - (a.createdAt||0));
+    listEl.innerHTML = entries.map(([id, d]) =>
+      `<div class="ba-admin-row">
+        <img class="ba-admin-thumb" src="${d.beforeUrl}" alt="Antes" onerror="this.style.opacity='.3'">
+        <img class="ba-admin-thumb" src="${d.afterUrl}" alt="Depois" onerror="this.style.opacity='.3'">
+        <span class="ba-admin-caption">${String(d.caption||'').replace(/</g,'&lt;')}</span>
+        <button class="ba-admin-del" onclick="deleteGalleryItem('${id}')">🗑️ Remover</button>
+      </div>`
+    ).join('');
+  }).catch(() => {
+    if (listEl) listEl.innerHTML = '<p style="color:var(--red);font-size:.82rem">Erro ao carregar a galeria.</p>';
+  });
+}
+
+async function saveGalleryItem() {
+  const caption    = (document.getElementById('gaCaption')?.value || '').trim();
+  const fileBefore = document.getElementById('gaFileBefore')?.files?.[0];
+  const fileAfter  = document.getElementById('gaFileAfter')?.files?.[0];
+
+  if (!caption)    { alert('Informe a legenda da comparação.'); return; }
+  if (!fileBefore) { alert('Selecione a foto ANTES.'); return; }
+  if (!fileAfter)  { alert('Selecione a foto DEPOIS.'); return; }
+  if (fileBefore.size > 5 * 1024 * 1024) { alert('Foto ANTES muito grande. Máximo 5 MB.'); return; }
+  if (fileAfter.size  > 5 * 1024 * 1024) { alert('Foto DEPOIS muito grande. Máximo 5 MB.'); return; }
+  if (!_storage || !_galleryRef) { alert('Firebase não conectado. Tente novamente.'); return; }
+
+  const bar  = document.getElementById('gaProgressBar');
+  const fill = document.getElementById('gaProgressFill');
+  if (bar) bar.style.display = 'block';
+  const setP = p => { if (fill) fill.style.width = p + '%'; };
+
+  try {
+    const ts   = Date.now();
+    const root = _storage.ref('gallery');
+
+    setP(5);
+    const refB = root.child(ts + '_before_' + fileBefore.name);
+    await refB.put(fileBefore);
+    const beforeUrl = await refB.getDownloadURL();
+
+    setP(55);
+    const refA = root.child(ts + '_after_' + fileAfter.name);
+    await refA.put(fileAfter);
+    const afterUrl = await refA.getDownloadURL();
+
+    setP(90);
+    await _galleryRef.push({ caption, beforeUrl, afterUrl, createdAt: ts });
+    setP(100);
+
+    document.getElementById('gaCaption').value = '';
+    document.getElementById('gaFileBefore').value = '';
+    document.getElementById('gaFileAfter').value = '';
+    ['gaPrevBefore','gaPrevAfter'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+    setTimeout(() => { if (bar) bar.style.display = 'none'; setP(0); }, 700);
+
+    loadGalleryAdminList();
+    reloadGallerySection();
+  } catch (err) {
+    alert('Erro no upload: ' + (err.message || err));
+    if (bar) bar.style.display = 'none';
+    setP(0);
+  }
+}
+
+function deleteGalleryItem(id) {
+  if (!confirm('Remover esta comparação da galeria?')) return;
+  if (!_galleryRef) return;
+  _galleryRef.child(id).remove()
+    .then(() => { loadGalleryAdminList(); reloadGallerySection(); })
+    .catch(err => alert('Erro ao remover: ' + err.message));
+}
+
 function renderAdminConfig() {
   document.getElementById('adminContent').innerHTML = `
     <h2>⚙️ Configurações</h2>
@@ -2646,6 +2818,8 @@ function updateWaLink() {
     _bookingsRef = _fbDB.ref('bookings');
     _blockedRef  = _fbDB.ref('blocked');
     _cfgRef      = _fbDB.ref('config');
+    _galleryRef  = _fbDB.ref('gallery');
+    _storage     = firebase.storage();
     _clientNotesRef = _fbDB.ref('clientNotes');
     _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
 
@@ -2903,6 +3077,107 @@ document.addEventListener('click', function(e) {
 
   obs.observe(section);
 })();
+
+// ============================================================
+// GALERIA ANTES/DEPOIS
+// ============================================================
+const GALLERY_FALLBACK = [
+  {
+    before: 'assets/portfolio/branco.jpg.jpg',
+    after:  'assets/portfolio/branco.jpg.jpg',
+    beforeFilter: 'grayscale(50%) brightness(.72) saturate(.3) contrast(1.1)',
+    caption: 'Polimento Completo — Palio Branco'
+  },
+  {
+    before: 'assets/portfolio/estofado.jpg.jpg',
+    after:  'assets/portfolio/estofado.jpg.jpg',
+    beforeFilter: 'grayscale(40%) brightness(.7) saturate(.25) contrast(1.15)',
+    caption: 'Higienização de Estofado'
+  },
+  {
+    before: 'assets/portfolio/revitalização.jpg.jpg',
+    after:  'assets/portfolio/revitalização.jpg.jpg',
+    beforeFilter: 'grayscale(55%) brightness(.68) saturate(.2) contrast(1.1)',
+    caption: 'Revitalização de Pintura e Plásticos'
+  },
+];
+
+function buildGalleryCard(item) {
+  const card = document.createElement('div');
+  card.className = 'ba-card';
+
+  const beforeImg = document.createElement('img');
+  beforeImg.className = 'ba-before';
+  beforeImg.src = item.before;
+  beforeImg.alt = 'Antes';
+  if (item.beforeFilter) beforeImg.style.filter = item.beforeFilter;
+
+  const afterWrap = document.createElement('div');
+  afterWrap.className = 'ba-after-wrap';
+  const afterImg = document.createElement('img');
+  afterImg.src = item.after;
+  afterImg.alt = 'Depois';
+  afterImg.loading = 'lazy';
+  afterWrap.appendChild(afterImg);
+
+  const handle = document.createElement('div');
+  handle.className = 'ba-handle';
+  handle.innerHTML = '<div class="ba-handle-line"></div><div class="ba-handle-btn">&#8596;</div>';
+
+  const lblB = document.createElement('div');
+  lblB.className = 'ba-lbl ba-lbl-b';
+  lblB.textContent = 'Antes';
+
+  const lblA = document.createElement('div');
+  lblA.className = 'ba-lbl ba-lbl-a';
+  lblA.textContent = 'Depois';
+
+  const caption = document.createElement('div');
+  caption.className = 'ba-caption';
+  caption.textContent = item.caption;
+
+  card.append(beforeImg, afterWrap, handle, lblB, lblA, caption);
+  afterImg.addEventListener('error', () => card.remove(), { once: true });
+
+  function setPos(clientX) {
+    const rect = card.getBoundingClientRect();
+    const pct = Math.max(0.04, Math.min(0.96, (clientX - rect.left) / rect.width));
+    afterWrap.style.clipPath = 'inset(0 0 0 ' + (pct * 100) + '%)';
+    handle.style.left = (pct * 100) + '%';
+  }
+
+  let dragging = false;
+  card.addEventListener('mousedown', e => { dragging = true; setPos(e.clientX); e.preventDefault(); });
+  window.addEventListener('mousemove', e => { if (dragging) setPos(e.clientX); });
+  window.addEventListener('mouseup', () => { dragging = false; });
+  card.addEventListener('touchstart', e => { dragging = true; setPos(e.touches[0].clientX); }, { passive: true });
+  card.addEventListener('touchmove', e => { if (dragging) setPos(e.touches[0].clientX); }, { passive: true });
+  card.addEventListener('touchend', () => { dragging = false; });
+
+  return card;
+}
+
+function renderGalleryCards(items) {
+  const grid = document.getElementById('baGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  items.forEach(item => grid.appendChild(buildGalleryCard(item)));
+}
+
+function reloadGallerySection() {
+  if (!_galleryRef) { renderGalleryCards(GALLERY_FALLBACK); return; }
+  _galleryRef.once('value', snap => {
+    const val = snap.val();
+    const items = val
+      ? Object.entries(val)
+          .sort(([,a],[,b]) => (a.createdAt||0) - (b.createdAt||0))
+          .map(([,d]) => ({ before: d.beforeUrl, after: d.afterUrl, caption: d.caption }))
+      : [];
+    renderGalleryCards(items.length ? items : GALLERY_FALLBACK);
+  }).catch(() => renderGalleryCards(GALLERY_FALLBACK));
+}
+
+reloadGallerySection();
 </script>
 </body>
 </html>
