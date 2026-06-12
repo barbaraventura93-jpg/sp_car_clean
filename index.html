@@ -130,6 +130,32 @@ h2{font-family:'Montserrat',sans-serif;font-size:clamp(1.8rem,3.5vw,3rem);font-w
 .pq-item h4{font-family:'Montserrat',sans-serif;font-size:.88rem;font-weight:700;color:var(--white);margin-bottom:.25rem}
 .pq-item p{font-size:.78rem;color:var(--muted);line-height:1.65}
 
+/* ====== COMBOS ====== */
+#combos{padding:7rem 6%;background:var(--bg2)}
+#combos.combos-hidden{display:none}
+.combos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.5rem;margin-top:2.8rem}
+.combo-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.6rem 1.8rem;position:relative;overflow:hidden;transition:transform .3s,box-shadow .3s,border-color .3s}
+.combo-card:hover{transform:translateY(-6px);box-shadow:0 20px 50px rgba(42,159,214,.12);border-color:var(--border-glow)}
+.combo-card-glow{position:absolute;top:0;left:0;right:0;height:3px;background:var(--grad)}
+.combo-savings-badge{position:absolute;top:1.2rem;right:1.2rem;background:var(--green);color:#fff;font-family:'Montserrat',sans-serif;font-size:.62rem;font-weight:800;letter-spacing:.06em;padding:.22rem .6rem;border-radius:50px;white-space:nowrap}
+.combo-emoji{font-size:2rem;margin-bottom:.8rem;display:block}
+.combo-name{font-family:'Montserrat',sans-serif;font-size:1rem;font-weight:800;color:var(--white);margin-bottom:1rem;padding-right:5rem}
+.combo-svc-list{list-style:none;margin-bottom:1.2rem}
+.combo-svc-item{display:flex;justify-content:space-between;align-items:center;font-size:.8rem;padding:.3rem 0;border-bottom:1px solid var(--border);color:var(--muted)}
+.combo-svc-item:last-child{border-bottom:none}
+.combo-svc-item span{color:var(--text)}
+.combo-total-row{display:flex;align-items:baseline;gap:.8rem;margin-bottom:.2rem}
+.combo-regular{font-size:.8rem;color:var(--muted);text-decoration:line-through}
+.combo-final{font-family:'Montserrat',sans-serif;font-size:1.35rem;font-weight:900;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.combo-economy{font-size:.72rem;color:var(--green);font-weight:600;margin-bottom:1.2rem}
+.combo-cta{display:block;text-align:center;background:linear-gradient(135deg,var(--blue),var(--accent));color:#fff;font-family:'Montserrat',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:.7rem 1.2rem;border-radius:8px;border:none;cursor:pointer;width:100%;transition:opacity .2s,transform .2s}
+.combo-cta:hover{opacity:.88;transform:translateY(-1px)}
+.combo-admin-svctags{display:flex;flex-wrap:wrap;gap:.3rem;margin:.5rem 0 .7rem}
+.combo-svc-tag{display:inline-flex;align-items:center;gap:.25rem;background:rgba(42,159,214,.1);border:1px solid rgba(42,159,214,.2);color:var(--accent);border-radius:4px;padding:.18rem .5rem;font-size:.68rem;font-family:'Montserrat',sans-serif;font-weight:600}
+.combo-suggestion{background:rgba(42,159,214,.07);border:1px solid rgba(42,159,214,.25);border-radius:10px;padding:.8rem 1rem;margin-top:.8rem;display:flex;align-items:center;gap:.8rem;flex-wrap:wrap}
+.combo-suggestion-text{flex:1;font-size:.8rem;color:var(--text);line-height:1.5;min-width:160px}
+.combo-suggestion-btn{background:linear-gradient(135deg,var(--blue),var(--accent));color:#fff;border:none;border-radius:6px;padding:.45rem 1rem;font-family:'Montserrat',sans-serif;font-size:.74rem;font-weight:700;cursor:pointer;white-space:nowrap}
+
 /* ====== ADMIN SERVIÇOS ====== */
 .svc-admin-card{background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.3rem;margin-bottom:.8rem;transition:border-color .2s}
 .svc-admin-card.inactive-svc{opacity:.55}
@@ -500,6 +526,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
   </a>
   <ul class="nav-links">
     <li><a href="#servicos">Serviços</a></li>
+    <li><a href="#combos">Combos</a></li>
     <li><a href="#porque">Diferenciais</a></li>
     <li><a href="#galeria">Galeria</a></li>
     <li><a href="#depoimentos">Clientes</a></li>
@@ -572,6 +599,16 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
     </div>
   </div>
   <div class="categories" id="catWrap"></div>
+</section>
+
+<!-- ===== COMBOS ===== -->
+<section id="combos" class="combos-hidden">
+  <div class="sec-header">
+    <div class="sec-label">Pacotes Especiais</div>
+    <h2>Economize com os <span class="ba-title-grad">combos</span></h2>
+    <p class="ba-subtitle">Serviços combinados com desconto — mais resultado, menor custo.</p>
+  </div>
+  <div class="combos-grid" id="combosGrid"></div>
 </section>
 
 <!-- ===== POR QUE NÓS ===== -->
@@ -761,6 +798,9 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <div class="admin-tab" onclick="switchAdminTab('clientes',this)" id="tab-clientes">
         <span class="admin-tab-icon">👥</span><span>&nbsp;Clientes</span>
       </div>
+      <div class="admin-tab" onclick="switchAdminTab('combos',this)" id="tab-combos">
+        <span class="admin-tab-icon">🎁</span><span>&nbsp;Combos</span>
+      </div>
       <div class="admin-tab" onclick="switchAdminTab('servicos',this)" id="tab-servicos">
         <span class="admin-tab-icon">🔧</span><span>&nbsp;Serviços</span>
       </div>
@@ -813,7 +853,8 @@ const CATS_ORDER = ['Estética Interna','Estética Externa','Serviços Especiais
 // ============================================================
 let _bookings = [];
 let _blocked  = [];
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef;
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef;
+const _COMBOS = {};
 let _authUser = null;
 let _clientNotes = {};
 let _clientNotesRef = null;
@@ -1099,7 +1140,7 @@ function renderBookingStep() {
       <button class="${booking.carSize==='gr'?'active':''}" onclick="setBCarSize('gr',this)">🚙 Grande</button>
     </div>`;
 
-    const cards = Object.entries(SVCS).map(([id,s]) => `
+    const cards = Object.entries(SVCS).filter(([,s]) => s.active !== false).map(([id,s]) => `
       <div class="svc-pick-card ${booking.services.includes(id)?'selected':''}" onclick="selectService('${id}')">
         <div class="svc-pick-icon">${s.icon}</div>
         <div>
@@ -1110,11 +1151,39 @@ function renderBookingStep() {
       </div>`).join('');
 
     const total = booking.services.reduce((s,id)=>s+(SVCS[id]?SVCS[id][booking.carSize]:0),0);
+
+    // Sugestão de combo: verifica se serviços selecionados fazem parte de algum combo
+    let comboSuggestion = '';
+    if (booking.services.length > 0) {
+      const sz = booking.carSize;
+      let best = null;
+      Object.entries(_COMBOS).forEach(([cid, combo]) => {
+        if (combo.active === false) return;
+        const ids = combo.serviceIds || [];
+        const matched = ids.filter(s => booking.services.includes(s));
+        const missing = ids.filter(s => !booking.services.includes(s) && SVCS[s]?.active !== false);
+        if (matched.length > 0 && missing.length > 0 && missing.length <= 2) {
+          const p = comboPrice(combo, sz);
+          if (!best || p.savings > best.savings) best = { cid, combo, missing, p };
+        }
+      });
+      if (best) {
+        const missingNames = best.missing.map(id => SVCS[id]?.name || id).join(' e ');
+        comboSuggestion = `<div class="combo-suggestion">
+          <div class="combo-suggestion-text">
+            💡 <strong>${best.combo.emoji || '🎁'} ${best.combo.name}</strong> — adicione <strong>${missingNames}</strong>
+            e economize <strong style="color:var(--green)">${fmtMoney(best.p.savings)}</strong> com o combo
+          </div>
+          <button class="combo-suggestion-btn" onclick="applyComboSuggestion('${best.cid}')">Aplicar combo →</button>
+        </div>`;
+      }
+    }
+
     const totalBar = booking.services.length
       ? `<div style="background:var(--blue-lt);border:1px solid var(--blue-mid);border-radius:8px;padding:.6rem 1rem;margin-top:.8rem;display:flex;justify-content:space-between;align-items:center;font-family:Montserrat,sans-serif;font-size:.8rem">
            <span style="color:var(--blue-dk);font-weight:600">${booking.services.length} serviço(s) selecionado(s)</span>
            <span style="font-weight:900;color:var(--blue);font-size:.95rem">${fmtMoney(total)}</span>
-         </div>` : '';
+         </div>${comboSuggestion}` : '';
 
     body.innerHTML = `<div class="step-indicator">${progress}</div>
       <div class="step-label">Selecione os serviços <span style="font-weight:400;color:var(--muted);font-size:.8em">(pode escolher mais de um)</span></div>
@@ -1188,6 +1257,12 @@ function setBCarSize(size, btn) {
 function selectService(id) {
   const i = booking.services.indexOf(id);
   if(i >= 0) booking.services.splice(i,1); else booking.services.push(id);
+  renderBookingStep();
+}
+function applyComboSuggestion(comboId) {
+  const combo = _COMBOS[comboId];
+  if (!combo) return;
+  (combo.serviceIds || []).forEach(id => { if (!booking.services.includes(id)) booking.services.push(id); });
   renderBookingStep();
 }
 function nextStep() {
@@ -1522,6 +1597,7 @@ function switchAdminTab(tab, el) {
   else if(tab==='agendamentos') renderAdminBookings();
   else if(tab==='estatisticas') renderAdminStats();
   else if(tab==='clientes') renderAdminClients();
+  else if(tab==='combos') renderAdminCombos();
   else if(tab==='servicos') renderAdminServices();
   else if(tab==='galeria') renderAdminGaleria();
   else if(tab==='config') renderAdminConfig();
@@ -2473,6 +2549,134 @@ async function _geocodeBairro(bairro) {
 }
 
 // ============================================================
+// ADMIN — COMBOS
+// ============================================================
+function renderAdminCombos() {
+  const entries = Object.entries(_COMBOS);
+  document.getElementById('adminContent').innerHTML = `
+    <h2>🎁 Combos e Pacotes</h2>
+    <div style="display:flex;gap:.8rem;margin-bottom:1.4rem">
+      <button class="btn-primary" onclick="openComboForm(null)">+ Novo Combo</button>
+    </div>
+    <div id="comboFormWrap"></div>
+    <div id="comboList">${buildComboList(entries)}</div>`;
+}
+
+function buildComboList(entries) {
+  if (!entries.length) return '<p style="color:var(--muted);font-size:.85rem">Nenhum combo cadastrado. Clique em "+ Novo Combo" para criar.</p>';
+  return entries.map(([id, combo]) => {
+    const pPq = comboPrice(combo, 'pq');
+    const pGr = comboPrice(combo, 'gr');
+    const isActive = combo.active !== false;
+    const tags = (combo.serviceIds || []).map(sid => {
+      const s = SVCS[sid];
+      return s ? `<span class="combo-svc-tag">${s.icon} ${s.name}</span>` : '';
+    }).join('');
+    return `<div class="svc-admin-card${isActive ? '' : ' inactive-svc'}">
+      <div class="svc-admin-header">
+        <span class="svc-admin-icon">${combo.emoji || '🎁'}</span>
+        <div class="svc-admin-meta">
+          <div class="svc-admin-name">${combo.name}</div>
+          <div class="svc-admin-sub">Desconto: ${combo.discountPercent || 0}%</div>
+        </div>
+        <button class="btn-toggle-svc${isActive ? '' : ' off'}" onclick="toggleCombo('${id}')">
+          ${isActive ? '✅ Ativo' : '⛔ Inativo'}
+        </button>
+      </div>
+      <div class="combo-admin-svctags">${tags}</div>
+      <div class="svc-pricing-grid">
+        <div class="svc-pricing-cell">
+          <b>🚗 Pequeno</b>
+          De ${fmtMoney(pPq.regular)} por <strong style="color:var(--accent)">${fmtMoney(pPq.final)}</strong>
+          ${pPq.savings ? `<div class="svc-pricing-margin">Economia: ${fmtMoney(pPq.savings)}</div>` : ''}
+        </div>
+        <div class="svc-pricing-cell">
+          <b>🚙 Grande</b>
+          De ${fmtMoney(pGr.regular)} por <strong style="color:var(--accent)">${fmtMoney(pGr.final)}</strong>
+          ${pGr.savings ? `<div class="svc-pricing-margin">Economia: ${fmtMoney(pGr.savings)}</div>` : ''}
+        </div>
+      </div>
+      <div class="svc-admin-actions">
+        <button class="btn-edit-svc" onclick="openComboForm('${id}')">✏️ Editar</button>
+        <button class="ba-admin-del" onclick="deleteCombo('${id}')">🗑️ Excluir</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openComboForm(id) {
+  const combo = id ? _COMBOS[id] : null;
+  const wrap = document.getElementById('comboFormWrap');
+  if (!wrap) return;
+  const selectedIds = combo?.serviceIds || [];
+  const svcChecks = Object.entries(SVCS).map(([sid, s]) =>
+    `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.82rem;cursor:pointer">
+      <input type="checkbox" value="${sid}" ${selectedIds.includes(sid) ? 'checked' : ''}/>
+      ${s.icon} ${s.name} <span style="color:var(--muted);font-size:.72rem">(pq: ${fmtMoney(s.pq)} / gr: ${fmtMoney(s.gr)})</span>
+    </label>`
+  ).join('');
+  wrap.innerHTML = `
+    <div class="svc-form-panel">
+      <h4>${id ? 'Editar Combo' : 'Novo Combo'}</h4>
+      <div class="form-row">
+        <div class="form-group" style="flex:3"><label>Nome do combo</label><input id="cfName" value="${combo?.name || ''}"/></div>
+        <div class="form-group" style="flex:1"><label>Emoji</label><input id="cfEmoji" value="${combo?.emoji || '🎁'}" maxlength="4"/></div>
+        <div class="form-group" style="flex:1"><label>Desconto %</label><input id="cfDisc" type="number" value="${combo?.discountPercent || 10}" min="0" max="50"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Ativo</label>
+          <select id="cfActive">
+            <option value="1"${combo?.active !== false ? ' selected' : ''}>✅ Ativo</option>
+            <option value="0"${combo?.active === false ? ' selected' : ''}>⛔ Inativo</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Serviços incluídos</label>
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:.8rem 1rem;max-height:220px;overflow-y:auto">
+          ${svcChecks}
+        </div>
+      </div>
+      <div style="display:flex;gap:.8rem;margin-top:1.2rem">
+        <button class="btn-primary" onclick="saveCombo('${id || ''}')">💾 Salvar</button>
+        <button class="btn-ghost" onclick="document.getElementById('comboFormWrap').innerHTML=''">Cancelar</button>
+      </div>
+    </div>`;
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function saveCombo(id) {
+  const name = document.getElementById('cfName')?.value.trim();
+  const emoji = document.getElementById('cfEmoji')?.value.trim() || '🎁';
+  const disc = parseFloat(document.getElementById('cfDisc')?.value) || 0;
+  const active = document.getElementById('cfActive')?.value === '1';
+  const serviceIds = [...document.querySelectorAll('#comboFormWrap input[type=checkbox]:checked')].map(c => c.value);
+
+  if (!name) { alert('Informe o nome do combo.'); return; }
+  if (serviceIds.length < 2) { alert('Selecione pelo menos 2 serviços.'); return; }
+  if (!_combosRef) { alert('Firebase não conectado.'); return; }
+
+  const key = id || slugify(name);
+  const data = { name, emoji, discountPercent: disc, active, serviceIds, createdAt: id ? (_COMBOS[id]?.createdAt || Date.now()) : Date.now() };
+  try {
+    await _combosRef.child(key).set(data);
+    document.getElementById('comboFormWrap').innerHTML = '';
+  } catch(e) { alert('Erro ao salvar: ' + e.message); }
+}
+
+async function deleteCombo(id) {
+  if (!confirm(`Excluir o combo "${_COMBOS[id]?.name}"?`)) return;
+  try { await _combosRef.child(id).remove(); }
+  catch(e) { alert('Erro ao excluir: ' + e.message); }
+}
+
+async function toggleCombo(id) {
+  if (!_combosRef) return;
+  const current = _COMBOS[id]?.active !== false;
+  try { await _combosRef.child(id).update({ active: !current }); }
+  catch(e) { alert('Erro: ' + e.message); }
+}
+
+// ============================================================
 // ADMIN — SERVIÇOS
 // ============================================================
 const SVCS_CATS = ['Estética Interna', 'Estética Externa', 'Serviços Especiais'];
@@ -2844,6 +3048,56 @@ function setSize(size, btn) {
   renderServices();
 }
 
+function comboPrice(combo, size) {
+  const ids = combo.serviceIds || [];
+  const regular = ids.reduce((sum, id) => sum + (SVCS[id]?.[size] || 0), 0);
+  const disc = (combo.discountPercent || 0) / 100;
+  const final = Math.round(regular * (1 - disc));
+  return { regular, final, savings: regular - final };
+}
+
+function renderCombos() {
+  const section = document.getElementById('combos');
+  const grid = document.getElementById('combosGrid');
+  if (!section || !grid) return;
+  const size = currentSizeGlobal || 'pq';
+  const active = Object.entries(_COMBOS).filter(([, c]) => c.active !== false);
+  if (!active.length) { section.classList.add('combos-hidden'); return; }
+  section.classList.remove('combos-hidden');
+  grid.innerHTML = active.map(([id, combo]) => {
+    const p = comboPrice(combo, size);
+    if (!p.regular) return '';
+    const pct = Math.round((combo.discountPercent || 0));
+    const svcsHtml = (combo.serviceIds || []).map(sid => {
+      const s = SVCS[sid];
+      if (!s) return '';
+      return `<li class="combo-svc-item">${s.icon} ${s.name}<span>${fmtMoney(s[size] || 0)}</span></li>`;
+    }).join('');
+    return `
+    <div class="combo-card">
+      <div class="combo-card-glow"></div>
+      ${pct ? `<div class="combo-savings-badge">−${pct}%</div>` : ''}
+      <span class="combo-emoji">${combo.emoji || '🎁'}</span>
+      <div class="combo-name">${combo.name}</div>
+      <ul class="combo-svc-list">${svcsHtml}</ul>
+      <div class="combo-total-row">
+        ${p.savings ? `<span class="combo-regular">${fmtMoney(p.regular)}</span>` : ''}
+        <span class="combo-final">${fmtMoney(p.final)}</span>
+      </div>
+      ${p.savings ? `<div class="combo-economy">Economize ${fmtMoney(p.savings)} contratando o combo</div>` : ''}
+      <button class="combo-cta" onclick="openBookingCombo('${id}')">Agendar este combo →</button>
+    </div>`;
+  }).join('');
+}
+
+function openBookingCombo(comboId) {
+  const combo = _COMBOS[comboId];
+  if (!combo || !combo.serviceIds?.length) return;
+  booking = { services: [...combo.serviceIds], carSize: currentSizeGlobal || 'pq', date: null, step: 2 };
+  document.getElementById('bookingModal').style.display = 'flex';
+  renderBookingStep();
+}
+
 function getDisplayCats() {
   const ORDER = ['Estética Interna', 'Estética Externa', 'Serviços Especiais'];
   const groups = {};
@@ -3033,6 +3287,7 @@ function updateWaLink() {
     _cfgRef      = _fbDB.ref('config');
     _galleryRef  = _fbDB.ref('gallery');
     _servicesRef = _fbDB.ref('services');
+    _combosRef   = _fbDB.ref('combos');
     _storage     = firebase.storage();
     _clientNotesRef = _fbDB.ref('clientNotes');
     _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
@@ -3097,6 +3352,15 @@ function updateWaLink() {
         if (typeof currentAdminTab !== 'undefined' && currentAdminTab === 'servicos') renderAdminServices();
       }
     }, e => console.warn('Firebase services:', e));
+
+    // Listener em tempo real: sincroniza _COMBOS com /combos do Firebase
+    _combosRef.on('value', snap => {
+      Object.keys(_COMBOS).forEach(k => delete _COMBOS[k]);
+      const val = snap.val();
+      if (val) Object.entries(val).forEach(([id, c]) => { _COMBOS[id] = c; });
+      renderCombos();
+      if (typeof currentAdminTab !== 'undefined' && currentAdminTab === 'combos') renderAdminCombos();
+    }, e => console.warn('Firebase combos:', e));
 
     console.log('✅ Firebase conectado — sp-car-clean');
 
