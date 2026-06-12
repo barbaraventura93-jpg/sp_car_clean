@@ -1670,13 +1670,14 @@ function viewBooking(id) {
 
   const footer = document.getElementById('detailFooter');
   const _canEdit = b.status==='approved'||b.status==='confirmed';
+  const _delBtn = `<button class="btn-reject" style="margin-right:auto" onclick="deleteBooking('${b.id}')">🗑️ Excluir</button>`;
   footer.innerHTML = b.status==='pending'
-    ? `<button class="btn-reject" onclick="rejectBooking('${b.id}');closeModal('detailModal')">Rejeitar</button>
+    ? `${_delBtn}<button class="btn-reject" onclick="rejectBooking('${b.id}');closeModal('detailModal')">Rejeitar</button>
        <button class="btn-approve" onclick="closeModal('detailModal');openApprove('${b.id}')">Aprovar & Definir Orçamento</button>`
     : _canEdit
-    ? `<button class="btn-cancel" onclick="cancelBooking('${b.id}')">🚫 Cancelar Agendamento</button>
+    ? `${_delBtn}<button class="btn-cancel" onclick="cancelBooking('${b.id}')">🚫 Cancelar Agendamento</button>
        <button class="btn-edit-date" onclick="openEditDate('${b.id}')">📅 Alterar Data</button>`
-    : `<span></span><button class="btn-primary" onclick="closeModal('detailModal')">Fechar</button>`;
+    : `${_delBtn}<button class="btn-primary" onclick="closeModal('detailModal')">Fechar</button>`;
   document.getElementById('detailModal').style.display = 'flex';
 }
 
@@ -1959,6 +1960,15 @@ function rejectBooking(id) {
   const b = bookings.find(x=>x.id===id);
   if(b) { b.status = 'rejected'; b.rejectedAt = new Date().toISOString(); }
   setBookings(bookings);
+  renderAdminBookings();
+}
+
+function deleteBooking(id) {
+  if(!confirm('Excluir permanentemente este agendamento? Esta ação não pode ser desfeita.')) return;
+  const bookings = getBookings().filter(x => x.id !== id);
+  setBookings(bookings);
+  if(_bookingsRef) _bookingsRef.child(id).remove().catch(e => console.warn('Erro ao excluir do Firebase:', e));
+  closeModal('detailModal');
   renderAdminBookings();
 }
 
