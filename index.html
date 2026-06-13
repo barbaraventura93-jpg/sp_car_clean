@@ -251,6 +251,16 @@ input[type="file"].file-input{font-size:.78rem;color:var(--muted);background:var
 .dep-author{font-family:'Montserrat',sans-serif;font-size:.82rem;font-weight:700;color:var(--white)}
 .dep-svc{font-size:.68rem;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;margin-top:2px}
 
+/* ====== SURVEY MODAL ====== */
+.survey-stars{display:flex;gap:.6rem;justify-content:center;margin:1.5rem 0}
+.survey-star{font-size:2.8rem;cursor:pointer;color:rgba(255,255,255,.2);transition:color .12s;line-height:1;user-select:none}
+.survey-star.active{color:#FFB800}
+.survey-stars:hover .survey-star{color:#FFB800}
+.survey-stars .survey-star:hover ~ .survey-star{color:rgba(255,255,255,.2)}
+/* ====== FEEDBACK ADMIN ====== */
+.feedback-card{background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:12px;padding:1.1rem 1.3rem;margin-bottom:.7rem}
+.feedback-card-stars{color:#FFB800;letter-spacing:2px;margin-bottom:.35rem;font-size:.95rem}
+.feedback-card-meta{font-size:.73rem;color:var(--muted);margin-top:.35rem;line-height:1.6}
 /* ====== CTA / CONTATO ====== */
 #contato{padding:7rem 6%;background:var(--bg2);text-align:center;position:relative;overflow:hidden}
 #contato::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 70% 60% at 50% 50%,rgba(42,159,214,.07) 0%,transparent 70%)}
@@ -370,10 +380,12 @@ footer p{font-size:.72rem;color:var(--muted)}
 
 /* Status check */
 .status-badge{display:inline-flex;align-items:center;gap:.4rem;padding:.3rem .8rem;border-radius:50px;font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
-.status-pending{background:var(--orange-lt);color:var(--orange)}
-.status-approved{background:var(--green-lt);color:var(--green)}
-.status-rejected{background:var(--red-lt);color:var(--red)}
-.status-confirmed{background:var(--blue-lt);color:var(--accent)}
+.status-pending,.pending{background:var(--orange-lt);color:var(--orange)}
+.status-approved,.approved{background:var(--green-lt);color:var(--green)}
+.status-rejected,.rejected{background:var(--red-lt);color:var(--red)}
+.status-confirmed,.confirmed{background:var(--blue-lt);color:var(--accent)}
+.status-cancelled,.cancelled{background:rgba(239,68,68,.1);color:var(--red)}
+.status-completed,.completed{background:rgba(16,185,129,.15);color:#10B981;border:1px solid rgba(16,185,129,.3)}
 
 /* ====== ADMIN ====== */
 .admin-overlay{position:fixed;inset:0;z-index:2000;background:var(--bg);overflow:hidden;display:flex;flex-direction:column}
@@ -744,7 +756,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 <!-- ===== DEPOIMENTOS ===== -->
 <section id="depoimentos">
   <div class="sec-header"><div class="sec-label">Clientes Satisfeitos</div><h2>O que dizem sobre nós</h2></div>
-  <div class="dep-grid">
+  <div class="dep-grid" id="depGrid">
     <div class="dep-card"><div class="dep-stars">★★★★★</div><p class="dep-text">Meu carro preto estava cheio de hologramas. O resultado foi incrível — parece que saiu da concessionária hoje.</p><hr class="dep-hr"/><div class="dep-author">Rodrigo M.</div><div class="dep-svc">Polimento Carro Preto</div></div>
     <div class="dep-card"><div class="dep-stars">★★★★★</div><p class="dep-text">Higienização de couro ficou perfeita. Cheiro de novo, macio, sem aquele brilho escorregadio.</p><hr class="dep-hr"/><div class="dep-author">Fernanda L.</div><div class="dep-svc">Higienização de Couro</div></div>
     <div class="dep-card"><div class="dep-stars">★★★★★</div><p class="dep-text">Trinca no para-brisa resolvida em menos de uma hora e ficou invisível. Economizei a troca do vidro!</p><hr class="dep-hr"/><div class="dep-author">Carlos T.</div><div class="dep-svc">Reparo de Trinca</div></div>
@@ -946,6 +958,42 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
     </div>
   </div>
 </div>
+<!-- ===================================================
+     SURVEY MODAL
+=================================================== -->
+<div id="surveyModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:460px;text-align:center">
+    <div class="modal-hdr" style="justify-content:center;border-bottom:none;padding-bottom:0">
+      <div>
+        <h3>⭐ Como foi sua experiência?</h3>
+        <div class="sub" id="surveySub">SP Car Clean</div>
+      </div>
+    </div>
+    <div class="modal-body" id="surveyBody">
+      <p style="color:var(--muted);font-size:.88rem;margin-bottom:.5rem">Sua opinião nos ajuda a melhorar sempre.<br/>Leva menos de 1 minuto!</p>
+      <div class="survey-stars" id="surveyStars">
+        <span class="survey-star" data-n="1" onclick="setSurveyRating(1)">★</span>
+        <span class="survey-star" data-n="2" onclick="setSurveyRating(2)">★</span>
+        <span class="survey-star" data-n="3" onclick="setSurveyRating(3)">★</span>
+        <span class="survey-star" data-n="4" onclick="setSurveyRating(4)">★</span>
+        <span class="survey-star" data-n="5" onclick="setSurveyRating(5)">★</span>
+      </div>
+      <div id="surveyRatingLabel" style="font-size:.85rem;color:var(--muted);margin-bottom:1rem;min-height:1.3em"></div>
+      <div class="form-group" style="text-align:left;margin-bottom:1.2rem">
+        <label>Comentário (opcional)</label>
+        <textarea id="surveyComment" rows="3" placeholder="Conte como foi sua experiência..."></textarea>
+      </div>
+      <button class="btn-primary btn-full" onclick="submitSurvey()">Enviar Avaliação ✓</button>
+    </div>
+    <div id="surveyThanks" style="display:none;padding:2rem 1rem;text-align:center">
+      <div style="font-size:3rem;margin-bottom:.8rem">🎉</div>
+      <h3 style="margin-bottom:.5rem">Obrigado pelo feedback!</h3>
+      <p style="color:var(--muted);font-size:.9rem">Sua avaliação foi recebida.<br/>Agradecemos a confiança!</p>
+      <button class="btn-primary" style="margin-top:1.5rem" onclick="closeModal('surveyModal')">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <div id="detailModal" class="modal-overlay" style="display:none">
   <div class="modal-box detail-modal">
     <div class="modal-hdr"><div><h3>Detalhes do Agendamento</h3></div><button class="modal-close" onclick="closeModal('detailModal')">✕</button></div>
@@ -990,6 +1038,9 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       </div>
       <div class="admin-tab" onclick="switchAdminTab('espera',this)" id="tab-espera">
         <span class="admin-tab-icon">⏳</span><span>&nbsp;Lista de Espera</span>
+      </div>
+      <div class="admin-tab" onclick="switchAdminTab('avaliacoes',this)" id="tab-avaliacoes">
+        <span class="admin-tab-icon">⭐</span><span>&nbsp;Avaliações</span>
       </div>
       <div class="admin-tab" onclick="switchAdminTab('config',this)" id="tab-config">
         <span class="admin-tab-icon">⚙️</span><span>&nbsp;Configurações</span>
@@ -1064,13 +1115,21 @@ let _checkinPhotos    = {};
 
 let _bookings = [];
 let _blocked  = [];
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef;
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef;
 const _COMBOS = {};
 let _authUser = null;
 let _clientProfile = null;
 let _clientNotes = {};
 let _clientNotesRef = null;
 let _geoCache = {};
+let _approvedFeedback = [];
+let _pendingSurveyCode = null;
+let _surveyRating = 0;
+let _surveyBookingData = null;
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 const isAdmin  = () => _authUser != null && _authUser.email === CFG.adminEmail;
 const isClient = () => _authUser != null && _authUser.email !== CFG.adminEmail;
@@ -1629,8 +1688,8 @@ function checkStatus() {
     return;
   }
   const svc = SVCS[b.service];
-  const statusMap = { pending:'Aguardando análise', approved:'Orçamento enviado — Confirme abaixo', rejected:'Não aprovado', confirmed:'Confirmado ✓', cancelled:'Cancelado' };
-  const statusClass = { pending:'status-pending', approved:'status-approved', rejected:'status-rejected', confirmed:'status-confirmed', cancelled:'status-cancelled' };
+  const statusMap = { pending:'Aguardando análise', approved:'Orçamento enviado — Confirme abaixo', rejected:'Não aprovado', confirmed:'Confirmado ✓', cancelled:'Cancelado', completed:'Serviço concluído ✅' };
+  const statusClass = { pending:'status-pending', approved:'status-approved', rejected:'status-rejected', confirmed:'status-confirmed', cancelled:'status-cancelled', completed:'status-completed' };
 
   const displayPrice = (b.status==='approved'||b.status==='confirmed') && b.finalPrice ? b.finalPrice : b.price;
   const priceChanged = b.finalPrice && b.finalPrice !== b.price;
@@ -2052,7 +2111,7 @@ function renderClientAccount() {
 
   const vCard = v => `<div class="client-booking-card">${v.car}${v.plate ? ' · <strong>' + v.plate + '</strong>' : ''}</div>`;
   const bCard = (b, actions) => {
-    const statusMap = { pending:'⏳ Aguardando', approved:'✅ Aprovado', confirmed:'🔒 Confirmado', rejected:'❌ Rejeitado', cancelled:'🚫 Cancelado' };
+    const statusMap = { pending:'⏳ Aguardando', approved:'✅ Aprovado', confirmed:'🔒 Confirmado', rejected:'❌ Rejeitado', cancelled:'🚫 Cancelado', completed:'🏁 Concluído' };
     const canAct = actions && ['approved','confirmed'].includes(b.status) && !b.checkin;
     return `<div class="client-booking-card">
       <div class="client-booking-card-hdr">
@@ -2155,6 +2214,7 @@ function switchAdminTab(tab, el) {
   else if(tab==='servicos') renderAdminServices();
   else if(tab==='galeria') renderAdminGaleria();
   else if(tab==='espera') renderAdminWaitlist();
+  else if(tab==='avaliacoes') renderAdminFeedback();
   else if(tab==='config') renderAdminConfig();
 }
 
@@ -2211,7 +2271,7 @@ function unblockRange() {
 function renderAdminBookings() {
   const bookings = getBookings();
   const filterEl = `<div style="display:flex;gap:.5rem;margin-bottom:1.2rem;flex-wrap:wrap">
-    ${['all','pending','approved','confirmed','rejected','cancelled'].map(f=>`<button onclick="filterBookings('${f}',this)" class="${f==='all'?'btn-primary':'btn-ghost'}" style="font-size:.72rem;padding:.4rem 1rem" id="filter-${f}">${{all:'Todos',pending:'⏳ Pendentes',approved:'✅ Aprovados',confirmed:'🔒 Confirmados',rejected:'❌ Rejeitados',cancelled:'🚫 Cancelados'}[f]}</button>`).join('')}
+    ${['all','pending','approved','confirmed','completed','rejected','cancelled'].map(f=>`<button onclick="filterBookings('${f}',this)" class="${f==='all'?'btn-primary':'btn-ghost'}" style="font-size:.72rem;padding:.4rem 1rem" id="filter-${f}">${{all:'Todos',pending:'⏳ Pendentes',approved:'✅ Aprovados',confirmed:'🔒 Confirmados',completed:'🏁 Concluídos',rejected:'❌ Rejeitados',cancelled:'🚫 Cancelados'}[f]}</button>`).join('')}
   </div>`;
   document.getElementById('adminContent').innerHTML = `<h2>📋 Agendamentos</h2>${filterEl}<div id="bookingsList"></div>`;
   renderBookingsList('all');
@@ -2231,8 +2291,8 @@ function renderBookingsList(filter) {
   bookings.sort((a,b)=>b.submittedAt.localeCompare(a.submittedAt));
   const el = document.getElementById('bookingsList');
   if(!bookings.length) { el.innerHTML = `<p style="color:var(--muted);font-size:.9rem">Nenhum agendamento encontrado.</p>`; return; }
-  const statusMap = {pending:'⏳ Pendente',approved:'✅ Aprovado',rejected:'❌ Rejeitado',confirmed:'🔒 Confirmado',cancelled:'🚫 Cancelado'};
-  const statusColor = {pending:'var(--orange)',approved:'var(--green)',rejected:'var(--red)',confirmed:'var(--blue-dk)',cancelled:'var(--red)'};
+  const statusMap = {pending:'⏳ Pendente',approved:'✅ Aprovado',rejected:'❌ Rejeitado',confirmed:'🔒 Confirmado',cancelled:'🚫 Cancelado',completed:'🏁 Concluído'};
+  const statusColor = {pending:'var(--orange)',approved:'var(--green)',rejected:'var(--red)',confirmed:'var(--blue-dk)',cancelled:'var(--red)',completed:'#10B981'};
   el.innerHTML = bookings.map(b => {
     const svc = SVCS[b.service];
     return `<div class="booking-item">
@@ -2256,8 +2316,8 @@ function viewBooking(id) {
   const b = getBookings().find(x=>x.id===id);
   if(!b) return;
   const svc = SVCS[b.service];
-  const statusMap = {pending:'⏳ Aguardando aprovação',approved:'✅ Aprovado — aguardando pagamento',rejected:'❌ Rejeitado',confirmed:'🔒 Confirmado e pago',cancelled:'🚫 Cancelado pelo administrador'};
-  const statusClass = {pending:'status-pending',approved:'status-approved',rejected:'status-rejected',confirmed:'status-confirmed',cancelled:'status-cancelled'};
+  const statusMap = {pending:'⏳ Aguardando aprovação',approved:'✅ Aprovado — aguardando pagamento',rejected:'❌ Rejeitado',confirmed:'🔒 Confirmado e pago',cancelled:'🚫 Cancelado pelo administrador',completed:'🏁 Serviço concluído'};
+  const statusClass = {pending:'status-pending',approved:'status-approved',rejected:'status-rejected',confirmed:'status-confirmed',cancelled:'status-cancelled',completed:'status-completed'};
 
   const hasFinalPrice = b.finalPrice && b.finalPrice !== b.price;
 
@@ -2333,13 +2393,14 @@ function viewBooking(id) {
 
   const footer = document.getElementById('detailFooter');
   const _canEdit = b.status==='approved'||b.status==='confirmed';
-  const _delBtn = `<button class="btn-reject" style="margin-right:auto" onclick="deleteBooking('${b.id}')">🗑️ Excluir</button>`;
-  const _ciBtn  = `<button class="btn-ghost" onclick="openCheckin('${b.id}')">📋 Check-in</button>`;
+  const _delBtn  = `<button class="btn-reject" style="margin-right:auto" onclick="deleteBooking('${b.id}')">🗑️ Excluir</button>`;
+  const _ciBtn   = `<button class="btn-ghost" onclick="openCheckin('${b.id}')">📋 Check-in</button>`;
+  const _doneBtn = `<button class="btn-approve" onclick="markCompleted('${b.id}')">🏁 Entregar & Concluir</button>`;
   footer.innerHTML = b.status==='pending'
     ? `${_delBtn}<button class="btn-reject" onclick="rejectBooking('${b.id}');closeModal('detailModal')">Rejeitar</button>
        <button class="btn-approve" onclick="closeModal('detailModal');openApprove('${b.id}')">Aprovar & Definir Orçamento</button>`
     : _canEdit
-    ? `${_delBtn}${_ciBtn}<button class="btn-cancel" onclick="cancelBooking('${b.id}')">🚫 Cancelar Agendamento</button>
+    ? `${_delBtn}${_ciBtn}${_doneBtn}<button class="btn-cancel" onclick="cancelBooking('${b.id}')">🚫 Cancelar</button>
        <button class="btn-edit-date" onclick="openEditDate('${b.id}')">📅 Alterar Data</button>`
     : `${_delBtn}<button class="btn-primary" onclick="closeModal('detailModal')">Fechar</button>`;
   document.getElementById('detailModal').style.display = 'flex';
@@ -2658,6 +2719,28 @@ function cancelBooking(id) {
   renderAdminBookings();
 }
 
+async function markCompleted(id) {
+  const b = getBookings().find(x => x.id === id);
+  if (!b) return;
+  if (!confirm(`Marcar "${b.name}" como CONCLUÍDO?\n\nUm e-mail de pesquisa de satisfação será enviado automaticamente.`)) return;
+  if (!_bookingsRef) { alert('Firebase não conectado.'); return; }
+
+  await _bookingsRef.child(id).update({ status: 'completed', completedAt: new Date().toISOString() });
+
+  const surveyLink = `${window.location.origin}/?avaliar=${id}`;
+  const svcName = SVCS[b.service]?.name || b.service || 'Serviço';
+  const firstName = (b.name || 'Cliente').split(' ')[0];
+  sendEmail('template_update', {
+    to_email: b.email,
+    to_name: b.name,
+    booking_id: b.id,
+    titulo: '⭐ Como foi sua experiência? — SP Car Clean',
+    mensagem: `Olá ${firstName}! 🎉\n\nSeu ${svcName} foi concluído com sucesso. Esperamos que o resultado tenha superado as expectativas!\n\nGostaríamos muito de saber sua opinião. Leva menos de 1 minuto:\n\n⭐ Avaliar agora → ${surveyLink}\n\nObrigado pela preferência! Até a próxima. 🚗✨\n\n— Equipe SP Car Clean`,
+  });
+
+  closeModal('detailModal');
+}
+
 function openEditDate(id) {
   const b = getBookings().find(x=>x.id===id);
   if(!b) return;
@@ -2974,6 +3057,115 @@ function _buildCheckinSummaryHtml(checkin) {
     ${avHtml}
     ${checkin.obs  ? `<div class="ci-sum-row">📝 ${checkin.obs}</div>` : ''}
   </div>`;
+}
+
+// ============================================================
+// SURVEY — Pesquisa de satisfação pós-serviço
+// ============================================================
+async function openSurveyModal(code) {
+  if (!_feedbackRef || !_bookingsRef) return;
+
+  // Verifica se já avaliou
+  const fbSnap = await _feedbackRef.child(code).once('value');
+  if (fbSnap.exists()) {
+    document.getElementById('surveySub').textContent = 'Você já enviou uma avaliação. Obrigado!';
+    document.getElementById('surveyBody').style.display = 'none';
+    document.getElementById('surveyThanks').style.display = '';
+    document.getElementById('surveyModal').style.display = 'flex';
+    return;
+  }
+
+  // Carrega dados do agendamento
+  const bkSnap = await _bookingsRef.child(code).once('value');
+  _surveyBookingData = bkSnap.val();
+  if (_surveyBookingData) {
+    const svcName = SVCS[_surveyBookingData.service]?.name || _surveyBookingData.service || '';
+    document.getElementById('surveySub').textContent = svcName ? `${svcName} — ${_surveyBookingData.name}` : _surveyBookingData.name || 'SP Car Clean';
+  } else {
+    document.getElementById('surveySub').textContent = 'SP Car Clean';
+  }
+
+  _surveyRating = 0;
+  document.querySelectorAll('.survey-star').forEach(s => s.classList.remove('active'));
+  document.getElementById('surveyRatingLabel').textContent = '';
+  const commentEl = document.getElementById('surveyComment');
+  if (commentEl) commentEl.value = '';
+  document.getElementById('surveyBody').style.display = '';
+  document.getElementById('surveyThanks').style.display = 'none';
+  document.getElementById('surveyModal').style.display = 'flex';
+}
+
+function setSurveyRating(n) {
+  _surveyRating = n;
+  const labels = ['', 'Muito ruim 😞', 'Ruim 😕', 'Regular 😐', 'Bom 😊', 'Excelente! 🤩'];
+  document.querySelectorAll('.survey-star').forEach((s, i) => s.classList.toggle('active', i < n));
+  document.getElementById('surveyRatingLabel').textContent = labels[n] || '';
+}
+
+async function submitSurvey() {
+  if (!_surveyRating) { alert('Por favor selecione uma avaliação em estrelas.'); return; }
+  if (!_pendingSurveyCode || !_feedbackRef) { alert('Código de avaliação inválido.'); return; }
+
+  const comment = (document.getElementById('surveyComment')?.value || '').trim();
+  const b = _surveyBookingData;
+  const svcName = SVCS[b?.service]?.name || b?.service || '';
+
+  const feedback = {
+    bookingId: _pendingSurveyCode,
+    rating: _surveyRating,
+    comment,
+    clientName: b?.name || 'Anônimo',
+    service: svcName,
+    date: new Date().toISOString().split('T')[0],
+    submittedAt: new Date().toISOString(),
+    status: _surveyRating >= 4 ? 'pending_review' : 'internal',
+  };
+
+  try {
+    await _feedbackRef.child(_pendingSurveyCode).set(feedback);
+
+    // Alerta admin para notas baixas
+    if (_surveyRating <= 3 && b) {
+      sendEmail('template_update', {
+        to_email: CFG.adminEmail,
+        to_name: 'Equipe SP Car Clean',
+        booking_id: _pendingSurveyCode,
+        titulo: `⚠️ Avaliação negativa recebida (${_surveyRating}★) — ${b.name}`,
+        mensagem: `Avaliação de ${b.name} (${b.email})\nServiço: ${svcName}\nNota: ${'★'.repeat(_surveyRating)}\n\nComentário: "${comment || '(sem comentário)'}"`,
+      });
+    }
+
+    document.getElementById('surveyBody').style.display = 'none';
+    document.getElementById('surveyThanks').style.display = '';
+  } catch(e) {
+    console.error('submitSurvey:', e);
+    alert('Erro ao enviar avaliação. Tente novamente.');
+  }
+}
+
+function renderPublicTestimonials() {
+  const grid = document.getElementById('depGrid');
+  if (!grid) return;
+  if (!_approvedFeedback.length) return; // mantém cards estáticos se não há dados
+
+  const starsHtml = n => '★'.repeat(n) + '☆'.repeat(5 - n);
+  const items = [..._approvedFeedback]
+    .sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''))
+    .slice(0, 9);
+
+  grid.innerHTML = items.map(f => `
+    <div class="dep-card">
+      <div class="dep-stars">${starsHtml(f.rating)}</div>
+      <p class="dep-text">${escHtml(f.comment || 'Excelente serviço!')}</p>
+      <hr class="dep-hr"/>
+      <div class="dep-author">${escHtml(f.clientName || 'Cliente')}</div>
+      <div class="dep-svc">${escHtml(f.service || '')}</div>
+    </div>`).join('');
+
+  // Aplica scroll-reveal nos novos cards
+  grid.querySelectorAll('.dep-card').forEach(el => {
+    el.classList.add('reveal', 'visible');
+  });
 }
 
 function openFaqModal(id) {
@@ -4007,6 +4199,74 @@ function deleteGalleryItem(id) {
     .catch(err => alert('Erro ao remover: ' + err.message));
 }
 
+// ============================================================
+// ADMIN — Avaliações
+// ============================================================
+function renderAdminFeedback() {
+  const el = document.getElementById('adminContent');
+  if (!_feedbackRef) { el.innerHTML = '<p style="color:var(--muted)">Firebase não conectado.</p>'; return; }
+
+  _feedbackRef.once('value', snap => {
+    const data = snap.val() || {};
+    const items = Object.entries(data).map(([id, f]) => ({ id, ...f }));
+    items.sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''));
+
+    const pending  = items.filter(f => f.status === 'pending_review');
+    const approved = items.filter(f => f.status === 'approved');
+    const internal = items.filter(f => f.status === 'internal');
+    const hidden   = items.filter(f => f.status === 'hidden');
+
+    const starsHtml = n => '★'.repeat(n) + '☆'.repeat(5 - n);
+
+    const renderCard = (f, showApprove) => `
+      <div class="feedback-card">
+        <div class="feedback-card-stars">${starsHtml(f.rating)} <span style="font-size:.78rem;color:var(--muted)">${f.rating}/5</span></div>
+        <div style="font-size:.88rem;color:var(--text);line-height:1.6;margin-bottom:.3rem">${escHtml(f.comment || '(sem comentário)')}</div>
+        <div class="feedback-card-meta">
+          👤 ${escHtml(f.clientName)} &nbsp;|&nbsp; 🔧 ${escHtml(f.service)} &nbsp;|&nbsp; 📅 ${f.date || ''}
+          &nbsp;|&nbsp; 🆔 ${escHtml(f.bookingId || f.id)}
+        </div>
+        ${showApprove ? `
+        <div style="display:flex;gap:.5rem;margin-top:.8rem">
+          <button class="btn-approve" style="font-size:.75rem;padding:.35rem .9rem" onclick="approveFeedback('${f.id}')">✅ Publicar</button>
+          <button class="btn-reject" style="font-size:.75rem;padding:.35rem .9rem" onclick="hideFeedback('${f.id}')">🚫 Ignorar</button>
+        </div>` : ''}
+        ${f.status === 'approved' ? `
+        <div style="margin-top:.6rem;display:flex;align-items:center;gap:.8rem">
+          <span style="font-size:.72rem;color:#10B981;font-weight:700">✅ Publicado</span>
+          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="hideFeedback('${f.id}')">Remover</button>
+        </div>` : ''}
+        ${f.status === 'internal' ? `<div style="margin-top:.5rem"><span style="font-size:.72rem;color:var(--orange);font-weight:700">⚠️ Avaliação negativa — não publicada</span></div>` : ''}
+        ${f.status === 'hidden' ? `
+        <div style="margin-top:.5rem;display:flex;align-items:center;gap:.8rem">
+          <span style="font-size:.72rem;color:var(--muted)">🚫 Ignorada</span>
+          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="approveFeedback('${f.id}')">Publicar mesmo assim</button>
+        </div>` : ''}
+      </div>`;
+
+    el.innerHTML = `<h2>⭐ Avaliações dos Clientes</h2>
+      ${pending.length ? `<h3 style="font-size:.95rem;color:var(--orange);margin:1.5rem 0 .8rem">⏳ Aguardando aprovação (${pending.length})</h3>${pending.map(f => renderCard(f, true)).join('')}` : ''}
+      ${internal.length ? `<h3 style="font-size:.95rem;color:var(--red);margin:1.5rem 0 .8rem">🔴 Avaliações negativas — apenas internas (${internal.length})</h3>${internal.map(f => renderCard(f, false)).join('')}` : ''}
+      ${approved.length ? `<h3 style="font-size:.95rem;color:#10B981;margin:1.5rem 0 .8rem">✅ Publicadas no site (${approved.length})</h3>${approved.map(f => renderCard(f, false)).join('')}` : ''}
+      ${hidden.length ? `<h3 style="font-size:.95rem;color:var(--muted);margin:1.5rem 0 .8rem">🚫 Ignoradas (${hidden.length})</h3>${hidden.map(f => renderCard(f, false)).join('')}` : ''}
+      ${!items.length ? '<p style="color:var(--muted);margin-top:2rem">Nenhuma avaliação recebida ainda. Avaliações aparecem aqui quando clientes completam a pesquisa.</p>' : ''}`;
+  });
+}
+
+function approveFeedback(id) {
+  if (!_feedbackRef) return;
+  _feedbackRef.child(id).update({ status: 'approved' })
+    .then(() => renderAdminFeedback())
+    .catch(e => alert('Erro: ' + e.message));
+}
+
+function hideFeedback(id) {
+  if (!_feedbackRef) return;
+  _feedbackRef.child(id).update({ status: 'hidden' })
+    .then(() => renderAdminFeedback())
+    .catch(e => alert('Erro: ' + e.message));
+}
+
 function renderAdminConfig() {
   document.getElementById('adminContent').innerHTML = `
     <h2>⚙️ Configurações</h2>
@@ -4465,7 +4725,16 @@ function updateWaLink() {
     _clientProfilesRef = _fbDB.ref('clientProfiles');
     _couponsRef        = _fbDB.ref('coupons');
     _waitlistRef       = _fbDB.ref('waitlist');
+    _feedbackRef       = _fbDB.ref('feedback');
     _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
+
+    // Avaliações aprovadas: escuta em tempo real → atualiza depoimentos públicos
+    _feedbackRef.orderByChild('status').equalTo('approved').on('value', snap => {
+      const data = snap.val();
+      _approvedFeedback = data ? Object.values(data) : [];
+      renderPublicTestimonials();
+      if (typeof currentAdminTab !== 'undefined' && currentAdminTab === 'avaliacoes') renderAdminFeedback();
+    }, e => console.warn('Firebase feedback:', e));
 
     firebase.auth().onAuthStateChanged(user => {
       _authUser = user;
@@ -4601,6 +4870,21 @@ _updateClientNavUI();
 
 // Auto-open admin if ?admin in URL
 if(window.location.search.includes('admin')) openAdminLogin();
+
+// Auto-open survey if ?avaliar=CODE in URL
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('avaliar');
+  if (code) {
+    _pendingSurveyCode = code;
+    // Aguarda Firebase estar pronto antes de abrir o modal
+    const tryOpen = () => {
+      if (_feedbackRef && _bookingsRef) { openSurveyModal(code); }
+      else { setTimeout(tryOpen, 300); }
+    };
+    setTimeout(tryOpen, 500);
+  }
+})();
 
 // ============================================================
 // INTERACTIVE / DYNAMIC ENHANCEMENTS
