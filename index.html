@@ -591,7 +591,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
     </div>
   </a>
   <ul class="nav-links">
-    <li id="clientNavItem" class="client-nav-hidden"><a onclick="openClientAccount()" class="client-nav-link">👤 Minha Conta</a></li>
+    <li id="clientNavItem"><a onclick="openClientAccount()" class="client-nav-link">👤 Minha Conta</a></li>
     <li><a href="#servicos">Serviços</a></li>
     <li><a href="#combos">Combos</a></li>
     <li><a href="#porque">Diferenciais</a></li>
@@ -1880,10 +1880,17 @@ function openClientAccount() {
   if (!isClient()) {
     document.getElementById('clientLoginModal').style.display = 'flex';
     setTimeout(() => document.getElementById('clEmail')?.focus(), 100);
-  } else {
+    return;
+  }
+  // Always refresh profile from Firebase to avoid race condition on fresh login
+  _clientProfilesRef.child(_authUser.uid).once('value', snap => {
+    _clientProfile = snap.val() || { uid: _authUser.uid, email: _authUser.email };
     renderClientAccount();
     document.getElementById('clientAccountModal').style.display = 'flex';
-  }
+  }).catch(() => {
+    renderClientAccount();
+    document.getElementById('clientAccountModal').style.display = 'flex';
+  });
 }
 
 function doClientLogin() {
@@ -3337,6 +3344,7 @@ function renderAdminServices() {
     <div style="display:flex;gap:.8rem;margin-bottom:1.4rem;flex-wrap:wrap">
       <button class="btn-primary" onclick="openServiceForm(null)">+ Novo Serviço</button>
       <button class="btn-ghost" style="font-size:.78rem" onclick="seedServicesFromDefault()">⬇️ Importar serviços padrão</button>
+      <button class="btn-ghost" style="font-size:.78rem" onclick="seedFaqsToServices()">💬 Seed FAQs</button>
     </div>
     <div id="svcFormWrap"></div>
     <div id="svcList">${buildServiceList(svcs)}</div>`;
@@ -3526,6 +3534,70 @@ async function seedServicesFromDefault() {
   try {
     await _servicesRef.set(defaults);
     alert('✅ 9 serviços importados! Agora preencha os custos para ver as margens.');
+  } catch(e) { alert('Erro: ' + e.message); }
+}
+
+async function seedFaqsToServices() {
+  if (!_servicesRef) { alert('Firebase não conectado.'); return; }
+  if (!confirm('Adicionar perguntas frequentes de exemplo aos 9 serviços? Não apaga dados existentes de outros campos.')) return;
+  const faqs = {
+    'lavagem-motor': [
+      { q: 'O que é incluído na lavagem de motor?', a: 'Removemos graxa, poeira e oxidação com produtos desincrustantes, aplicamos proteção elétrica e finalizamos com verniz de motor para prolongar o aspecto novo.' },
+      { q: 'Preciso deixar o carro para este serviço?', a: 'O serviço leva de 1 a 2 horas. Pode ser combinado com outros serviços no mesmo agendamento para otimizar o tempo.' },
+      { q: 'O processo danifica conectores e sensores?', a: 'Não. Protegemos todos os conectores elétricos e sensores antes de iniciar a limpeza — é um procedimento padrão nosso.' },
+    ],
+    'lavagem-detalhada': [
+      { q: 'O que diferencia da lavagem simples de posto?', a: 'Usamos Snow Foam para pré-lavagem (que solta a sujeira sem esfregar), tratamos emblemas, grades, dobradiças, caixas de roda e pneus — áreas que lavagens comuns não alcançam.' },
+      { q: 'Os pneus ficam protegidos depois?', a: 'Sim. Aplicamos finalizador de pneus que protege a borracha do ressecamento e dá aspecto novo e brilhante.' },
+      { q: 'Quanto tempo leva?', a: 'Em média 3 a 4 horas para carros pequenos e 4 a 5 horas para SUVs e utilitários.' },
+    ],
+    'higienizacao-tecido': [
+      { q: 'A higienização elimina mau cheiro?', a: 'Sim. A extratora de água quente com produtos bactericidas remove ácaros, fungos e odores na raiz — não apenas mascara com perfume.' },
+      { q: 'Quanto tempo o tecido leva para secar?', a: 'Em média 4 a 6 horas. Recomendamos deixar o carro com as janelas ligeiramente abertas ou exposto ao sol para acelerar a secagem.' },
+      { q: 'Funciona para manchas de café, refrigerante e vômito?', a: 'Sim. Tratamos a grande maioria das manchas orgânicas. Manchas antigas e profundas podem exigir mais de uma aplicação — mas avisamos antes de qualquer custo extra.' },
+      { q: 'Meu banco tem aquecimento elétrico, o processo danifica?', a: 'Não. Tomamos todos os cuidados com sistemas elétricos embaixo dos estofados antes de iniciar a higienização.' },
+    ],
+    'higienizacao-couro': [
+      { q: 'Com que frequência devo fazer o tratamento?', a: 'Recomendamos a cada 6 meses. Carros expostos ao sol intenso se beneficiam de tratamentos trimestrais para evitar ressecamento e rachaduras.' },
+      { q: 'O hidratante muda a cor do couro?', a: 'Não. Usamos hidratantes neutros que respeitam a cor e o acabamento originais, sejam lisos, perfurados ou de acabamento matte.' },
+      { q: 'Funciona para couro sintético (courino)?', a: 'Sim. Adaptamos os produtos para courino, que também precisa de limpeza e hidratação regular para manter a aparência e evitar descascamentos.' },
+    ],
+    'polimento-geral': [
+      { q: 'O polimento remove todos os riscos?', a: 'Remove a maioria dos riscos superficiais (que não ultrapassam a camada de verniz). Riscos profundos que chegam ao metal exigem reparo de lataria antes do polimento.' },
+      { q: 'O polimento danifica a pintura?', a: 'Não quando feito por profissionais. Usamos máquinas de dupla ação (DA) e compostos calibrados para cada tipo de tinta, sem desgastar a pintura além do necessário.' },
+      { q: 'Depois do polimento preciso passar cera?', a: 'O polimento geral inclui uma camada de lustre protetor. Para durabilidade maior, recomendamos complementar com cristalização anual.' },
+    ],
+    'polimento-preto': [
+      { q: 'Por que carros pretos precisam de polimento especial?', a: 'Carros pretos revelam muito mais hologramas (marcas de máquina em espiral) e micro-riscos brancos. Usamos boinas ultra-macias e compostos específicos para eliminar esses defeitos sem criar novos.' },
+      { q: 'Quanto dura o resultado?', a: 'Com cuidados corretos — lavar com shampoo automotivo e secar com microfibra — o resultado dura de 8 a 12 meses.' },
+      { q: 'O acabamento fica mais suscetível a novos riscos?', a: 'Não. O polimento corretivo remove as imperfeições existentes; o selante aplicado ao final protege a pintura de novas agressões.' },
+    ],
+    'polimento-cristal': [
+      { q: 'O que é cristalização de pintura?', a: 'É a aplicação de um selante vítreo (à base de sílica) sobre a pintura após o polimento corretivo, criando uma barreira contra raios UV, poluição e chuva ácida por até 12 meses.' },
+      { q: 'Qual a diferença entre cristalização e vitrificação cerâmica?', a: 'A cristalização é renovável anualmente e tem ótimo custo-benefício. A vitrificação nano cerâmica dura 2 a 5 anos e é indicada para quem busca proteção máxima de longo prazo.' },
+      { q: 'Posso lavar o carro normalmente depois?', a: 'Sim, mas recomendamos aguardar 48 horas antes da primeira lavagem e evitar lavajato a vapor nas primeiras 2 semanas para garantir a cura completa do produto.' },
+      { q: 'Quanto tempo dura o serviço?', a: 'De 1 a 2 dias dependendo do estado da pintura. Carros com muitas imperfeições levam mais tempo na etapa de correção antes da cristalização.' },
+    ],
+    'polimento-vidros': [
+      { q: 'O polimento resolve névoa e manchas de calcário?', a: 'Sim. Usamos óxido de cério, abrasivo específico para vidro, que dissolve depósitos minerais e micro-riscos sem riscar ou distorcer o vidro.' },
+      { q: 'O resultado melhora a visibilidade na chuva?', a: 'Diretamente sim — vidros polidos molham de forma mais uniforme. Recomendamos combinar com aplicação de repelente de água para efeito máximo.' },
+      { q: 'Funciona no para-brisa com película ou insulfilm?', a: 'O polimento é feito sobre o vidro, não sobre a película. Se necessário removemos e reaplicamos a película — consulte-nos antes de agendar.' },
+    ],
+    'reparo-trinca': [
+      { q: 'Todo tipo de trinca pode ser reparado?', a: 'Reparamos trincas de até 30 cm sem ramificações. Trincas que cruzam o campo de visão do motorista, chegam à borda do vidro ou têm ramificações geralmente exigem troca do para-brisa.' },
+      { q: 'O reparo fica visível depois?', a: 'Dependendo da profundidade, fica uma discreta marca. A resina estrutural cura com luz UV e devolve até 90% da resistência original, impedindo que a trinca se propague.' },
+      { q: 'Quanto tempo leva o reparo?', a: 'Cerca de 30 a 60 minutos, incluindo o tempo de cura da resina com UV.' },
+      { q: 'O seguro cobre este serviço?', a: 'Muitos seguros cobrem reparo de trinca sem franquia. Confirme com sua seguradora antes de agendar — podemos emitir recibo detalhado.' },
+    ],
+  };
+  try {
+    const updates = {};
+    for (const [id, faqList] of Object.entries(faqs)) {
+      updates[id + '/faqs'] = faqList;
+    }
+    await _servicesRef.update(updates);
+    alert('✅ FAQs adicionadas aos 9 serviços! Recarregue a vitrine para visualizar.');
+    renderAdminServicos();
   } catch(e) { alert('Erro: ' + e.message); }
 }
 
