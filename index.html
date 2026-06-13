@@ -2053,7 +2053,7 @@ function renderClientAccount() {
   const vCard = v => `<div class="client-booking-card">${v.car}${v.plate ? ' · <strong>' + v.plate + '</strong>' : ''}</div>`;
   const bCard = (b, actions) => {
     const statusMap = { pending:'⏳ Aguardando', approved:'✅ Aprovado', confirmed:'🔒 Confirmado', rejected:'❌ Rejeitado', cancelled:'🚫 Cancelado' };
-    const canAct = actions && ['approved','confirmed'].includes(b.status);
+    const canAct = actions && ['approved','confirmed'].includes(b.status) && !b.checkin;
     return `<div class="client-booking-card">
       <div class="client-booking-card-hdr">
         <span class="client-booking-card-id">${b.id}</span>
