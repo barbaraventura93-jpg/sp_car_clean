@@ -539,6 +539,39 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 .radius-row:last-child{border-bottom:none}
 .radius-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .market-insight{background:var(--blue-lt);border:1px solid var(--border-glow);border-radius:8px;padding:.8rem 1rem;font-size:.78rem;color:var(--accent);line-height:1.6;margin-top:.7rem}
+/* Revenue chart */
+.rev-chart-outer{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:1rem 1.2rem;margin-top:1.5rem}
+.rev-chart-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
+.rev-year-sel{display:flex;gap:.3rem}
+.rev-year-btn{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:6px;padding:.2rem .65rem;font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s}
+.rev-year-btn.active{background:var(--blue-lt);border-color:var(--blue);color:var(--accent)}
+.rev-chart-bars{display:grid;grid-template-columns:repeat(12,1fr);gap:5px;height:130px;align-items:end;margin-bottom:.4rem}
+.rev-bar-col{display:flex;flex-direction:column;align-items:center;gap:0}
+.rev-bar-fill{width:100%;background:linear-gradient(180deg,var(--accent),var(--blue));border-radius:3px 3px 0 0;min-height:3px;transition:height .4s ease}
+.rev-bar-fill.cur-month{background:linear-gradient(180deg,#8B5CF6,#4B4FD8)}
+.rev-bar-val{font-size:.52rem;color:var(--muted);font-family:'Montserrat',sans-serif;font-weight:700;margin-bottom:2px;white-space:nowrap}
+.rev-chart-labels{display:grid;grid-template-columns:repeat(12,1fr);gap:5px}
+.rev-bar-lbl{font-size:.6rem;color:var(--muted);font-family:'Montserrat',sans-serif;text-align:center}
+/* Waitlist */
+.cal-day.waitlist-day{background:rgba(245,158,11,.09);color:var(--orange);cursor:pointer;border-color:rgba(245,158,11,.25)}
+.cal-day.waitlist-day:hover{background:rgba(245,158,11,.2);border-color:var(--orange)}
+.cal-day .wl-dot{position:absolute;top:2px;right:3px;width:6px;height:6px;background:var(--orange);border-radius:50%}
+.wl-entry{display:flex;align-items:center;gap:.8rem;padding:.65rem .9rem;border:1px solid var(--border);border-radius:10px;margin-bottom:.5rem}
+.wl-entry-info{flex:1;font-size:.82rem}
+.wl-entry-date{font-family:'Montserrat',sans-serif;font-size:.68rem;font-weight:700;color:var(--accent);margin-bottom:.15rem}
+.wl-entry-name{font-weight:600;color:var(--white)}
+.wl-entry-sub{font-size:.75rem;color:var(--muted);margin-top:.1rem}
+/* FAQ */
+.svc-faq{margin-top:.8rem;border-top:1px solid rgba(255,255,255,.06);padding-top:.55rem}
+.svc-faq-item{border-bottom:1px solid rgba(255,255,255,.04)}
+.svc-faq-item summary{list-style:none;cursor:pointer;font-family:'Montserrat',sans-serif;font-size:.73rem;font-weight:600;color:var(--muted);padding:.42rem 0;display:flex;justify-content:space-between;align-items:center;gap:.4rem;transition:color .2s}
+.svc-faq-item summary:hover{color:var(--accent)}
+.svc-faq-item summary::after{content:'＋';font-size:.75rem;color:var(--accent);flex-shrink:0}
+.svc-faq-item[open] summary{color:var(--text)}
+.svc-faq-item[open] summary::after{content:'－'}
+.svc-faq-item p{font-size:.78rem;color:rgba(221,232,245,.75);line-height:1.55;padding:.3rem 0 .6rem}
+.faq-admin-row{display:grid;grid-template-columns:1fr 1fr auto;gap:.5rem;align-items:start;margin-bottom:.45rem}
+.faq-admin-row input{font-size:.78rem;padding:.35rem .6rem}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -779,6 +812,26 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
   </div>
 </div>
 
+<!-- ===== LISTA DE ESPERA MODAL ===== -->
+<div id="waitlistModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:460px">
+    <div class="modal-hdr">
+      <div><h3>⏳ Lista de Espera</h3><div class="sub" id="wlDateLabel">Dia esgotado</div></div>
+      <button class="modal-close" onclick="closeModal('waitlistModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.83rem;color:var(--muted);margin-bottom:1.2rem;line-height:1.55">Este dia está com todas as vagas preenchidas. Inscreva-se na lista de espera e entraremos em contato pelo WhatsApp caso uma vaga seja aberta.</p>
+      <div class="form-row">
+        <div class="form-group"><label>Nome completo</label><input id="wlName" placeholder="Seu nome"/></div>
+        <div class="form-group"><label>Telefone / WhatsApp</label><input id="wlPhone" placeholder="(11) 99999-9999"/></div>
+      </div>
+      <div class="form-row full"><div class="form-group"><label>E-mail</label><input id="wlEmail" type="email" placeholder="seu@email.com"/></div></div>
+      <input type="hidden" id="wlDate"/>
+      <button class="btn-primary btn-full" onclick="submitWaitlist()" style="margin-top:.5rem">Entrar na Lista de Espera</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== CLIENTE: LOGIN MODAL ===== -->
 <div id="clientLoginModal" class="modal-overlay" style="display:none">
   <div class="modal-box" style="max-width:420px">
@@ -870,6 +923,9 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <div class="admin-tab" onclick="switchAdminTab('galeria',this)" id="tab-galeria">
         <span class="admin-tab-icon">📸</span><span>&nbsp;Galeria</span>
       </div>
+      <div class="admin-tab" onclick="switchAdminTab('espera',this)" id="tab-espera">
+        <span class="admin-tab-icon">⏳</span><span>&nbsp;Lista de Espera</span>
+      </div>
       <div class="admin-tab" onclick="switchAdminTab('config',this)" id="tab-config">
         <span class="admin-tab-icon">⚙️</span><span>&nbsp;Configurações</span>
       </div>
@@ -919,7 +975,7 @@ const CATS_ORDER = ['Estética Interna','Estética Externa','Serviços Especiais
 // ============================================================
 let _bookings = [];
 let _blocked  = [];
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef;
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef;
 const _COMBOS = {};
 let _authUser = null;
 let _clientProfile = null;
@@ -1059,8 +1115,8 @@ function renderCalendar(opts) {
     if(mode === 'book') {
       if(status === 'past') cls += 'past';
       else if(status === 'blocked') cls += 'blocked';
-      else if(status === 'full') cls += 'full';
-      else if(status === 'partial') { cls += 'available'; click = `onclick="calSelect('${ds}')"` } // still allow for admin review
+      else if(status === 'full') { cls += 'waitlist-day'; click = `onclick="openWaitlistForm('${ds}')"` }
+      else if(status === 'partial') { cls += 'available'; click = `onclick="calSelect('${ds}')"` }
       else { cls += 'available'; click = `onclick="calSelect('${ds}')"` }
       if(ds === selectedDate) cls += ' selected';
     } else if(mode === 'admin') {
@@ -1088,7 +1144,8 @@ function renderCalendar(opts) {
   if(mode === 'book') {
     html += `<div class="cal-legend">
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--green-lt);border:1px solid var(--green)"></div> Disponível</div>
-      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#fdf0f0;border:1px solid var(--red)"></div> Indisponível</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:rgba(245,158,11,.09);border:1px solid var(--orange)"></div> Lista de Espera</div>
+      <div class="cal-legend-item"><div class="cal-legend-dot" style="background:#fdf0f0;border:1px solid var(--red)"></div> Bloqueado</div>
       <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--blue)"></div> Selecionado</div>
     </div>`;
   } else {
@@ -1997,6 +2054,7 @@ function switchAdminTab(tab, el) {
   else if(tab==='combos') renderAdminCombos();
   else if(tab==='servicos') renderAdminServices();
   else if(tab==='galeria') renderAdminGaleria();
+  else if(tab==='espera') renderAdminWaitlist();
   else if(tab==='config') renderAdminConfig();
 }
 
@@ -2477,6 +2535,7 @@ function cancelBooking(id) {
   if(!b) return;
   b.status = 'cancelled';
   b.cancelledAt = new Date().toISOString();
+  const cancelledDate = b.startDate || b.date;
   setBookings(bookings);
   sendEmail('template_update', {
     to_email: b.email, to_name: b.name,
@@ -2484,6 +2543,9 @@ function cancelBooking(id) {
     titulo:   '🚫 Agendamento cancelado — SP Car Clean',
     mensagem: `Seu agendamento ${b.id} (${SVCS[b.service]?.name || b.service}) foi cancelado pelo estabelecimento.\n\nEm caso de dúvidas ou para reagendar, entre em contato pelo WhatsApp.`,
   });
+  if (confirm('Vaga liberada! Notificar o primeiro da lista de espera para esta data via WhatsApp?')) {
+    _notifyWaitlistForDate(cancelledDate);
+  }
   closeModal('detailModal');
   renderAdminBookings();
 }
@@ -2636,6 +2698,89 @@ function renderAdminClients(filter) {
       </div>
     </details>` : ''}
     <div class="clients-list">${rows}</div>`;
+}
+
+// ============================================================
+// LISTA DE ESPERA
+// ============================================================
+function openWaitlistForm(ds) {
+  document.getElementById('wlDate').value = ds;
+  document.getElementById('wlDateLabel').textContent = `Data: ${fmtDateShort(ds)} — dia esgotado`;
+  document.getElementById('wlName').value = '';
+  document.getElementById('wlPhone').value = '';
+  document.getElementById('wlEmail').value = '';
+  // Pre-fill if client is logged in
+  if (isClient() && _clientProfile) {
+    document.getElementById('wlName').value  = _clientProfile.name  || '';
+    document.getElementById('wlPhone').value = _clientProfile.phone || '';
+    document.getElementById('wlEmail').value = _clientProfile.email || '';
+  }
+  document.getElementById('waitlistModal').style.display = 'flex';
+}
+
+async function submitWaitlist() {
+  const name  = document.getElementById('wlName').value.trim();
+  const phone = document.getElementById('wlPhone').value.trim();
+  const email = document.getElementById('wlEmail').value.trim();
+  const date  = document.getElementById('wlDate').value;
+  if (!name || !phone || !date) { alert('Preencha nome e telefone.'); return; }
+  if (!_waitlistRef) { alert('Serviço indisponível no momento.'); return; }
+  const id = 'WL-' + Math.random().toString(36).slice(2,8).toUpperCase();
+  await _waitlistRef.child(id).set({ id, name, email, phone, date, createdAt: new Date().toISOString() })
+    .catch(e => { alert('Erro: ' + e.message); return; });
+  closeModal('waitlistModal');
+  alert(`✅ ${name}, você foi adicionado(a) à lista de espera para ${fmtDateShort(date)}!\n\nEntraremos em contato pelo WhatsApp caso uma vaga seja aberta.`);
+}
+
+async function renderAdminWaitlist() {
+  document.getElementById('adminContent').innerHTML = `<h2>⏳ Lista de Espera</h2><p style="color:var(--muted);font-size:.84rem">Carregando...</p>`;
+  if (!_waitlistRef) { document.getElementById('adminContent').innerHTML += '<p>Firebase não conectado.</p>'; return; }
+  const snap = await _waitlistRef.once('value');
+  const entries = snap.val() ? Object.values(snap.val()).sort((a,b) => a.date.localeCompare(b.date)) : [];
+
+  const rows = entries.length ? entries.map(e => `
+    <div class="wl-entry">
+      <div class="wl-entry-info">
+        <div class="wl-entry-date">📅 ${fmtDateShort(e.date)}</div>
+        <div class="wl-entry-name">${e.name}</div>
+        <div class="wl-entry-sub">${e.phone}${e.email ? ' · ' + e.email : ''}</div>
+      </div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem"
+          onclick="window.open('https://wa.me/${''}'+buildWaPhone('${e.phone}')+'?text='+encodeURIComponent('Olá *${e.name}*! Abrimos uma vaga para ${fmtDateShort(e.date)} na SP Car Clean. Acesse https://www.spcarclean.com.br para agendar 🚗'),'_blank')">
+          💬 WhatsApp
+        </button>
+        <button class="ba-admin-del" style="font-size:.72rem;padding:.3rem .7rem"
+          onclick="removeWaitlistEntry('${e.id}')">🗑️ Remover</button>
+      </div>
+    </div>`).join('')
+  : '<p style="color:var(--muted);font-size:.85rem;padding:1.5rem 0">Nenhuma entrada na lista de espera.</p>';
+
+  document.getElementById('adminContent').innerHTML = `
+    <h2>⏳ Lista de Espera</h2>
+    <p style="font-size:.83rem;color:var(--muted);margin-bottom:1.2rem">${entries.length} pessoa${entries.length!==1?'s':''} na lista. Quando uma vaga for liberada, notifique pelo WhatsApp e remova a entrada.</p>
+    ${rows}`;
+}
+
+async function removeWaitlistEntry(id) {
+  if (!_waitlistRef) return;
+  await _waitlistRef.child(id).remove().catch(e => alert('Erro: ' + e.message));
+  renderAdminWaitlist();
+}
+
+function _notifyWaitlistForDate(date) {
+  if (!_waitlistRef || !date) return;
+  _waitlistRef.orderByChild('date').equalTo(date).once('value', snap => {
+    if (!snap.val()) return;
+    const first = Object.values(snap.val()).sort((a,b) => a.createdAt.localeCompare(b.createdAt))[0];
+    if (!first) return;
+    const waPhone = buildWaPhone(first.phone);
+    const msg = encodeURIComponent(
+      `Olá *${first.name}*! 🎉\n\nUma vaga abriu para o dia *${fmtDateShort(date)}* na *SP Car Clean*!\n\n` +
+      `Acesse rápido para garantir seu agendamento:\n👉 https://www.spcarclean.com.br\n\nAté breve!`
+    );
+    window.open(`https://wa.me/${waPhone}?text=${msg}`, '_blank');
+  });
 }
 
 function adminSendReactivation(encPhone, encName) {
@@ -2854,10 +2999,61 @@ function renderAdminStats() {
       <h3>📍 Alcance Geográfico</h3>
       <div id="clientMap"></div>
       <div class="geo-grid" id="geoMetrics"><p style="color:var(--muted);font-size:.82rem">Carregando dados geográficos...</p></div>
+    </div>
+    <div class="rev-chart-outer">
+      <div class="rev-chart-hdr">
+        <h3 style="font-family:'Montserrat',sans-serif;font-size:.9rem;font-weight:700;color:var(--white)">💰 Receita por Mês</h3>
+        <div class="rev-year-sel" id="revYearSel"></div>
+      </div>
+      <div class="rev-chart-bars" id="revBars"></div>
+      <div class="rev-chart-labels" id="revLabels"></div>
     </div>`;
 
   // Render geo section after DOM is ready
-  requestAnimationFrame(() => _renderGeoSection());
+  requestAnimationFrame(() => { _renderGeoSection(); _renderRevenueChart(new Date().getFullYear()); });
+}
+
+function _renderRevenueChart(year) {
+  const barsEl   = document.getElementById('revBars');
+  const labelsEl = document.getElementById('revLabels');
+  const yearSelEl= document.getElementById('revYearSel');
+  if (!barsEl) return;
+
+  const monthNames = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const curMonth   = new Date().getMonth();
+  const curYear    = new Date().getFullYear();
+
+  // Build revenue per month for selected year
+  const monthly = Array(12).fill(0);
+  getBookings()
+    .filter(b => ['confirmed','approved','completed'].includes(b.status))
+    .forEach(b => {
+      const d = new Date(b.startDate || b.date);
+      if (isNaN(d) || d.getFullYear() !== year) return;
+      monthly[d.getMonth()] += b.finalPrice || b.price || 0;
+    });
+
+  const maxRev = Math.max(...monthly, 1);
+
+  barsEl.innerHTML = monthly.map((val, i) => {
+    const pct = Math.round(val / maxRev * 100);
+    const isCur = year === curYear && i === curMonth;
+    const valStr = val >= 1000 ? `R$${(val/1000).toFixed(1)}k` : val > 0 ? `R$${val}` : '';
+    return `<div class="rev-bar-col">
+      <div class="rev-bar-val">${valStr}</div>
+      <div class="rev-bar-fill${isCur ? ' cur-month' : ''}" style="height:${Math.max(pct, val > 0 ? 4 : 0)}%"></div>
+    </div>`;
+  }).join('');
+
+  labelsEl.innerHTML = monthNames.map(m => `<div class="rev-bar-lbl">${m}</div>`).join('');
+
+  // Year selector: current year + 2 previous
+  const years = [curYear, curYear - 1, curYear - 2];
+  if (yearSelEl) {
+    yearSelEl.innerHTML = years.map(y =>
+      `<button class="rev-year-btn${y === year ? ' active' : ''}" onclick="_renderRevenueChart(${y})">${y}</button>`
+    ).join('');
+  }
 }
 
 function _renderGeoSection() {
@@ -3221,12 +3417,47 @@ function openServiceForm(id) {
         <div><input id="sfSalePq" type="number" value="${s?.pq||0}" min="0" step="10"/></div>
         <div><input id="sfSaleGr" type="number" value="${s?.gr||0}" min="0" step="10"/></div>
       </div>
+      <div style="margin-top:1.2rem">
+        <div style="font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.6rem">Perguntas Frequentes (FAQ)</div>
+        <div id="sfFaqList">${(s?.faqs||[]).map((f,i)=>`
+          <div class="faq-admin-row" id="faqRow${i}">
+            <input placeholder="Pergunta" value="${(f.q||'').replace(/"/g,'&quot;')}" id="sfFaqQ${i}"/>
+            <input placeholder="Resposta" value="${(f.a||'').replace(/"/g,'&quot;')}" id="sfFaqA${i}"/>
+            <button class="ba-admin-del" onclick="removeFaqRow(${i})" style="padding:.35rem .6rem">🗑️</button>
+          </div>`).join('')}</div>
+        <button class="btn-ghost" style="font-size:.76rem;margin-top:.4rem" onclick="addFaqRow()">+ Adicionar pergunta</button>
+      </div>
       <div style="display:flex;gap:.8rem;margin-top:1.2rem">
         <button class="btn-primary" onclick="saveService('${id||''}')">💾 Salvar</button>
         <button class="btn-ghost" onclick="document.getElementById('svcFormWrap').innerHTML=''">Cancelar</button>
       </div>
     </div>`;
   wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function _getFaqRows() {
+  const list = document.getElementById('sfFaqList');
+  if (!list) return [];
+  return Array.from(list.querySelectorAll('.faq-admin-row')).map((_, i) => ({
+    q: (document.getElementById('sfFaqQ' + i)?.value || '').trim(),
+    a: (document.getElementById('sfFaqA' + i)?.value || '').trim()
+  })).filter(f => f.q || f.a);
+}
+
+function addFaqRow() {
+  const list = document.getElementById('sfFaqList');
+  if (!list) return;
+  const i = list.children.length;
+  const row = document.createElement('div');
+  row.className = 'faq-admin-row';
+  row.id = 'faqRow' + i;
+  row.innerHTML = `<input placeholder="Pergunta" id="sfFaqQ${i}"/><input placeholder="Resposta" id="sfFaqA${i}"/><button class="ba-admin-del" onclick="removeFaqRow(${i})" style="padding:.35rem .6rem">🗑️</button>`;
+  list.appendChild(row);
+}
+
+function removeFaqRow(i) {
+  const row = document.getElementById('faqRow' + i);
+  if (row) row.remove();
 }
 
 function slugify(str) {
@@ -3250,9 +3481,11 @@ async function saveService(id) {
   if (!salePq || !saleGr) { alert('Informe o preço de venda para ambos os portes.'); return; }
   if (!_servicesRef) { alert('Firebase não conectado.'); return; }
 
+  const faqs = _getFaqRows();
   const key = id || slugify(name);
   const data = { name, icon, cat, daysExtra: days, active, desc,
-    pricing: { pq: { cost: costPq, sale: salePq }, gr: { cost: costGr, sale: saleGr } } };
+    pricing: { pq: { cost: costPq, sale: salePq }, gr: { cost: costGr, sale: saleGr } },
+    ...(faqs.length ? { faqs } : {}) };
 
   try {
     await _servicesRef.child(key).set(data);
@@ -3706,6 +3939,10 @@ function renderServices() {
           const s = SVCS[id];
           if (!s) return '';
           const price = s[currentSizeGlobal] || s.pq || 0;
+          const faqHtml = (s.faqs && s.faqs.length)
+            ? `<div class="svc-faq" onclick="event.stopPropagation()">
+                ${s.faqs.map(f => `<details class="svc-faq-item"><summary>${f.q}</summary><p>${f.a}</p></details>`).join('')}
+               </div>` : '';
           return `<div class="svc-card" onclick="openBooking('${id}')">
             <div class="svc-top">
               <div class="svc-icon">${s.icon}</div>
@@ -3716,6 +3953,7 @@ function renderServices() {
             </div>
             <div class="svc-name">${s.name}</div>
             <div class="svc-desc">${s.desc}</div>
+            ${faqHtml}
             <div class="svc-agendar">Agendar este serviço →</div>
           </div>`;
         }).join('')}
@@ -3876,6 +4114,7 @@ function updateWaLink() {
     _clientNotesRef    = _fbDB.ref('clientNotes');
     _clientProfilesRef = _fbDB.ref('clientProfiles');
     _couponsRef        = _fbDB.ref('coupons');
+    _waitlistRef       = _fbDB.ref('waitlist');
     _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
 
     firebase.auth().onAuthStateChanged(user => {
@@ -3949,6 +4188,7 @@ function updateWaLink() {
             active: s.active !== false,
             _cost_pq: s.pricing?.pq?.cost ?? 0,
             _cost_gr: s.pricing?.gr?.cost ?? 0,
+            faqs: Array.isArray(s.faqs) ? s.faqs : (s.faqs ? Object.values(s.faqs) : []),
           };
         });
         renderServices();
