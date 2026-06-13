@@ -4,6 +4,9 @@
   publish = "dist"
   functions = "netlify/functions"
 
+[functions."birthday-check"]
+  schedule = "0 12 * * *"
+
 [[headers]]
   for = "/*"
   [headers.values]
