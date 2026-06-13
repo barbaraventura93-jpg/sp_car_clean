@@ -1580,16 +1580,17 @@ function customerConfirm(id) {
   b.status = 'confirmed';
   updateBooking(b);
   _awardPoints(b);
-  sendEmail('template_confirm', {
+  sendEmail('template_update', {
     to_email: b.email, to_name: b.name,
     booking_id: b.id,
-    service: SVCS[b.service]?.name || b.service,
-    date_dropoff: fmtDate(b.startDate || b.date),
-    time_dropoff: CFG.dropoffTime,
-    date_pickup:  fmtDate(b.endDate   || b.date),
-    time_pickup:  CFG.pickupTime,
-    price:        fmtMoney(b.finalPrice || b.price),
-    location:     b.approvedLocation || CFG.location,
+    titulo:   '✅ Pagamento confirmado — SP Car Clean',
+    mensagem: `Seu pagamento foi confirmado! Aqui estão os detalhes do seu agendamento:\n\n` +
+              `🔧 Serviço: ${SVCS[b.service]?.name || b.service}\n` +
+              `📅 Entrada do veículo: ${fmtDate(b.startDate || b.date)} às ${CFG.dropoffTime}\n` +
+              `🏁 Retirada do veículo: ${fmtDate(b.endDate || b.date)} às ${CFG.pickupTime}\n` +
+              `💰 Valor: ${fmtMoney(b.finalPrice || b.price)}\n` +
+              `📍 Local: ${b.approvedLocation || CFG.location}\n\n` +
+              `Aguardamos você! Em caso de dúvidas, entre em contato pelo WhatsApp.`,
   });
   checkStatus();
 }
