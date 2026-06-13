@@ -56,6 +56,18 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - Botão de notificação individual por entrada na lista
 - Botão de remoção de entradas já atendidas
 
+### Check-in do Veículo (Admin)
+- Botão **📋 Check-in** no detalhe de cada agendamento aprovado ou confirmado
+- Modal com **19 pontos de inspeção** (para-choques, portas, teto, vidros, rodas, bancos, painel, tapetes etc.)
+- Cada item tem toggle **OK / Avaria** — itens com avaria expandem campo de descrição + upload de foto
+- Registro de **km no odômetro** e **nível de combustível** na entrada
+- Campo de observações gerais (acessórios, objetos no interior etc.)
+- Fotos armazenadas no **Firebase Storage** (`checkin/{bookingId}/`)
+- Ao finalizar: envia **e-mail** (template_update) e abre **WhatsApp** ao cliente com o resumo completo
+- Resumo do check-in visível no detalhe do agendamento (admin) e em **Minha Conta** (cliente) com miniaturas clicáveis
+- Badge **"📋 check-in"** na lista de agendamentos do admin
+- Após check-in concluído, cliente **não pode mais reagendar ou cancelar** — veículo já entregue
+
 ### Painel Administrativo
 - Login seguro com **Firebase Auth** (e-mail + senha)
 - **Calendário de agenda**: bloquear dias avulsos ou períodos inteiros
@@ -240,6 +252,10 @@ service firebase.storage {
       allow read: if true;
       allow write: if request.auth != null;
     }
+    match /checkin/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
   }
 }
 ```
@@ -312,6 +328,7 @@ sp-car-clean/
 | Painel de reativação de clientes inativos | ✅ |
 | Lista de espera para dias esgotados | ✅ |
 | FAQ por serviço com modal dedicado | ✅ |
+| Check-in do veículo com fotos e notificação ao cliente | ✅ |
 
 ---
 
