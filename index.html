@@ -564,12 +564,13 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 /* FAQ */
 .svc-faq{margin-top:.8rem;border-top:1px solid rgba(255,255,255,.06);padding-top:.55rem}
 .svc-faq-item{border-bottom:1px solid rgba(255,255,255,.04)}
-.svc-faq-item summary{list-style:none;cursor:pointer;font-family:'Montserrat',sans-serif;font-size:.73rem;font-weight:600;color:var(--muted);padding:.42rem 0;display:flex;justify-content:space-between;align-items:center;gap:.4rem;transition:color .2s}
-.svc-faq-item summary:hover{color:var(--accent)}
-.svc-faq-item summary::after{content:'＋';font-size:.75rem;color:var(--accent);flex-shrink:0}
-.svc-faq-item[open] summary{color:var(--text)}
-.svc-faq-item[open] summary::after{content:'－'}
-.svc-faq-item p{font-size:.78rem;color:rgba(221,232,245,.75);line-height:1.55;padding:.3rem 0 .6rem}
+.svc-faq-q{cursor:pointer;font-family:'Montserrat',sans-serif;font-size:.73rem;font-weight:600;color:var(--muted);padding:.42rem 0;display:flex;justify-content:space-between;align-items:center;gap:.4rem;transition:color .2s;-webkit-user-select:none;user-select:none}
+.svc-faq-q:hover{color:var(--accent)}
+.svc-faq-q::after{content:'＋';font-size:.75rem;color:var(--accent);flex-shrink:0}
+.svc-faq-item.open .svc-faq-q{color:var(--text)}
+.svc-faq-item.open .svc-faq-q::after{content:'－'}
+.svc-faq-a{display:none;font-size:.78rem;color:rgba(221,232,245,.75);line-height:1.55;padding:.3rem 0 .6rem}
+.svc-faq-item.open .svc-faq-a{display:block}
 .faq-admin-row{display:grid;grid-template-columns:1fr 1fr auto;gap:.5rem;align-items:start;margin-bottom:.45rem}
 .faq-admin-row input{font-size:.78rem;padding:.35rem .6rem}
 </style>
@@ -4012,9 +4013,7 @@ function renderServices() {
           if (!s) return '';
           const price = s[currentSizeGlobal] || s.pq || 0;
           const faqHtml = (s.faqs && s.faqs.length)
-            ? `<div class="svc-faq">
-                ${s.faqs.map(f => `<details class="svc-faq-item" onclick="event.stopPropagation()"><summary onclick="event.stopPropagation()">${f.q}</summary><p>${f.a}</p></details>`).join('')}
-               </div>` : '';
+            ? `<div class="svc-faq">${s.faqs.map((f,i) => `<div class="svc-faq-item"><div class="svc-faq-q" onclick="event.stopPropagation();this.closest('.svc-faq-item').classList.toggle('open')">${f.q}</div><div class="svc-faq-a">${f.a}</div></div>`).join('')}</div>` : '';
           return `<div class="svc-card" onclick="openBooking('${id}')">
             <div class="svc-top">
               <div class="svc-icon">${s.icon}</div>
