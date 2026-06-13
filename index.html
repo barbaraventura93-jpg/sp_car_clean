@@ -2957,9 +2957,11 @@ function _buildCheckinSummaryHtml(checkin) {
         return `<div class="ci-sum-avaria-item">
           <div class="ci-sum-row ci-sum-avaria">⚠️ <strong>${i.label}</strong>${st.note ? ' — ' + st.note : ''}</div>
           ${st.photoUrl
-            ? `<a href="${st.photoUrl}" target="_blank" title="Ver foto em tamanho real">
-                <img class="ci-sum-photo" src="${st.photoUrl}" alt="${i.label}" onerror="this.style.display='none'"/>
-               </a>`
+            ? `<div class="ci-sum-photo-wrap">
+                <img class="ci-sum-photo" src="${st.photoUrl}" alt="${i.label}"
+                  onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"/>
+                <a class="ci-sum-photo-link" href="${st.photoUrl}" target="_blank" style="display:none">📷 Ver foto registrada</a>
+               </div>`
             : ''}
         </div>`;
       }).join('')
