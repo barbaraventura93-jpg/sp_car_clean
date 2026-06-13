@@ -1687,12 +1687,15 @@ function openAdminLogin() {
 function _updateClientNavUI() {
   const li = document.getElementById('clientNavItem');
   if (!li) return;
-  if (isClient()) {
+  if (isAdmin()) {
+    li.classList.add('client-nav-hidden');
+  } else if (isClient()) {
     li.classList.remove('client-nav-hidden');
     const firstName = (_clientProfile?.name || '').split(' ')[0] || 'Minha Conta';
     li.querySelector('a').textContent = '👤 ' + firstName;
   } else {
-    li.classList.add('client-nav-hidden');
+    li.classList.remove('client-nav-hidden');
+    li.querySelector('a').textContent = '👤 Minha Conta';
   }
 }
 
@@ -3718,6 +3721,7 @@ function sendEmail(templateId, params) {
 // ============================================================
 renderServices();
 updateWaLink();
+_updateClientNavUI();
 
 // Auto-open admin if ?admin in URL
 if(window.location.search.includes('admin')) openAdminLogin();
