@@ -16,9 +16,19 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - **Seção de diferenciais** com estatísticas animadas
 - **Botão WhatsApp** direto para contato
 
+### Conta do Cliente
+- **Criação de conta opcional** no step 3 do agendamento (e-mail + senha)
+- **Login** direto no menu "Minha Conta" com recuperação de senha
+- **Pré-preenchimento automático** do formulário quando o cliente está logado
+- **Histórico completo** de agendamentos, veículos e saldo de pontos de fidelidade
+- **Badge de pontos** (⭐ X pts + valor em R$) visível na conta
+- Admin pode **migrar agendamentos antigos** por e-mail ao UID da conta (botão em Configurações)
+
 ### Agendamento (cliente)
 - Fluxo em **4 etapas**: serviço → data → dados → confirmação
 - Seleção de **múltiplos serviços** no mesmo agendamento com total calculado dinamicamente
+- **Sugestão inteligente de combo**: se os serviços escolhidos fizerem parte de um combo com desconto, o sistema sugere aplicá-lo com 1 clique
+- **Campo de cupom de desconto** no step 3 com validação em tempo real
 - **Calendário interativo** com disponibilidade em tempo real integrado ao Firebase Realtime Database
 - **Código de rastreamento único** por agendamento (ex: `SPC-X7K2M`)
 - **Consulta de status** pelo código — sem login, acessível ao cliente a qualquer momento
@@ -50,6 +60,30 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - Importar os 9 serviços padrão com 1 clique (seed inicial)
 - Vitrine pública lê do Firebase em tempo real — mudanças aparecem no site sem redeploy
 - Agendamentos existentes **não são afetados** por mudanças de preço (valor congelado no registro)
+
+### Combos e Pacotes (Admin + Site)
+- **Seção pública `#combos`** com cards mostrando preço regular vs. preço do combo e badge de economia
+- Aba **Combos** no painel administrativo com CRUD completo (criar, editar, excluir, ativar/desativar)
+- Preço do combo **calculado automaticamente** a partir dos serviços incluídos + desconto percentual configurável
+- Combos inativos **não aparecem** na vitrine pública sem necessidade de redeploy
+
+### Programa de Fidelidade e Cupons (Admin + Cliente)
+
+**Pontos de fidelidade**
+- Pontos concedidos automaticamente ao confirmar pagamento (`_awardPoints()`)
+- Taxa configurável no painel admin: pontos por R$, valor de conversão, mínimo para resgate
+- Admin pode **ajustar pontos manualmente** na ficha do cliente
+
+**Cupons de desconto**
+- CRUD completo de cupons em `/coupons` no Firebase, gerenciado pelo admin
+- Validação em tempo real no step 3 do agendamento; desconto aplicado antes de salvar
+- Cupom marcado como **usado** após aplicação (uso único ou múltiplo configurável)
+- **Cupom de aniversário**: gerado com 1 clique na ficha do cliente (10% de desconto, válido no mês)
+
+**Reativação de clientes inativos**
+- Painel de inativos (>60 dias sem visita) com contagem de dias desde o último atendimento
+- Botão **WhatsApp** com mensagem de reativação pré-formatada
+- Botão para **gerar cupom personalizado** por cliente inativo direto do painel
 
 ### Galeria Antes/Depois (Admin)
 - Aba dedicada **📸 Galeria** no painel administrativo
@@ -215,6 +249,12 @@ sp-car-clean/
 | Domínio customizado (www.spcarclean.com.br) | ✅ |
 | CRUD de serviços com preços e margens pelo admin | ✅ |
 | Exclusão individual de agendamentos de teste | ✅ |
+| Conta do cliente com login e histórico | ✅ |
+| Combos e pacotes com desconto + sugestão inteligente | ✅ |
+| Programa de pontos de fidelidade | ✅ |
+| Cupons de desconto com CRUD pelo admin | ✅ |
+| Cupom de aniversário (gerado em 1 clique) | ✅ |
+| Painel de reativação de clientes inativos | ✅ |
 | Lista de espera | 🔜 |
 | Gráficos de receita por período | 🔜 |
 | FAQ por serviço | 🔜 |
