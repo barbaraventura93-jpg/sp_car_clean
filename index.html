@@ -597,6 +597,9 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 .checkin-summary.has-avaria .ci-sum-hdr{color:var(--orange)}
 .ci-sum-row{font-size:.76rem;color:var(--muted);margin:.2rem 0}
 .ci-sum-avaria{color:var(--orange);font-weight:600}
+.ci-sum-avaria-item{margin:.4rem 0}
+.ci-sum-photo{display:block;width:100%;max-width:280px;border-radius:8px;margin-top:.4rem;cursor:pointer;border:2px solid rgba(245,158,11,.3);transition:border-color .2s}
+.ci-sum-photo:hover{border-color:var(--orange)}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -2947,19 +2950,27 @@ function _buildCheckinSummaryHtml(checkin) {
   const avarias = CHECKIN_ITEMS.filter(i => checkin.items?.[i.key]?.ok === false);
   const hasAv   = avarias.length > 0;
   const date    = checkin.completedAt ? new Date(checkin.completedAt).toLocaleString('pt-BR') : '';
+
+  const avHtml = hasAv
+    ? avarias.map(i => {
+        const st = checkin.items[i.key];
+        return `<div class="ci-sum-avaria-item">
+          <div class="ci-sum-row ci-sum-avaria">⚠️ <strong>${i.label}</strong>${st.note ? ' — ' + st.note : ''}</div>
+          ${st.photoUrl
+            ? `<a href="${st.photoUrl}" target="_blank" title="Ver foto em tamanho real">
+                <img class="ci-sum-photo" src="${st.photoUrl}" alt="${i.label}" onerror="this.style.display='none'"/>
+               </a>`
+            : ''}
+        </div>`;
+      }).join('')
+    : '<div class="ci-sum-row" style="color:#22c55e">✅ Nenhuma avaria pré-existente registrada.</div>';
+
   return `<div class="checkin-summary${hasAv ? ' has-avaria' : ''}">
     <div class="ci-sum-hdr">${hasAv ? '⚠️' : '✅'} Check-in realizado${date ? ' em ' + date : ''}</div>
-    ${checkin.km ? `<div class="ci-sum-row">🔢 Km: <strong>${checkin.km}</strong></div>` : ''}
-    ${checkin.fuel ? `<div class="ci-sum-row">⛽ Combustível: <strong>${checkin.fuel}</strong></div>` : ''}
-    ${hasAv
-      ? avarias.map(i => {
-          const st = checkin.items[i.key];
-          return `<div class="ci-sum-row ci-sum-avaria">⚠️ ${i.label}${st.note ? ': ' + st.note : ''}
-            ${st.photoUrl ? `<a href="${st.photoUrl}" target="_blank" style="color:var(--accent);margin-left:.4rem;font-size:.7rem">ver foto</a>` : ''}</div>`;
-        }).join('')
-      : '<div class="ci-sum-row">Nenhuma avaria pré-existente registrada.</div>'
-    }
-    ${checkin.obs ? `<div class="ci-sum-row">📝 ${checkin.obs}</div>` : ''}
+    ${checkin.km   ? `<div class="ci-sum-row">🔢 Km na entrada: <strong>${checkin.km}</strong></div>` : ''}
+    ${checkin.fuel ? `<div class="ci-sum-row">⛽ Combustível: <strong>${checkin.fuel}</strong></div>`  : ''}
+    ${avHtml}
+    ${checkin.obs  ? `<div class="ci-sum-row">📝 ${checkin.obs}</div>` : ''}
   </div>`;
 }
 
