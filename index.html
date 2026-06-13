@@ -130,6 +130,29 @@ h2{font-family:'Montserrat',sans-serif;font-size:clamp(1.8rem,3.5vw,3rem);font-w
 .pq-item h4{font-family:'Montserrat',sans-serif;font-size:.88rem;font-weight:700;color:var(--white);margin-bottom:.25rem}
 .pq-item p{font-size:.78rem;color:var(--muted);line-height:1.65}
 
+/* ====== CONTA DO CLIENTE ====== */
+.client-booking-card{background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:10px;padding:.85rem 1rem;margin-bottom:.6rem;transition:border-color .2s}
+.client-booking-card:hover{border-color:var(--border-glow)}
+.client-booking-card-hdr{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.4rem;margin-bottom:.3rem}
+.client-booking-card-id{font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:800;color:var(--blue);letter-spacing:.1em}
+.client-booking-card-svc{font-size:.82rem;color:var(--text);margin:.2rem 0}
+.client-booking-card-meta{font-size:.74rem;color:var(--muted)}
+.client-booking-card-actions{display:flex;gap:.4rem;margin-top:.6rem;flex-wrap:wrap}
+.client-booking-card-actions button{font-size:.72rem;padding:.3rem .8rem}
+.client-auth-section{border:1px solid var(--border);border-radius:10px;padding:1rem;background:var(--bg2);margin-top:1rem}
+.client-auth-toggle-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem}
+.client-auth-toggle-label{font-family:'Montserrat',sans-serif;font-size:.78rem;font-weight:700;color:var(--text)}
+.client-auth-toggle-check{display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.78rem;color:var(--muted)}
+.client-logged-badge{font-size:.8rem;color:var(--green);display:flex;align-items:center;gap:.4rem}
+.client-section-title{font-family:'Montserrat',sans-serif;font-size:.82rem;font-weight:800;color:var(--accent);letter-spacing:.06em;text-transform:uppercase;margin-bottom:.7rem}
+.client-empty{color:var(--muted);font-size:.83rem}
+.modal-hint{text-align:center;margin-top:.7rem;font-size:.78rem;color:var(--muted)}
+#clientNavItem.client-nav-hidden{display:none}
+.client-nav-link{cursor:pointer}
+#clLoginError{color:var(--red);font-size:.82rem;margin-bottom:.6rem;display:none}
+.btn-full{width:100%;justify-content:center}
+.client-forgot-link{color:var(--accent);cursor:pointer;text-decoration:underline}
+
 /* ====== COMBOS ====== */
 #combos{padding:7rem 6%;background:var(--bg2)}
 #combos.combos-hidden{display:none}
@@ -525,6 +548,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
     </div>
   </a>
   <ul class="nav-links">
+    <li id="clientNavItem" class="client-nav-hidden"><a onclick="openClientAccount()" class="client-nav-link">👤 Minha Conta</a></li>
     <li><a href="#servicos">Serviços</a></li>
     <li><a href="#combos">Combos</a></li>
     <li><a href="#porque">Diferenciais</a></li>
@@ -745,6 +769,35 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
   </div>
 </div>
 
+<!-- ===== CLIENTE: LOGIN MODAL ===== -->
+<div id="clientLoginModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-hdr">
+      <div><h3>👤 Minha Conta</h3><div class="sub">Acesse seu histórico de agendamentos</div></div>
+      <button class="modal-close" onclick="closeModal('clientLoginModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row full"><div class="form-group"><label>E-mail</label><input id="clEmail" type="email" placeholder="seu@email.com"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Senha</label><input id="clPass" type="password" placeholder="Sua senha" onkeydown="if(event.key==='Enter')doClientLogin()"/></div></div>
+      <div id="clLoginError"></div>
+      <button class="btn-primary btn-full" onclick="doClientLogin()">Entrar</button>
+      <p class="modal-hint">Não tem conta? Faça um agendamento e crie sua conta no final.</p>
+      <p class="modal-hint"><a onclick="doClientPasswordReset()" class="client-forgot-link">Esqueci minha senha</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CLIENTE: MINHA CONTA MODAL ===== -->
+<div id="clientAccountModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:680px;max-height:90vh;overflow-y:auto">
+    <div class="modal-hdr">
+      <div><h3>👤 Minha Conta</h3><div class="sub" id="clientAccountSub">SP Car Clean</div></div>
+      <button class="modal-close" onclick="closeModal('clientAccountModal')">✕</button>
+    </div>
+    <div class="modal-body" id="clientAccountBody"></div>
+  </div>
+</div>
+
 <!-- ===================================================
      ADMIN LOGIN MODAL
 =================================================== -->
@@ -853,14 +906,16 @@ const CATS_ORDER = ['Estética Interna','Estética Externa','Serviços Especiais
 // ============================================================
 let _bookings = [];
 let _blocked  = [];
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef;
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef;
 const _COMBOS = {};
 let _authUser = null;
+let _clientProfile = null;
 let _clientNotes = {};
 let _clientNotesRef = null;
 let _geoCache = {};
 
-const isAdmin = () => _authUser != null;
+const isAdmin  = () => _authUser != null && _authUser.email === CFG.adminEmail;
+const isClient = () => _authUser != null && _authUser.email !== CFG.adminEmail;
 
 function getBookings() { return _bookings; }
 function getBlocked()  { return _blocked; }
@@ -871,6 +926,11 @@ function setBookings(arr) {
   const obj = {};
   arr.forEach(b => { obj[b.id] = b; });
   _bookingsRef.set(obj).catch(e => console.error('Firebase setBookings:', e));
+}
+
+function updateBooking(b) {
+  _bookings = _bookings.map(x => x.id === b.id ? b : x);
+  if (_bookingsRef) _bookingsRef.child(b.id).update(b).catch(e => console.error('Firebase updateBooking:', e));
 }
 
 function setBlocked(arr) {
@@ -1221,9 +1281,43 @@ function renderBookingStep() {
       <div class="form-row"><div class="form-group"><label>Veículo (modelo/ano)</label><input id="fCar" placeholder="Honda Civic 2020"/></div><div class="form-group"><label>Placa</label><input id="fPlate" placeholder="ABC-1234"/></div></div>
       <div class="form-row"><div class="form-group"><label>Bairro *</label><input id="fBairro" placeholder="Moema, Brooklin, Vila Mariana..."/></div><div class="form-group"><label>CEP (opcional)</label><input id="fCep" placeholder="04543-000" maxlength="9" oninput="fmtCep(this)"/></div></div>
       <div class="form-row full"><div class="form-group"><label>Observações (opcional)</label><textarea id="fObs" placeholder="Informe alguma particularidade do veículo, manchas específicas, etc."></textarea></div></div>
+      <div id="clientAuthSection" class="client-auth-section">
+        <div id="clientLoggedBadge" class="client-logged-badge" style="display:none">
+          ✅ Logado como <strong id="clientLoggedEmail"></strong> — agendamento será vinculado à sua conta.
+        </div>
+        <div id="clientSignupWrap">
+          <div class="client-auth-toggle-row">
+            <span class="client-auth-toggle-label">💼 Salvar para agendar mais rápido na próxima vez</span>
+            <label class="client-auth-toggle-check"><input type="checkbox" id="clientAuthToggle" onchange="toggleClientAuthSection(this.checked)"/> Criar conta</label>
+          </div>
+          <div id="clientAuthFields" style="display:none">
+            <div class="form-row">
+              <div class="form-group"><label>Senha</label><input type="password" id="fClientPw" placeholder="Mínimo 6 caracteres"/></div>
+              <div class="form-group"><label>Confirmar senha</label><input type="password" id="fClientPwConfirm" placeholder="Repetir senha"/></div>
+            </div>
+            <p id="clientAuthMsg" style="font-size:.74rem;color:var(--muted);margin-top:.2rem"></p>
+          </div>
+        </div>
+      </div>
       <p style="font-size:.75rem;color:var(--muted)">Ao enviar você concorda que seus dados serão usados para finalizar o agendamento.</p>
       <p style="font-size:.74rem;color:var(--orange);margin-top:.4rem;line-height:1.5">⚠️ <strong>Política de cancelamento:</strong> O pagamento integral é realizado online via PIX ou cartão após a aprovação do orçamento. Cancelamentos em até <strong>7 dias corridos</strong> da contratação têm reembolso integral (CDC Art. 49). Após esse prazo, cancelamentos com mais de 1 dia útil de antecedência têm reembolso de <strong>50%</strong>. Cancelamentos feitos dentro de 1 dia útil do serviço não são reembolsáveis.</p>`;
     footer.innerHTML = `<button class="btn-ghost" onclick="prevStep()">← Voltar</button><button class="btn-primary" onclick="submitBooking()">Enviar Solicitação ✓</button>`;
+
+    // Pré-preenchimento para cliente logado
+    if (isClient() && _clientProfile) {
+      const p = _clientProfile;
+      const fill = (id, val) => { const el = document.getElementById(id); if (el && !el.value && val) el.value = val; };
+      fill('fName', p.name); fill('fPhone', p.phone); fill('fEmail', p.email);
+      const myLast = _bookings.filter(b => (b.clientUid === _authUser.uid) || (!b.clientUid && b.email?.toLowerCase() === p.email?.toLowerCase()))
+        .sort((a, b) => (b.submittedAt||'').localeCompare(a.submittedAt||''))[0];
+      if (myLast) { fill('fCar', myLast.car); fill('fPlate', myLast.plate); fill('fBairro', myLast.bairro); fill('fCep', myLast.cep); }
+      const badge = document.getElementById('clientLoggedBadge');
+      const wrap  = document.getElementById('clientSignupWrap');
+      const emailSpan = document.getElementById('clientLoggedEmail');
+      if (badge)     badge.style.display = 'flex';
+      if (wrap)      wrap.style.display  = 'none';
+      if (emailSpan) emailSpan.textContent = p.email;
+    }
 
   } else if(booking.step === 4) {
     // Success
@@ -1275,16 +1369,33 @@ function prevStep() {
   renderBookingStep();
 }
 
-function submitBooking() {
-  const name = document.getElementById('fName').value.trim();
-  const email = document.getElementById('fEmail').value.trim();
-  const phone = document.getElementById('fPhone').value.trim();
-  const car = document.getElementById('fCar').value.trim();
-  const plate = document.getElementById('fPlate').value.trim();
+async function submitBooking() {
+  const name   = document.getElementById('fName').value.trim();
+  const email  = document.getElementById('fEmail').value.trim();
+  const phone  = document.getElementById('fPhone').value.trim();
+  const car    = document.getElementById('fCar').value.trim();
+  const plate  = document.getElementById('fPlate').value.trim();
   const bairro = document.getElementById('fBairro').value.trim();
-  const cep = document.getElementById('fCep').value.trim();
-  const obs = document.getElementById('fObs').value.trim();
+  const cep    = document.getElementById('fCep').value.trim();
+  const obs    = document.getElementById('fObs').value.trim();
   if(!name||!email||!phone||!car||!bairro) { alert('Preencha todos os campos obrigatórios (incluindo o bairro).'); return; }
+
+  // Auth opcional: criar/logar conta de cliente
+  let clientUid = isClient() ? _authUser.uid : null;
+  const wantsAccount = document.getElementById('clientAuthToggle')?.checked;
+  if (wantsAccount && !isClient()) {
+    const pw  = document.getElementById('fClientPw')?.value || '';
+    const pwc = document.getElementById('fClientPwConfirm')?.value || '';
+    if (pw.length < 6) { alert('Senha deve ter ao menos 6 caracteres.'); return; }
+    if (pw !== pwc)    { alert('As senhas não coincidem.'); return; }
+    try {
+      const user = await _tryClientSignupOrLogin(email, pw, name, phone);
+      clientUid = user.uid;
+    } catch(e) {
+      const msg = document.getElementById('clientAuthMsg');
+      if (msg) msg.textContent = '⚠️ ' + (e.message || 'Erro ao criar conta. Agendamento enviado sem conta.');
+    }
+  }
 
   const id = genId();
   const _maxDaysSub = bkMaxDays(booking);
@@ -1296,12 +1407,23 @@ function submitBooking() {
     status: 'pending',
     submittedAt: new Date().toISOString(),
     adminNotes: '',
+    ...(clientUid ? { clientUid } : {}),
   };
-  const bookings = getBookings();
-  bookings.push(b);
-  setBookings(bookings);
 
-  // Notificar negócio via CallMeBot (Netlify Function)
+  // Salvar booking (usa set individual para compatibilidade futura com regras por uid)
+  _bookings.push(b);
+  if (_bookingsRef) {
+    _bookingsRef.child(id).set(b).catch(e => console.error('Firebase booking:', e));
+  }
+
+  // Atualizar perfil do cliente com dados mais recentes
+  if (isClient() && _authUser && _clientProfilesRef) {
+    _clientProfilesRef.child(_authUser.uid).update({ name, phone, bairro, lastBookingAt: new Date().toISOString() }).catch(() => {});
+    _clientProfile = { ..._clientProfile, name, phone, bairro };
+    _updateClientNavUI();
+  }
+
+  // Notificar negócio via Netlify Function
   fetch('/.netlify/functions/notify-booking', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1311,7 +1433,7 @@ function submitBooking() {
       date: fmtDate(booking.date),
       price: fmtMoney(b.price), obs
     })
-  }).catch(() => {}); // silencioso — não bloqueia o fluxo
+  }).catch(() => {});
 
   booking.step = 4;
   renderBookingStep();
@@ -1431,7 +1553,7 @@ function customerConfirm(id) {
   const b = bookings.find(x=>x.id===id);
   if(!b) return;
   b.status = 'confirmed';
-  setBookings(bookings);
+  updateBooking(b);
   sendEmail('template_confirm', {
     to_email: b.email, to_name: b.name,
     booking_id: b.id,
@@ -1476,7 +1598,7 @@ function submitClientCancel(id, tier) {
   b.cancelledBy = 'client';
   b.refundTier = tier; // 'full', 'partial', or 'none'
   b.refundApplies = tier !== 'none'; // backward compat
-  setBookings(bookings);
+  updateBooking(b);
   const refundMsg = tier === 'full'
     ? 'Reembolso integral será processado em breve (CDC Art. 49).'
     : tier === 'partial'
@@ -1528,7 +1650,7 @@ function submitReschedule() {
   if(!b) return;
 
   b.rescheduleRequest = { date: newDate, note, requestedAt: new Date().toISOString() };
-  setBookings(bookings);
+  updateBooking(b);
 
   fetch('/.netlify/functions/notify-booking', {
     method: 'POST',
@@ -1559,6 +1681,158 @@ function openAdminLogin() {
   document.getElementById('adminLoginModal').style.display = 'flex';
   setTimeout(()=>document.getElementById('adminPass').focus(), 100);
 }
+// ============================================================
+// CONTA DO CLIENTE
+// ============================================================
+function _updateClientNavUI() {
+  const li = document.getElementById('clientNavItem');
+  if (!li) return;
+  if (isClient()) {
+    li.classList.remove('client-nav-hidden');
+    const firstName = (_clientProfile?.name || '').split(' ')[0] || 'Minha Conta';
+    li.querySelector('a').textContent = '👤 ' + firstName;
+  } else {
+    li.classList.add('client-nav-hidden');
+  }
+}
+
+function toggleClientAuthSection(checked) {
+  const fields = document.getElementById('clientAuthFields');
+  if (fields) fields.style.display = checked ? 'block' : 'none';
+}
+
+async function _tryClientSignupOrLogin(email, pw, name, phone) {
+  try {
+    const cred = await firebase.auth().createUserWithEmailAndPassword(email, pw);
+    const user = cred.user;
+    await user.updateProfile({ displayName: name });
+    await _clientProfilesRef.child(user.uid).set({
+      uid: user.uid, email, name, phone,
+      createdAt: new Date().toISOString(),
+      linkedEmails: [email.toLowerCase()],
+    });
+    return user;
+  } catch(e) {
+    if (e.code === 'auth/email-already-in-use') {
+      const cred2 = await firebase.auth().signInWithEmailAndPassword(email, pw);
+      await _clientProfilesRef.child(cred2.user.uid).update({ lastLoginAt: new Date().toISOString() });
+      return cred2.user;
+    }
+    throw e;
+  }
+}
+
+function openClientAccount() {
+  if (!isClient()) {
+    document.getElementById('clientLoginModal').style.display = 'flex';
+    setTimeout(() => document.getElementById('clEmail')?.focus(), 100);
+  } else {
+    renderClientAccount();
+    document.getElementById('clientAccountModal').style.display = 'flex';
+  }
+}
+
+function doClientLogin() {
+  const email = (document.getElementById('clEmail')?.value || '').trim();
+  const pass  = document.getElementById('clPass')?.value || '';
+  const errEl = document.getElementById('clLoginError');
+  errEl.style.display = 'none';
+  firebase.auth().signInWithEmailAndPassword(email, pass)
+    .then(cred => {
+      if (cred.user.email === CFG.adminEmail) {
+        firebase.auth().signOut();
+        errEl.textContent = 'Use a Área Restrita para acesso administrativo.';
+        errEl.style.display = 'block';
+        return;
+      }
+      closeModal('clientLoginModal');
+      openClientAccount();
+    })
+    .catch(() => {
+      errEl.textContent = 'E-mail ou senha incorretos.';
+      errEl.style.display = 'block';
+    });
+}
+
+function doClientLogout() {
+  firebase.auth().signOut();
+  closeModal('clientAccountModal');
+}
+
+function doClientPasswordReset() {
+  const email = (document.getElementById('clEmail')?.value || '').trim();
+  if (!email) { alert('Digite seu e-mail primeiro.'); return; }
+  firebase.auth().sendPasswordResetEmail(email)
+    .then(() => alert('E-mail de recuperação enviado para ' + email))
+    .catch(e => alert('Erro: ' + e.message));
+}
+
+function renderClientAccount() {
+  if (!isClient()) return;
+  const uid   = _authUser.uid;
+  const email = _authUser.email.toLowerCase();
+  const now   = todayStr();
+
+  const myBookings = _bookings.filter(b =>
+    (b.clientUid && b.clientUid === uid) ||
+    (!b.clientUid && b.email && b.email.toLowerCase() === email)
+  );
+
+  const upcoming = myBookings
+    .filter(b => { const d = b.startDate || b.date || ''; return d >= now && !['cancelled','rejected'].includes(b.status); })
+    .sort((a, b) => (a.startDate||a.date||'').localeCompare(b.startDate||b.date||''));
+
+  const past = myBookings
+    .filter(b => { const d = b.startDate || b.date || ''; return d < now || ['cancelled','rejected','confirmed'].includes(b.status); })
+    .sort((a, b) => (b.startDate||b.date||'').localeCompare(a.startDate||a.date||''))
+    .slice(0, 10);
+
+  const vehicles = {};
+  myBookings.forEach(b => {
+    const k = ((b.plate || b.car || '')).trim().toUpperCase();
+    if (k) vehicles[k] = { car: b.car || '', plate: b.plate || '' };
+  });
+
+  const profile = _clientProfile || {};
+  const sub = document.getElementById('clientAccountSub');
+  if (sub) sub.textContent = 'Olá, ' + (profile.name?.split(' ')[0] || email);
+
+  const vCard = v => `<div class="client-booking-card">${v.car}${v.plate ? ' · <strong>' + v.plate + '</strong>' : ''}</div>`;
+  const bCard = (b, actions) => {
+    const statusMap = { pending:'⏳ Aguardando', approved:'✅ Aprovado', confirmed:'🔒 Confirmado', rejected:'❌ Rejeitado', cancelled:'🚫 Cancelado' };
+    const canAct = actions && ['approved','confirmed'].includes(b.status);
+    return `<div class="client-booking-card">
+      <div class="client-booking-card-hdr">
+        <span class="client-booking-card-id">${b.id}</span>
+        <span class="status-badge ${b.status}">${statusMap[b.status] || b.status}</span>
+      </div>
+      <div class="client-booking-card-svc">${bkLabel(b)}</div>
+      <div class="client-booking-card-meta">
+        ${b.startDate || b.date ? '📅 ' + fmtDate(b.startDate || b.date) : ''}
+        ${b.finalPrice ? ' · ' + fmtMoney(b.finalPrice) : b.price ? ' · ' + fmtMoney(b.price) : ''}
+        · ${b.carSize === 'gr' ? '🚙 Grande' : '🚗 Pequeno'}
+      </div>
+      ${canAct ? `<div class="client-booking-card-actions">
+        <button class="btn-ghost" onclick="openReschedule('${b.id}');closeModal('clientAccountModal')">📅 Reagendar</button>
+        <button class="btn-reject" onclick="confirmClientCancel('${b.id}');closeModal('clientAccountModal')">🚫 Cancelar</button>
+      </div>` : ''}
+    </div>`;
+  };
+
+  document.getElementById('clientAccountBody').innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:.8rem">
+      <button class="btn-ghost" onclick="doClientLogout()" style="font-size:.76rem;padding:.4rem 1rem">Sair da conta</button>
+    </div>
+    <h4 class="client-section-title">📅 Próximos Agendamentos (${upcoming.length})</h4>
+    ${upcoming.length ? upcoming.map(b => bCard(b, true)).join('') : '<p class="client-empty">Nenhum agendamento futuro.</p>'}
+    ${past.length ? `
+    <h4 class="client-section-title" style="margin-top:1.2rem">🕐 Histórico (${past.length})</h4>
+    ${past.map(b => bCard(b, false)).join('')}` : ''}
+    ${Object.keys(vehicles).length ? `
+    <h4 class="client-section-title" style="margin-top:1.2rem">🚗 Meus Veículos</h4>
+    ${Object.values(vehicles).map(vCard).join('')}` : ''}`;
+}
+
 function doAdminLogin() {
   const pw    = document.getElementById('adminPass').value;
   const errEl = document.getElementById('loginError');
@@ -2991,6 +3265,7 @@ function renderAdminConfig() {
       <h3>⚠️ Dados do Sistema</h3>
       <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Exportar todos os agendamentos em formato JSON para backup ou integração futura com sistema de gestão.</p>
       <button class="btn-ghost" onclick="exportData()">⬇️ Exportar Dados (JSON)</button>
+      &nbsp;<button class="btn-ghost" style="font-size:.78rem" onclick="migrateBookingsToUid()">🔗 Vincular agendamentos a contas</button>
       &nbsp;<button class="btn-reject" style="font-size:.78rem" onclick="clearAllData()">🗑️ Limpar Todos os Dados</button>
     </div>`;
 }
@@ -3024,6 +3299,30 @@ function changePw() {
     })
     .catch(e => alert('Erro ao alterar senha: ' + e.message));
 }
+async function migrateBookingsToUid() {
+  if (!isAdmin()) return;
+  if (!_clientProfilesRef || !_bookingsRef) { alert('Firebase não conectado.'); return; }
+  if (!confirm('Vincular agendamentos existentes a contas de clientes pelo e-mail?\nIsso adiciona clientUid apenas aos agendamentos cujo e-mail já tem conta criada.')) return;
+  try {
+    const snap = await _clientProfilesRef.once('value');
+    const profiles = snap.val() || {};
+    const emailToUid = {};
+    Object.values(profiles).forEach(p => {
+      if (p.email) emailToUid[p.email.toLowerCase()] = p.uid;
+      (p.linkedEmails || []).forEach(e => { emailToUid[e.toLowerCase()] = p.uid; });
+    });
+    const updates = {};
+    _bookings.forEach(b => {
+      if (b.clientUid) return;
+      const uid = b.email ? emailToUid[b.email.toLowerCase()] : null;
+      if (uid) updates[b.id + '/clientUid'] = uid;
+    });
+    if (!Object.keys(updates).length) { alert('Nenhum agendamento encontrado para vincular.'); return; }
+    await _bookingsRef.update(updates);
+    alert(`✅ ${Object.keys(updates).length} agendamento(s) vinculado(s) com sucesso.`);
+  } catch(e) { alert('Erro na migração: ' + e.message); }
+}
+
 function exportData() {
   const data = { bookings: getBookings(), blocked: getBlocked(), exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
@@ -3289,14 +3588,29 @@ function updateWaLink() {
     _servicesRef = _fbDB.ref('services');
     _combosRef   = _fbDB.ref('combos');
     _storage     = firebase.storage();
-    _clientNotesRef = _fbDB.ref('clientNotes');
+    _clientNotesRef    = _fbDB.ref('clientNotes');
+    _clientProfilesRef = _fbDB.ref('clientProfiles');
     _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
 
     firebase.auth().onAuthStateChanged(user => {
       _authUser = user;
-      if(!user && document.getElementById('adminPanel').style.display !== 'none') {
-        document.getElementById('adminPanel').style.display = 'none';
+      if (!user) {
+        _clientProfile = null;
+        if (document.getElementById('adminPanel').style.display !== 'none')
+          document.getElementById('adminPanel').style.display = 'none';
+        _updateClientNavUI();
+        return;
       }
+      if (isAdmin()) {
+        _clientProfile = null;
+        _updateClientNavUI();
+        return;
+      }
+      // Cliente logado — carrega perfil
+      _clientProfilesRef.child(user.uid).once('value', snap => {
+        _clientProfile = snap.val() || { uid: user.uid, email: user.email };
+        _updateClientNavUI();
+      });
     });
 
     // ── Agendamentos: escuta em tempo real ──
