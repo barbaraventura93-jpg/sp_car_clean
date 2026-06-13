@@ -2569,8 +2569,8 @@ function _buildClientMap() {
   return Object.values(clientMap).map(c => {
     const done = c.bookings.filter(b => ['confirmed','approved','completed'].includes(b.status));
     const totalSpent = done.reduce((s,b) => s + (b.finalPrice || b.price || 0), 0);
-    const dates = c.bookings.map(b => b.startDate || b.date).filter(Boolean).sort();
-    const lastVisit = dates[dates.length - 1] || null;
+    const doneDates = done.map(b => b.startDate || b.date).filter(Boolean).sort();
+    const lastVisit = doneDates[doneDates.length - 1] || null;
     const vip = totalSpent >= 1000 || done.length >= 3;
     return { ...c, totalSpent, lastVisit, completedCount: done.length, vip };
   });
@@ -2738,7 +2738,7 @@ function openClientProfile(encodedEmail) {
           ${c.birthDate?`<div class="profile-field"><strong>Aniversário</strong><span>🎂 ${c.birthDate.slice(5).replace('-','/')}</span></div>`:''}
           ${c.points?`<div class="profile-field"><strong>Pontos</strong><span>⭐ ${c.points} pts</span></div>`:''}
           ${c.uid?`<div style="display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap">
-            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminGenerateBirthdayCoupon('${c.uid}','${c.name}','${c.email}')">🎁 Cupom Aniversário</button>
+            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminGenerateBirthdayCoupon('${c.uid}','${c.name}','${c.email}','${encodeURIComponent(c.phone||'')}')">🎁 Cupom Aniversário</button>
             <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminSendReactivation('${encodeURIComponent(c.phone)}','${encodeURIComponent(c.name)}')">💬 WhatsApp Reativação</button>
             <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="let d=prompt('Adicionar pontos (use negativo para remover):');if(d)_adminAdjustPoints('${c.uid}',parseInt(d),prompt('Motivo:'))">⭐ Ajustar Pontos</button>
           </div>`:''}
@@ -3526,7 +3526,7 @@ async function deleteCoupon(code) {
   loadAdminCoupons();
 }
 
-function adminGenerateBirthdayCoupon(uid, name, email) {
+function adminGenerateBirthdayCoupon(uid, name, email, encPhone) {
   const year  = new Date().getFullYear();
   const code  = 'ANIV' + name.replace(/\s.*/,'').toUpperCase().slice(0,6) + year;
   const expiry = `${year}-${String(new Date().getMonth()+2).padStart(2,'0')}-28`;
@@ -3535,8 +3535,23 @@ function adminGenerateBirthdayCoupon(uid, name, email) {
     code, discountType: 'percent', discountValue: 10, minValue: 0,
     used: false, clientUid: uid, validUntil: expiry,
     createdAt: new Date().toISOString(), note: `Aniversário de ${name}`
-  }).then(() => alert(`Cupom ${code} criado e enviado! Código: ${code}`))
-    .catch(e => alert('Erro: ' + e.message));
+  }).then(() => {
+    const phone = encPhone ? decodeURIComponent(encPhone) : '';
+    const waPhone = phone ? buildWaPhone(phone) : '';
+    const msg = encodeURIComponent(
+      `Olá *${name}*! 🎂\n\n` +
+      `A *SP Car Clean* deseja um feliz aniversário! 🎉\n\n` +
+      `Como presente, preparamos um cupom especial de *10% de desconto* no seu próximo serviço:\n\n` +
+      `👉 Código: *${code}*\n` +
+      `📅 Válido até ${expiry.slice(8)}/${expiry.slice(5,7)}/${expiry.slice(0,4)}\n\n` +
+      `Acesse nosso site e agende: https://www.spcarclean.com.br`
+    );
+    if (waPhone) {
+      window.open(`https://wa.me/${waPhone}?text=${msg}`, '_blank');
+    } else {
+      alert(`Cupom ${code} criado!\n\nCódigo: ${code}\nVálido até: ${expiry}\n\n(Nenhum telefone cadastrado para envio automático)`);
+    }
+  }).catch(e => alert('Erro: ' + e.message));
 }
 
 function saveConfig() {
