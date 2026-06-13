@@ -429,6 +429,7 @@ footer p{font-size:.72rem;color:var(--muted)}
 /* ====== DETAIL MODAL ====== */
 .detail-modal{max-width:560px}
 #detailModal{z-index:3000}
+#checkinModal{z-index:3500}
 .approve-form{display:flex;flex-direction:column;gap:1rem}
 
 @media(max-width:880px){
@@ -915,7 +916,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
      BOOKING DETAIL MODAL (Admin)
 =================================================== -->
 <div id="checkinModal" class="modal-overlay" style="display:none">
-  <div class="modal-box" style="max-width:680px">
+  <div class="modal-box" style="max-width:680px;max-height:90vh;overflow-y:auto">
     <div class="modal-hdr">
       <div><h3>📋 Check-in do Veículo</h3><div class="sub" id="checkinSub"></div></div>
       <button class="modal-close" onclick="closeModal('checkinModal')">✕</button>
@@ -2330,7 +2331,7 @@ function viewBooking(id) {
   const footer = document.getElementById('detailFooter');
   const _canEdit = b.status==='approved'||b.status==='confirmed';
   const _delBtn = `<button class="btn-reject" style="margin-right:auto" onclick="deleteBooking('${b.id}')">🗑️ Excluir</button>`;
-  const _ciBtn  = `<button class="btn-ghost" onclick="closeModal('detailModal');openCheckin('${b.id}')">📋 Check-in</button>`;
+  const _ciBtn  = `<button class="btn-ghost" onclick="openCheckin('${b.id}')">📋 Check-in</button>`;
   footer.innerHTML = b.status==='pending'
     ? `${_delBtn}<button class="btn-reject" onclick="rejectBooking('${b.id}');closeModal('detailModal')">Rejeitar</button>
        <button class="btn-approve" onclick="closeModal('detailModal');openApprove('${b.id}')">Aprovar & Definir Orçamento</button>`
@@ -2936,6 +2937,7 @@ async function saveCheckin() {
     }
 
     closeModal('checkinModal');
+    closeModal('detailModal');
     alert('✅ Check-in salvo! Cliente notificado por e-mail' + (waPhone ? ' e WhatsApp' : '') + '.');
   } catch(e) { alert('Erro ao salvar check-in: ' + e.message); }
 }
