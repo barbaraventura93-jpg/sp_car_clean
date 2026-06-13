@@ -145,6 +145,16 @@ h2{font-family:'Montserrat',sans-serif;font-size:clamp(1.8rem,3.5vw,3rem);font-w
 .client-auth-toggle-check{display:flex;align-items:center;gap:.4rem;cursor:pointer;font-size:.78rem;color:var(--muted)}
 .client-logged-badge{font-size:.8rem;color:var(--green);display:flex;align-items:center;gap:.4rem}
 .client-section-title{font-family:'Montserrat',sans-serif;font-size:.82rem;font-weight:800;color:var(--accent);letter-spacing:.06em;text-transform:uppercase;margin-bottom:.7rem}
+.loyalty-points-badge{display:inline-flex;align-items:center;gap:.5rem;background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.05));border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:.7rem 1.2rem;margin-bottom:1rem}
+.loyalty-points-num{font-family:'Montserrat',sans-serif;font-size:1.6rem;font-weight:900;color:var(--orange)}
+.loyalty-points-label{font-size:.75rem;color:var(--muted);line-height:1.3}
+.coupon-input-wrap{display:flex;gap:.5rem;margin-top:.5rem}
+.coupon-input-wrap input{flex:1;font-family:'Montserrat',sans-serif;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.coupon-applied{background:var(--green-lt);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:.5rem .8rem;font-size:.8rem;color:var(--green);margin-top:.4rem}
+.coupon-error{color:var(--red);font-size:.78rem;margin-top:.3rem}
+.reactivation-row{display:grid;grid-template-columns:1fr auto auto;gap:.6rem;align-items:center;padding:.6rem .8rem;border-bottom:1px solid var(--border);font-size:.8rem}
+.reactivation-row:last-child{border-bottom:none}
+.inactive-days{font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:700;color:var(--red);background:var(--red-lt);border-radius:4px;padding:.15rem .45rem}
 .client-empty{color:var(--muted);font-size:.83rem}
 .modal-hint{text-align:center;margin-top:.7rem;font-size:.78rem;color:var(--muted)}
 #clientNavItem.client-nav-hidden{display:none}
@@ -882,6 +892,9 @@ const CFG = {
   pickupTime: '18:00',
   adminEmail: 'spcarclean0@gmail.com',
   maxPerDay: 2,
+  pointsPerReal: 1,      // pontos por R$1 gasto
+  pointsToReal: 0.10,    // 1 ponto = R$0,10 de desconto
+  minPointsRedeem: 50,   // mínimo de pontos para resgatar
 };
 
 // ============================================================
@@ -906,7 +919,7 @@ const CATS_ORDER = ['Estética Interna','Estética Externa','Serviços Especiais
 // ============================================================
 let _bookings = [];
 let _blocked  = [];
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef;
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef;
 const _COMBOS = {};
 let _authUser = null;
 let _clientProfile = null;
@@ -1281,6 +1294,14 @@ function renderBookingStep() {
       <div class="form-row"><div class="form-group"><label>Veículo (modelo/ano)</label><input id="fCar" placeholder="Honda Civic 2020"/></div><div class="form-group"><label>Placa</label><input id="fPlate" placeholder="ABC-1234"/></div></div>
       <div class="form-row"><div class="form-group"><label>Bairro *</label><input id="fBairro" placeholder="Moema, Brooklin, Vila Mariana..."/></div><div class="form-group"><label>CEP (opcional)</label><input id="fCep" placeholder="04543-000" maxlength="9" oninput="fmtCep(this)"/></div></div>
       <div class="form-row full"><div class="form-group"><label>Observações (opcional)</label><textarea id="fObs" placeholder="Informe alguma particularidade do veículo, manchas específicas, etc."></textarea></div></div>
+      <div class="form-group" style="margin-top:.8rem">
+        <label>Cupom de desconto (opcional)</label>
+        <div class="coupon-input-wrap">
+          <input id="fCouponCode" placeholder="EX: ANIV2026" oninput="this.value=this.value.toUpperCase()"/>
+          <button class="btn-ghost" onclick="applyCouponInBooking()" style="white-space:nowrap">Aplicar</button>
+        </div>
+        <div id="couponMsg"></div>
+      </div>
       <div id="clientAuthSection" class="client-auth-section">
         <div id="clientLoggedBadge" class="client-logged-badge" style="display:none">
           ✅ Logado como <strong id="clientLoggedEmail"></strong> — agendamento será vinculado à sua conta.
@@ -1399,16 +1420,20 @@ async function submitBooking() {
 
   const id = genId();
   const _maxDaysSub = bkMaxDays(booking);
+  const basePrice = bkPrice(booking, booking.carSize);
+  const couponDiscount = _appliedCoupon?.discount || 0;
   const b = {
     id, services: booking.services, service: booking.services[0], carSize: booking.carSize,
     date: booking.date, pickup: _maxDaysSub > 0 ? addDays(booking.date, _maxDaysSub) : booking.date,
-    price: bkPrice(booking, booking.carSize),
+    price: Math.max(0, basePrice - couponDiscount),
     name, email, phone, car, plate, bairro, cep, obs,
     status: 'pending',
     submittedAt: new Date().toISOString(),
     adminNotes: '',
     ...(clientUid ? { clientUid } : {}),
+    ...(_appliedCoupon ? { couponCode: _appliedCoupon.code, couponDiscount } : {}),
   };
+  if (_appliedCoupon) { _markCouponUsed(_appliedCoupon.code); _appliedCoupon = null; }
 
   // Salvar booking (usa set individual para compatibilidade futura com regras por uid)
   _bookings.push(b);
@@ -1554,6 +1579,7 @@ function customerConfirm(id) {
   if(!b) return;
   b.status = 'confirmed';
   updateBooking(b);
+  _awardPoints(b);
   sendEmail('template_confirm', {
     to_email: b.email, to_name: b.name,
     booking_id: b.id,
@@ -1725,6 +1751,73 @@ async function _tryClientSignupOrLogin(email, pw, name, phone) {
   }
 }
 
+// --- Pontos de fidelidade ---
+function _awardPoints(b) {
+  if (!b.clientUid || !_clientProfilesRef) return;
+  const price = b.finalPrice || b.price || 0;
+  const earned = Math.floor(price * CFG.pointsPerReal);
+  if (earned <= 0) return;
+  _clientProfilesRef.child(b.clientUid).once('value', snap => {
+    const profile = snap.val() || {};
+    const current = profile.points || 0;
+    const history = profile.pointsHistory || [];
+    history.push({ date: new Date().toISOString().slice(0,10), type: 'earned', amount: earned, bookingId: b.id, desc: bkLabel(b) });
+    _clientProfilesRef.child(b.clientUid).update({ points: current + earned, pointsHistory: history }).catch(() => {});
+    if (b.clientUid === _authUser?.uid) {
+      _clientProfile = { ..._clientProfile, points: current + earned, pointsHistory: history };
+    }
+  });
+}
+
+function _adminAdjustPoints(uid, delta, reason) {
+  if (!_clientProfilesRef) return;
+  _clientProfilesRef.child(uid).once('value', snap => {
+    const p = snap.val() || {};
+    const current = p.points || 0;
+    const history = p.pointsHistory || [];
+    history.push({ date: new Date().toISOString().slice(0,10), type: delta > 0 ? 'manual_add' : 'manual_remove', amount: delta, desc: reason || 'Ajuste manual' });
+    _clientProfilesRef.child(uid).update({ points: Math.max(0, current + delta), pointsHistory: history })
+      .then(() => { alert('Pontos atualizados!'); renderAdminClients(); })
+      .catch(e => alert('Erro: ' + e.message));
+  });
+}
+
+// --- Cupons ---
+let _appliedCoupon = null; // cupom aplicado no booking atual
+
+async function validateCoupon(code, orderValue) {
+  if (!_couponsRef || !code) return null;
+  const snap = await _couponsRef.child(code.toUpperCase()).once('value');
+  const c = snap.val();
+  if (!c) return { error: 'Cupom não encontrado.' };
+  if (c.used) return { error: 'Cupom já utilizado.' };
+  if (c.validUntil && new Date(c.validUntil) < new Date()) return { error: 'Cupom expirado.' };
+  if (c.clientUid && c.clientUid !== _authUser?.uid) return { error: 'Cupom não válido para este cliente.' };
+  if (c.minValue && orderValue < c.minValue) return { error: `Pedido mínimo de ${fmtMoney(c.minValue)} para este cupom.` };
+  const discount = c.discountType === 'percent' ? Math.round(orderValue * c.discountValue / 100) : c.discountValue;
+  return { ok: true, code, discount, discountType: c.discountType, discountValue: c.discountValue, label: c.discountType === 'percent' ? `${c.discountValue}% de desconto` : `${fmtMoney(c.discountValue)} de desconto` };
+}
+
+async function applyCouponInBooking() {
+  const code = (document.getElementById('fCouponCode')?.value || '').trim().toUpperCase();
+  const msgEl = document.getElementById('couponMsg');
+  if (!code) return;
+  const total = booking.services.reduce((s, id) => s + (SVCS[id]?.[booking.carSize] || 0), 0);
+  const result = await validateCoupon(code, total);
+  if (!result || result.error) {
+    if (msgEl) msgEl.innerHTML = `<span class="coupon-error">${result?.error || 'Erro ao validar.'}</span>`;
+    _appliedCoupon = null;
+    return;
+  }
+  _appliedCoupon = result;
+  if (msgEl) msgEl.innerHTML = `<div class="coupon-applied">✅ ${result.label} aplicado!</div>`;
+}
+
+async function _markCouponUsed(code) {
+  if (!_couponsRef || !code) return;
+  _couponsRef.child(code).update({ used: true, usedAt: new Date().toISOString() }).catch(() => {});
+}
+
 function openClientAccount() {
   if (!isClient()) {
     document.getElementById('clientLoginModal').style.display = 'flex';
@@ -1822,10 +1915,19 @@ function renderClientAccount() {
     </div>`;
   };
 
+  const points = profile.points || 0;
+  const pointsValue = fmtMoney(Math.floor(points * CFG.pointsToReal * 100) / 100);
+
   document.getElementById('clientAccountBody').innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:.8rem">
       <button class="btn-ghost" onclick="doClientLogout()" style="font-size:.76rem;padding:.4rem 1rem">Sair da conta</button>
     </div>
+    ${points > 0 ? `<div class="loyalty-points-badge">
+      <div>
+        <div class="loyalty-points-num">⭐ ${points} pts</div>
+        <div class="loyalty-points-label">Equivale a ${pointsValue} de desconto<br/>Mín. para resgatar: ${CFG.minPointsRedeem} pts</div>
+      </div>
+    </div>` : ''}
     <h4 class="client-section-title">📅 Próximos Agendamentos (${upcoming.length})</h4>
     ${upcoming.length ? upcoming.map(b => bCard(b, true)).join('') : '<p class="client-empty">Nenhum agendamento futuro.</p>'}
     ${past.length ? `
@@ -1833,7 +1935,24 @@ function renderClientAccount() {
     ${past.map(b => bCard(b, false)).join('')}` : ''}
     ${Object.keys(vehicles).length ? `
     <h4 class="client-section-title" style="margin-top:1.2rem">🚗 Meus Veículos</h4>
-    ${Object.values(vehicles).map(vCard).join('')}` : ''}`;
+    ${Object.values(vehicles).map(vCard).join('')}` : ''}
+    <h4 class="client-section-title" style="margin-top:1.2rem">👤 Meu Perfil</h4>
+    <div class="client-booking-card">
+      <div class="form-row">
+        <div class="form-group"><label>Data de nascimento</label>
+          <input type="date" id="clientBirthDate" value="${profile.birthDate || ''}"/>
+        </div>
+      </div>
+      <button class="btn-ghost" onclick="saveClientBirthDate()" style="font-size:.76rem;margin-top:.5rem">Salvar</button>
+    </div>`;
+}
+
+function saveClientBirthDate() {
+  const val = document.getElementById('clientBirthDate')?.value;
+  if (!val || !_authUser || !_clientProfilesRef) return;
+  _clientProfilesRef.child(_authUser.uid).update({ birthDate: val })
+    .then(() => { _clientProfile = { ..._clientProfile, birthDate: val }; alert('Data salva!'); })
+    .catch(e => alert('Erro: ' + e.message));
 }
 
 function doAdminLogin() {
@@ -2435,6 +2554,18 @@ function _buildClientMap() {
     const vKey = (b.plate || b.car || '').trim().toUpperCase();
     if(vKey && !clientMap[key].vehicles[vKey]) clientMap[key].vehicles[vKey] = { car: b.car || '', plate: b.plate || '' };
   });
+  // Enriquecer com dados do Firebase clientProfiles (uid, points, birthDate)
+  const profilesByEmail = {};
+  if (_clientProfilesRef) {
+    // Cache síncrono já carregado: usamos _clientNotes como proxy temporário
+    // Para dados completos, o admin pode recarregar — aqui usamos o que está no booking
+  }
+  // Pega uid a partir dos bookings que já têm clientUid
+  Object.values(clientMap).forEach(c => {
+    const b = c.bookings.find(b => b.clientUid);
+    if (b) c.uid = b.clientUid;
+  });
+
   return Object.values(clientMap).map(c => {
     const done = c.bookings.filter(b => ['confirmed','approved','completed'].includes(b.status));
     const totalSpent = done.reduce((s,b) => s + (b.finalPrice || b.price || 0), 0);
@@ -2474,13 +2605,50 @@ function renderAdminClients(filter) {
     </div>`;
   }).join('') || '<p style="color:var(--muted);font-size:.85rem;text-align:center;padding:2.5rem 0">Nenhum cliente encontrado.</p>';
 
+  // Clientes inativos (sem visita há X dias)
+  const inactiveDays = 60;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - inactiveDays);
+  const cutoffStr = cutoff.toISOString().slice(0,10);
+  const inactive = _buildClientMap().filter(c => c.lastVisit && c.lastVisit < cutoffStr);
+
   document.getElementById('adminContent').innerHTML = `
     <h2>👥 Clientes</h2>
     <div class="client-search">
       <input type="text" id="clientSearchInput" placeholder="Buscar por nome, e-mail ou telefone..." value="${filter.replace(/"/g,'&quot;')}" oninput="renderAdminClients(this.value)" />
       <span style="font-size:.8rem;color:var(--muted);white-space:nowrap">${clients.length} cliente${clients.length!==1?'s':''}</span>
     </div>
+    ${inactive.length ? `
+    <details style="margin-bottom:1rem">
+      <summary style="cursor:pointer;font-family:Montserrat,sans-serif;font-size:.8rem;font-weight:700;color:var(--orange);padding:.6rem 0">
+        ⚠️ ${inactive.length} cliente${inactive.length!==1?'s':''} inativos há mais de ${inactiveDays} dias
+      </summary>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.5rem;margin-top:.4rem">
+        ${inactive.map(c => `
+        <div class="reactivation-row">
+          <span>${c.name} <span style="color:var(--muted);font-size:.72rem">${c.email}</span></span>
+          <span class="inactive-days">${Math.floor((new Date()-new Date(c.lastVisit))/86400000)}d</span>
+          <div style="display:flex;gap:.4rem">
+            <button class="btn-ghost" style="font-size:.7rem;padding:.25rem .6rem" onclick="adminSendReactivation('${encodeURIComponent(c.phone)}','${encodeURIComponent(c.name)}')">💬 WhatsApp</button>
+            ${c.uid ? `<button class="btn-ghost" style="font-size:.7rem;padding:.25rem .6rem" onclick="adminGenerateBirthdayCoupon('${c.uid}','${c.name}','${c.email}')">🎫 Cupom</button>` : ''}
+          </div>
+        </div>`).join('')}
+      </div>
+    </details>` : ''}
     <div class="clients-list">${rows}</div>`;
+}
+
+function adminSendReactivation(encPhone, encName) {
+  const phone = decodeURIComponent(encPhone);
+  const name  = decodeURIComponent(encName);
+  const waPhone = buildWaPhone(phone);
+  const msg = encodeURIComponent(
+    `Olá *${name}*! 👋\n\n` +
+    `Faz um tempo que não te vemos por aqui na *SP Car Clean* 😊\n\n` +
+    `Que tal agendar um serviço para deixar seu carro novo? Acesse nosso site e confira nossos combos e novidades:\n` +
+    `👉 https://www.spcarclean.com.br\n\n` +
+    `Qualquer dúvida estamos à disposição!`
+  );
+  window.open(`https://wa.me/${waPhone}?text=${msg}`, '_blank');
 }
 
 function openClientProfile(encodedEmail) {
@@ -2567,6 +2735,13 @@ function openClientProfile(encodedEmail) {
           <div class="profile-field"><strong>E-mail</strong><span>${c.email}</span></div>
           ${c.bairro?`<div class="profile-field"><strong>Bairro</strong><span>📍 ${c.bairro}${c.cep?' · '+c.cep:''}</span></div>`:''}
           <div class="profile-field"><strong>Classificação</strong><span>${c.vip?'<span class="vip-badge">★ VIP</span>':c.completedCount>=1?'<span style="color:var(--green);font-size:.8rem">Recorrente</span>':'<span style="color:var(--muted);font-size:.8rem">Novo</span>'}</span></div>
+          ${c.birthDate?`<div class="profile-field"><strong>Aniversário</strong><span>🎂 ${c.birthDate.slice(5).replace('-','/')}</span></div>`:''}
+          ${c.points?`<div class="profile-field"><strong>Pontos</strong><span>⭐ ${c.points} pts</span></div>`:''}
+          ${c.uid?`<div style="display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap">
+            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminGenerateBirthdayCoupon('${c.uid}','${c.name}','${c.email}')">🎁 Cupom Aniversário</button>
+            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminSendReactivation('${encodeURIComponent(c.phone)}','${encodeURIComponent(c.name)}')">💬 WhatsApp Reativação</button>
+            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="let d=prompt('Adicionar pontos (use negativo para remover):');if(d)_adminAdjustPoints('${c.uid}',parseInt(d),prompt('Motivo:'))">⭐ Ajustar Pontos</button>
+          </div>`:''}
         </div>
         <div class="profile-section">
           <h3>Financeiro</h3>
@@ -3265,12 +3440,103 @@ function renderAdminConfig() {
       <button class="btn-primary" onclick="changePw()">Alterar Senha</button>
     </div>
     <div class="admin-panel" style="max-width:520px">
+      <h3>⭐ Fidelidade & Cupons</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Pontos por R$1 gasto</label><input id="cfgPtsReal" type="number" value="${CFG.pointsPerReal}" min="0" step="0.5"/></div>
+        <div class="form-group"><label>1 ponto = R$ (desconto)</label><input id="cfgPtsToReal" type="number" value="${CFG.pointsToReal}" min="0" step="0.01"/></div>
+        <div class="form-group"><label>Mín. pontos para resgatar</label><input id="cfgMinPts" type="number" value="${CFG.minPointsRedeem}" min="0" step="10"/></div>
+      </div>
+      <button class="btn-primary" onclick="saveLoyaltyConfig()">Salvar Config de Pontos</button>
+      <hr style="border:none;border-top:1px solid var(--border);margin:1.2rem 0"/>
+      <h4 style="font-family:Montserrat,sans-serif;font-size:.78rem;font-weight:700;color:var(--text);margin-bottom:.8rem">Criar Cupom</h4>
+      <div class="form-row">
+        <div class="form-group"><label>Código</label><input id="ccCode" placeholder="ANIV2026" oninput="this.value=this.value.toUpperCase()"/></div>
+        <div class="form-group"><label>Tipo</label>
+          <select id="ccType"><option value="percent">% desconto</option><option value="fixed">R$ fixo</option></select>
+        </div>
+        <div class="form-group"><label>Valor</label><input id="ccValue" type="number" placeholder="10" min="1"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Valor mínimo do pedido (R$)</label><input id="ccMin" type="number" placeholder="0" min="0"/></div>
+        <div class="form-group"><label>Válido até</label><input id="ccExpiry" type="date"/></div>
+        <div class="form-group"><label>UID do cliente (opcional)</label><input id="ccUid" placeholder="Deixe em branco p/ geral"/></div>
+      </div>
+      <button class="btn-primary" onclick="adminCreateCoupon()">Criar Cupom</button>
+      <div id="couponListAdmin" style="margin-top:1rem"></div>
+      <script>loadAdminCoupons();<\/script>
+    </div>
+    <div class="admin-panel" style="max-width:520px">
       <h3>⚠️ Dados do Sistema</h3>
       <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Exportar todos os agendamentos em formato JSON para backup ou integração futura com sistema de gestão.</p>
       <button class="btn-ghost" onclick="exportData()">⬇️ Exportar Dados (JSON)</button>
       &nbsp;<button class="btn-ghost" style="font-size:.78rem" onclick="migrateBookingsToUid()">🔗 Vincular agendamentos a contas</button>
       &nbsp;<button class="btn-reject" style="font-size:.78rem" onclick="clearAllData()">🗑️ Limpar Todos os Dados</button>
     </div>`;
+}
+
+function saveLoyaltyConfig() {
+  CFG.pointsPerReal    = parseFloat(document.getElementById('cfgPtsReal')?.value) || 1;
+  CFG.pointsToReal     = parseFloat(document.getElementById('cfgPtsToReal')?.value) || 0.10;
+  CFG.minPointsRedeem  = parseInt(document.getElementById('cfgMinPts')?.value) || 50;
+  if (_cfgRef) _cfgRef.update({ pointsPerReal: CFG.pointsPerReal, pointsToReal: CFG.pointsToReal, minPointsRedeem: CFG.minPointsRedeem })
+    .then(() => alert('Config de pontos salva!')).catch(() => alert('Erro ao salvar.'));
+}
+
+async function adminCreateCoupon() {
+  const code  = (document.getElementById('ccCode')?.value || '').trim().toUpperCase();
+  const type  = document.getElementById('ccType')?.value;
+  const value = parseFloat(document.getElementById('ccValue')?.value) || 0;
+  const min   = parseFloat(document.getElementById('ccMin')?.value) || 0;
+  const expiry= document.getElementById('ccExpiry')?.value || '';
+  const uid   = (document.getElementById('ccUid')?.value || '').trim();
+  if (!code || !value) { alert('Informe o código e o valor do cupom.'); return; }
+  if (!_couponsRef) { alert('Firebase não conectado.'); return; }
+  const data = { code, discountType: type, discountValue: value, minValue: min, used: false, createdAt: new Date().toISOString(), ...(expiry ? { validUntil: expiry } : {}), ...(uid ? { clientUid: uid } : {}) };
+  try {
+    await _couponsRef.child(code).set(data);
+    alert(`Cupom ${code} criado!`);
+    document.getElementById('ccCode').value = '';
+    document.getElementById('ccValue').value = '';
+    loadAdminCoupons();
+  } catch(e) { alert('Erro: ' + e.message); }
+}
+
+function loadAdminCoupons() {
+  const el = document.getElementById('couponListAdmin');
+  if (!el || !_couponsRef) return;
+  _couponsRef.once('value', snap => {
+    const val = snap.val() || {};
+    const list = Object.values(val).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+    if (!list.length) { el.innerHTML = '<p style="color:var(--muted);font-size:.78rem">Nenhum cupom criado.</p>'; return; }
+    el.innerHTML = list.map(c => `
+      <div style="display:flex;align-items:center;gap:.6rem;padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.78rem;flex-wrap:wrap">
+        <strong style="font-family:Montserrat,sans-serif;color:${c.used?'var(--muted)':'var(--accent)'}">${c.code}</strong>
+        <span>${c.discountType==='percent'?c.discountValue+'%':'R$'+c.discountValue}</span>
+        ${c.validUntil?`<span style="color:var(--muted)">até ${c.validUntil}</span>`:''}
+        ${c.used?'<span style="color:var(--red)">Usado</span>':'<span style="color:var(--green)">Disponível</span>'}
+        ${!c.used?`<button class="ba-admin-del" onclick="deleteCoupon('${c.code}')">🗑️</button>`:''}
+      </div>`).join('');
+  });
+}
+
+async function deleteCoupon(code) {
+  if (!confirm(`Excluir cupom ${code}?`)) return;
+  if (!_couponsRef) return;
+  await _couponsRef.child(code).remove().catch(e => alert('Erro: ' + e.message));
+  loadAdminCoupons();
+}
+
+function adminGenerateBirthdayCoupon(uid, name, email) {
+  const year  = new Date().getFullYear();
+  const code  = 'ANIV' + name.replace(/\s.*/,'').toUpperCase().slice(0,6) + year;
+  const expiry = `${year}-${String(new Date().getMonth()+2).padStart(2,'0')}-28`;
+  if (!_couponsRef) return;
+  _couponsRef.child(code).set({
+    code, discountType: 'percent', discountValue: 10, minValue: 0,
+    used: false, clientUid: uid, validUntil: expiry,
+    createdAt: new Date().toISOString(), note: `Aniversário de ${name}`
+  }).then(() => alert(`Cupom ${code} criado e enviado! Código: ${code}`))
+    .catch(e => alert('Erro: ' + e.message));
 }
 
 function saveConfig() {
@@ -3593,6 +3859,7 @@ function updateWaLink() {
     _storage     = firebase.storage();
     _clientNotesRef    = _fbDB.ref('clientNotes');
     _clientProfilesRef = _fbDB.ref('clientProfiles');
+    _couponsRef        = _fbDB.ref('coupons');
     _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
 
     firebase.auth().onAuthStateChanged(user => {
@@ -3642,7 +3909,10 @@ function updateWaLink() {
       if(d.location)    CFG.location    = d.location;
       if(d.dropoffTime) CFG.dropoffTime = d.dropoffTime;
       if(d.pickupTime)  CFG.pickupTime  = d.pickupTime;
-      if(d.maxPerDay)   CFG.maxPerDay   = d.maxPerDay;
+      if(d.maxPerDay)        CFG.maxPerDay        = d.maxPerDay;
+      if(d.pointsPerReal)    CFG.pointsPerReal    = d.pointsPerReal;
+      if(d.pointsToReal)     CFG.pointsToReal     = d.pointsToReal;
+      if(d.minPointsRedeem)  CFG.minPointsRedeem  = d.minPointsRedeem;
       updateWaLink();
     }, e => console.error('Firebase config:', e));
 
