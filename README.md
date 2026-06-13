@@ -10,11 +10,19 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 
 ### Site público
 - **Vitrine de serviços** com preços por porte de veículo (pequeno/grande) e toggle interativo
+- **Dois botões por card de serviço**: "Agendar →" e "❓ Dúvidas" — FAQ abre em modal dedicado sem interferir no agendamento
 - **Carrossel de portfólio** no hero com suporte a imagens e vídeos
 - **Galeria Antes/Depois** com slider interativo drag/touch — visitante arrasta para comparar antes e depois de cada serviço
 - **Depoimentos de clientes** em cards
 - **Seção de diferenciais** com estatísticas animadas
 - **Botão WhatsApp** direto para contato
+
+### FAQ por serviço
+- Cada serviço pode ter perguntas e respostas cadastradas pelo admin
+- Botão "❓ Dúvidas" no card abre modal com todas as perguntas daquele serviço
+- Modal inclui botão direto para agendar ao final da leitura
+- Admin gerencia as perguntas pelo painel (aba Serviços → editar → seção FAQ)
+- Seed de perguntas frequentes realistas disponível com 1 clique ("💬 Seed FAQs")
 
 ### Conta do Cliente
 - **Criação de conta opcional** no step 3 do agendamento (e-mail + senha)
@@ -22,6 +30,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - **Pré-preenchimento automático** do formulário quando o cliente está logado
 - **Histórico completo** de agendamentos, veículos e saldo de pontos de fidelidade
 - **Badge de pontos** (⭐ X pts + valor em R$) visível na conta
+- **Data de nascimento** salva no perfil — base para cupom de aniversário automático
 - Admin pode **migrar agendamentos antigos** por e-mail ao UID da conta (botão em Configurações)
 
 ### Agendamento (cliente)
@@ -30,6 +39,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - **Sugestão inteligente de combo**: se os serviços escolhidos fizerem parte de um combo com desconto, o sistema sugere aplicá-lo com 1 clique
 - **Campo de cupom de desconto** no step 3 com validação em tempo real
 - **Calendário interativo** com disponibilidade em tempo real integrado ao Firebase Realtime Database
+- Dias esgotados aparecem em laranja com opção de **entrar na lista de espera**
 - **Código de rastreamento único** por agendamento (ex: `SPC-X7K2M`)
 - **Consulta de status** pelo código — sem login, acessível ao cliente a qualquer momento
 - **Reagendamento self-service**: cliente solicita nova data com justificativa; admin aprova ou rejeita
@@ -37,6 +47,14 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - **Confirmação automática por e-mail** via EmailJS em cada mudança de status relevante
 - Coleta de **bairro e CEP** do cliente para mapeamento geográfico
 - **Pagamento online via InfinitePay** (PIX + cartão de crédito): link de pagamento gerado automaticamente no momento da aprovação; webhook confirma o pagamento no Firebase
+
+### Lista de Espera
+- Cliente entra na lista de espera de dias esgotados diretamente pelo calendário
+- Dados salvos em `/waitlist` no Firebase (nome, telefone, e-mail, data desejada)
+- Aba **⏳ Lista de Espera** no painel admin com todos os inscritos
+- Ao cancelar um agendamento, admin é perguntado se deseja notificar o primeiro da lista via WhatsApp
+- Botão de notificação individual por entrada na lista
+- Botão de remoção de entradas já atendidas
 
 ### Painel Administrativo
 - Login seguro com **Firebase Auth** (e-mail + senha)
@@ -56,6 +74,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - Campos: nome, ícone, categoria, descrição, dias extras, ativo/inativo
 - **Preço de custo + preço de venda** por porte (carro pequeno e grande)
 - **Margem calculada automaticamente** em R$ e percentual por serviço
+- **Perguntas frequentes (FAQ)** por serviço: editor de Q&A no formulário de edição; seed de 9 serviços com perguntas realistas disponível com 1 clique
 - Toggle ativo/inativo: remove da vitrine pública instantaneamente sem perder histórico
 - Importar os 9 serviços padrão com 1 clique (seed inicial)
 - Vitrine pública lê do Firebase em tempo real — mudanças aparecem no site sem redeploy
@@ -78,10 +97,11 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - CRUD completo de cupons em `/coupons` no Firebase, gerenciado pelo admin
 - Validação em tempo real no step 3 do agendamento; desconto aplicado antes de salvar
 - Cupom marcado como **usado** após aplicação (uso único ou múltiplo configurável)
-- **Cupom de aniversário**: gerado com 1 clique na ficha do cliente (10% de desconto, válido no mês)
+- **Cupom de aniversário manual**: gerado com 1 clique na ficha do cliente (10% de desconto, válido até o dia 28 do mês seguinte) — envio automático via WhatsApp ao gerar
+- **Cupom de aniversário automático**: Netlify Scheduled Function (`birthday-check.js`) roda todo dia às 09h00 BRT, detecta aniversariantes do dia, cria cupom no Firebase e envia e-mail personalizado via EmailJS
 
 **Reativação de clientes inativos**
-- Painel de inativos (>60 dias sem visita) com contagem de dias desde o último atendimento
+- Painel de inativos (>60 dias sem visita confirmada) com contagem de dias desde o último atendimento
 - Botão **WhatsApp** com mensagem de reativação pré-formatada
 - Botão para **gerar cupom personalizado** por cliente inativo direto do painel
 
@@ -97,6 +117,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - **Agregação automática** de todos os agendamentos por e-mail
 - **Busca rápida** por nome, e-mail ou telefone
 - **Classificação automática**: Novo / Recorrente / VIP (≥ R$ 1.000 gastos ou ≥ 3 atendimentos)
+- `lastVisit` calculado apenas com agendamentos concluídos (confirmed/approved/completed) — não considera datas futuras ou pendentes
 - Cada ficha exibe 5 blocos:
 
 | Bloco | Conteúdo |
@@ -109,6 +130,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 
 ### Estatísticas e Análise Geográfica
 - Cards de resumo: total de solicitações, receita projetada, ticket médio, taxa de retorno
+- **Gráfico de receita mensal** (barras CSS puro, sem biblioteca externa) com seletor de ano — exibe receita confirmada mês a mês
 - **Ranking de serviços mais vendidos** em gráfico de barras
 - **Indicadores de fidelização**: taxa de retorno, ticket médio, taxa de aprovação
 - **Mapa interativo de alcance** (OpenStreetMap via Leaflet, gratuito e sem API key):
@@ -135,6 +157,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 | Domínio | www.spcarclean.com.br (Registro.br + Netlify DNS) |
 | Pagamento | InfinitePay (PIX + cartão) via Netlify Function |
 | Notificações | Netlify Functions + EmailJS + Telegram Bot API |
+| E-mail automático de aniversário | Netlify Scheduled Function (cron diário) + EmailJS REST API |
 | Mapa | Leaflet.js + OpenStreetMap + Nominatim (geocoding) |
 | Fontes | Google Fonts (Montserrat + Open Sans) |
 
@@ -152,6 +175,9 @@ const CFG = {
   pickupTime:  '18:00',             // horário de saída
   adminEmail:  'seu@email.com',     // e-mail do administrador
   maxPerDay:   2,                   // máximo de agendamentos por dia
+  pointsPerReal: 1,                 // pontos concedidos por R$ gasto
+  pointsValue:   0.05,              // valor em R$ de cada ponto
+  pointsMin:     100,               // mínimo de pontos para resgate
 };
 ```
 
@@ -169,14 +195,40 @@ const CFG = {
 | Variável | Descrição |
 |---|---|
 | `FIREBASE_API_KEY` | Chave de API do Firebase (obrigatória — injetada no build) |
+| `FIREBASE_DATABASE_URL` | URL do Realtime Database, ex: `https://projeto-default-rtdb.firebaseio.com` |
+| `FIREBASE_DATABASE_SECRET` | Token legado do Firebase (webhook InfinitePay + cron de aniversário) |
 | `EMAILJS_SERVICE_ID` | ID do serviço no EmailJS |
 | `EMAILJS_PUBLIC_KEY` | Chave pública do EmailJS |
+| `EMAILJS_PRIVATE_KEY` | Chave privada do EmailJS (para envio server-side) |
+| `EMAILJS_BIRTHDAY_TEMPLATE` | ID do template de e-mail de aniversário no EmailJS |
 | `TELEGRAM_BOT_TOKEN` | Token do bot de notificações via Telegram |
 | `TELEGRAM_CHAT_ID` | ID do chat para receber as notificações |
 | `INFINITEPAY_HANDLE` | InfiniteTag (usuário InfinitePay) para geração de links de pagamento |
 | `INFINITEPAY_FEE_RATE` | Taxa a embutir no preço (padrão: `0.0315` = 3,15% crédito à vista) |
-| `FIREBASE_DATABASE_URL` | URL do Realtime Database, ex: `https://projeto-default-rtdb.firebaseio.com` |
-| `FIREBASE_DATABASE_SECRET` | Token legado do Firebase para atualização via webhook |
+
+### Firebase Realtime Database — regras de segurança
+
+```json
+{
+  "rules": {
+    "bookings":       { ".read": true, ".write": true },
+    "blocked":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "config":         { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "services":       { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "combos":         { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "gallery":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "clientNotes":    { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "coupons":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "waitlist":       { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": true },
+    "clientProfiles": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || auth.token.email == 'ADMIN_EMAIL')",
+        ".write": "auth != null && (auth.uid == $uid || auth.token.email == 'ADMIN_EMAIL')"
+      }
+    }
+  }
+}
+```
 
 ### Firebase Storage — regras de segurança
 
@@ -213,14 +265,15 @@ sp-car-clean/
 ├── index.html                   # Aplicação completa (site público + painel admin)
 ├── build.js                     # Script de build — injeta variáveis de ambiente
 ├── package.json
-├── netlify.toml                 # Config Netlify (build, publish, functions)
+├── netlify.toml                 # Config Netlify (build, publish, functions, cron)
 ├── assets/
 │   ├── logo.png                 # Logo oficial (PNG com fundo transparente)
 │   └── portfolio/               # Imagens e vídeos do carrossel hero
 └── netlify/
     └── functions/
-        ├── create-payment.js    # Gera link de pagamento InfinitePay
-        └── infinitepay-webhook.js # Confirma pagamento e atualiza Firebase
+        ├── create-payment.js        # Gera link de pagamento InfinitePay
+        ├── infinitepay-webhook.js   # Confirma pagamento e atualiza Firebase
+        └── birthday-check.js        # Cron diário: detecta aniversariantes, cria cupom e envia e-mail
 ```
 
 ---
@@ -243,6 +296,7 @@ sp-car-clean/
 | Mapa de alcance geográfico por bairro | ✅ |
 | Observações por veículo (película, cor, histórico) | ✅ |
 | Estatísticas de receita e fidelização | ✅ |
+| Gráfico de receita mensal por ano | ✅ |
 | Pagamento online via InfinitePay (PIX + cartão) | ✅ |
 | Galeria antes/depois com slider interativo | ✅ |
 | Gestão da galeria pelo painel admin | ✅ |
@@ -253,11 +307,11 @@ sp-car-clean/
 | Combos e pacotes com desconto + sugestão inteligente | ✅ |
 | Programa de pontos de fidelidade | ✅ |
 | Cupons de desconto com CRUD pelo admin | ✅ |
-| Cupom de aniversário (gerado em 1 clique) | ✅ |
+| Cupom de aniversário (1 clique + envio WhatsApp automático) | ✅ |
+| Cupom de aniversário automático por e-mail (cron diário) | ✅ |
 | Painel de reativação de clientes inativos | ✅ |
-| Lista de espera | 🔜 |
-| Gráficos de receita por período | 🔜 |
-| FAQ por serviço | 🔜 |
+| Lista de espera para dias esgotados | ✅ |
+| FAQ por serviço com modal dedicado | ✅ |
 
 ---
 
