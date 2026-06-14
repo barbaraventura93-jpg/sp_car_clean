@@ -27,7 +27,7 @@ nav{position:fixed;top:0;left:0;width:100%;z-index:100;background:rgba(6,9,15,.7
 nav.scrolled{height:60px;background:rgba(6,9,15,.92);box-shadow:0 4px 30px rgba(0,0,0,.4);border-bottom-color:rgba(42,159,214,.12)}
 .logo-wrap{display:flex;align-items:center;gap:.8rem;text-decoration:none}
 .logo-svg{width:82px;height:42px}
-.logo-img{height:48px;width:auto;display:block}
+.logo-img{height:56px;width:auto;object-fit:contain;display:block}
 .mobile-account-btn{display:none;background:rgba(72,201,245,.1);border:1px solid var(--border-glow);border-radius:50px;padding:.35rem .9rem;color:var(--accent);font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:700;letter-spacing:.05em;cursor:pointer;white-space:nowrap;align-items:center;gap:.4rem;transition:background .2s}
 .logo-text .name{font-family:'Montserrat',sans-serif;font-size:1.15rem;font-weight:800;color:var(--white);letter-spacing:.02em}
 .logo-text .name span{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
@@ -628,10 +628,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 <!-- ===== NAV ===== -->
 <nav>
   <a href="#" class="logo-wrap">
-    <!-- SVG inline: elimina dependência de arquivo, sempre visível -->
-    <svg class="logo-img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="var(--accent)" aria-hidden="true">
-      <path d="M544 192h-16L419.22 56.02A64.025 64.025 0 0 0 369.24 32H155.33c-26.17 0-49.7 15.93-59.42 40.23L48 194.26C20.44 201.4 0 226.21 0 256v112c0 8.84 7.16 16 16 16h48c0 44.18 35.82 80 80 80s80-35.82 80-80h256c0 44.18 35.82 80 80 80s80-35.82 80-80h48c8.84 0 16-7.16 16-16v-80c0-53.02-42.98-96-96-96zM144 404c-22.09 0-40-17.91-40-40s17.91-40 40-40 40 17.91 40 40-17.91 40-40 40zm18.69-184H96l29.23-73.09c2.23-5.57 7.63-9.91 14.12-9.91H144l-1.31 83zm19.31 0l1.31-83H256v83h-74zm104 0v-83h96l-24.35 83H286zm190.31 184c-22.09 0-40-17.91-40-40s17.91-40 40-40 40 17.91 40 40-17.91 40-40 40z"/>
-    </svg>
+    <img src="assets/logo.png" alt="SP Car Clean" class="logo-img"/>
     <div class="logo-text">
       <div class="name">SP <span>Car</span> Clean</div>
       <div class="tag">Centro Estético Automotivo</div>
@@ -792,9 +789,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 <!-- ===== FOOTER ===== -->
 <footer>
   <a href="#" class="logo-wrap" style="text-decoration:none">
-    <svg class="logo-img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" fill="var(--accent)" aria-hidden="true">
-      <path d="M544 192h-16L419.22 56.02A64.025 64.025 0 0 0 369.24 32H155.33c-26.17 0-49.7 15.93-59.42 40.23L48 194.26C20.44 201.4 0 226.21 0 256v112c0 8.84 7.16 16 16 16h48c0 44.18 35.82 80 80 80s80-35.82 80-80h256c0 44.18 35.82 80 80 80s80-35.82 80-80h48c8.84 0 16-7.16 16-16v-80c0-53.02-42.98-96-96-96zM144 404c-22.09 0-40-17.91-40-40s17.91-40 40-40 40 17.91 40 40-17.91 40-40 40zm18.69-184H96l29.23-73.09c2.23-5.57 7.63-9.91 14.12-9.91H144l-1.31 83zm19.31 0l1.31-83H256v83h-74zm104 0v-83h96l-24.35 83H286zm190.31 184c-22.09 0-40-17.91-40-40s17.91-40 40-40 40 17.91 40 40-17.91 40-40 40z"/>
-    </svg>
+    <img src="assets/logo.png" alt="SP Car Clean" class="logo-img"/>
     <div class="logo-text">
       <div class="name">SP <span>Car</span> Clean</div>
       <div class="tag">Centro Estético Automotivo</div>
