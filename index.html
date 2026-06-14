@@ -2662,13 +2662,16 @@ function viewBooking(id) {
   }
 
   const footer = document.getElementById('detailFooter');
-  const _canEdit = b.status==='approved'||b.status==='confirmed';
+  const _canEdit   = b.status==='approved'||b.status==='confirmed';
+  const _checkedIn = _canEdit && !!b.checkin;
   const _delBtn  = `<button class="btn-reject" style="margin-right:auto" onclick="deleteBooking('${b.id}')">🗑️ Excluir</button>`;
   const _ciBtn   = `<button class="btn-ghost" onclick="openCheckin('${b.id}')">📋 Check-in</button>`;
   const _doneBtn = `<button class="btn-approve" onclick="markCompleted('${b.id}')">🏁 Entregar & Concluir</button>`;
   footer.innerHTML = b.status==='pending'
     ? `${_delBtn}<button class="btn-reject" onclick="rejectBooking('${b.id}');closeModal('detailModal')">Rejeitar</button>
        <button class="btn-approve" onclick="closeModal('detailModal');openApprove('${b.id}')">Aprovar & Definir Orçamento</button>`
+    : _checkedIn
+    ? `${_delBtn}${_doneBtn}<button class="btn-edit-date" onclick="openEditDate('${b.id}')">📅 Reagendar Entrega</button>`
     : _canEdit
     ? `${_delBtn}${_ciBtn}${_doneBtn}<button class="btn-cancel" onclick="cancelBooking('${b.id}')">🚫 Cancelar</button>
        <button class="btn-edit-date" onclick="openEditDate('${b.id}')">📅 Alterar Data</button>`
@@ -3014,24 +3017,26 @@ async function markCompleted(id) {
 function openEditDate(id) {
   const b = getBookings().find(x=>x.id===id);
   if(!b) return;
+  const postCheckin = !!b.checkin;
   document.getElementById('detailBody').innerHTML = `
     <div class="confirm-card">
-      <h4>Alterar Data do Agendamento</h4>
+      <h4>${postCheckin ? '📅 Reagendar Entrega do Veículo' : 'Alterar Data do Agendamento'}</h4>
+      ${postCheckin ? `<div style="background:rgba(246,166,35,.08);border:1px solid var(--warn,#f6a623);border-radius:8px;padding:.6rem 1rem;margin-bottom:.8rem;font-size:.8rem;color:var(--warn,#f6a623)">⚠️ O veículo já está em serviço. Apenas a data de conclusão/retirada pode ser alterada. O cliente será avisado por e-mail automaticamente.</div>` : ''}
       <div class="confirm-row"><strong>Cliente</strong><span>${b.name}</span></div>
       <div class="confirm-row"><strong>Veículo</strong><span>${b.car}</span></div>
       <div class="confirm-row"><strong>Serviço</strong><span>${SVCS[b.service].name}</span></div>
     </div>
     <div class="form-row" style="margin-top:1.2rem">
-      <div class="form-group">
+      ${!postCheckin ? `<div class="form-group">
         <label>📅 Nova data de início (entrega)</label>
         <input id="editStart" type="date" value="${b.startDate||b.date}" min="${todayStr()}"/>
-      </div>
+      </div>` : `<input id="editStart" type="hidden" value="${b.startDate||b.date}"/>`}
       <div class="form-group">
-        <label>🏁 Nova data de conclusão (retirada)</label>
-        <input id="editEnd" type="date" value="${b.endDate||b.pickup}" min="${b.startDate||b.date}"/>
+        <label>🏁 Nova data de ${postCheckin ? 'retirada' : 'conclusão (retirada)'}</label>
+        <input id="editEnd" type="date" value="${b.endDate||b.pickup}" min="${todayStr()}"/>
       </div>
     </div>
-    <p style="font-size:.75rem;color:var(--muted);margin-top:.8rem">As novas datas serão refletidas no calendário imediatamente.</p>`;
+    <p style="font-size:.75rem;color:var(--muted);margin-top:.8rem">${postCheckin ? 'Um e-mail de aviso será enviado ao cliente com a nova previsão de retirada.' : 'As novas datas serão refletidas no calendário imediatamente.'}</p>`;
   document.getElementById('detailFooter').innerHTML = `
     <button class="btn-ghost" onclick="viewBooking('${id}')">← Voltar</button>
     <button class="btn-approve" style="padding:.6rem 1.4rem" onclick="doEditDate('${id}')">💾 Salvar Nova Data</button>`;
@@ -3045,15 +3050,19 @@ function doEditDate(id) {
   const bookings = getBookings();
   const b = bookings.find(x=>x.id===id);
   if(!b) return;
+  const postCheckin = !!b.checkin;
   b.startDate = startDate;
   b.endDate   = endDate;
   b.dateEditedAt = new Date().toISOString();
   setBookings(bookings);
+  const emailMsg = postCheckin
+    ? `Seu veículo já está em serviço conosco! Precisamos de um prazo adicional para garantir a qualidade que você merece.\n\nNova previsão de retirada: ${fmtDate(endDate)} às ${CFG.pickupTime}\n\nPedimos desculpas pelo transtorno e agradecemos a compreensão. Qualquer dúvida, entre em contato conosco.`
+    : `A data do seu agendamento ${b.id} (${SVCS[b.service]?.name || b.service}) foi atualizada pelo estabelecimento.\n\nNova entrega do veículo: ${fmtDate(startDate)} às ${CFG.dropoffTime}\nNova previsão de retirada: ${fmtDate(endDate)} às ${CFG.pickupTime}`;
   sendEmail('template_update', {
     to_email: b.email, to_name: b.name,
     booking_id: b.id,
-    titulo:   '📅 Data do agendamento alterada — SP Car Clean',
-    mensagem: `A data do seu agendamento ${b.id} (${SVCS[b.service]?.name || b.service}) foi atualizada pelo estabelecimento.\n\nNova entrega do veículo: ${fmtDate(startDate)} às ${CFG.dropoffTime}\nNova previsão de retirada: ${fmtDate(endDate)} às ${CFG.pickupTime}`,
+    titulo:   postCheckin ? '🔧 Atualização sobre seu veículo — SP Car Clean' : '📅 Data do agendamento alterada — SP Car Clean',
+    mensagem: emailMsg,
   });
   closeModal('detailModal');
   renderAdminBookings();
