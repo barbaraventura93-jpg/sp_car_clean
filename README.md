@@ -67,18 +67,32 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - Resumo do check-in visível no detalhe do agendamento (admin) e em **Minha Conta** (cliente) com miniaturas clicáveis
 - Badge **"📋 check-in"** na lista de agendamentos do admin
 - Após check-in concluído, cliente **não pode mais reagendar ou cancelar** — veículo já entregue
+- Admin também **não pode cancelar** após check-in; apenas reagendar a data de retirada (com aviso automático ao cliente)
 
 ### Painel Administrativo
 - Login seguro com **Firebase Auth** (e-mail + senha)
 - **Calendário de agenda**: bloquear dias avulsos ou períodos inteiros
 - **Lista de agendamentos** filtrável por status (pendente, aprovado, confirmado, rejeitado, cancelado)
 - Aprovar com definição de **preço final**, datas e local de entrega/retirada
-- Rejeitar, cancelar e alterar datas de agendamentos a qualquer momento
+- Rejeitar e cancelar agendamentos — **cancelamento bloqueado após check-in** (veículo já em serviço)
+- **Alterar datas**: antes do check-in altera início + conclusão; após check-in altera apenas a data de retirada e envia e-mail automático ao cliente com a nova previsão
 - **Alerta de capacidade** por dia (`maxPerDay` configurável)
 - **Notas do admin** por agendamento (campo interno, não visível ao cliente)
 - Contato direto com o cliente via **WhatsApp** a partir do painel
 - **Notificação em tempo real via Telegram** a cada novo agendamento, reagendamento ou cancelamento
 - **Exportação de dados** em JSON
+
+### Agendamento Manual pelo Admin
+- Botão **➕ Novo agendamento** na aba de Agendamentos
+- Registra clientes que chegaram por WhatsApp, telefone ou presencialmente
+- **Seleção de múltiplos serviços** no mesmo agendamento: grade de checkboxes agrupados por categoria; valor total calculado automaticamente pela soma dos preços (editável)
+- Prazo de conclusão calculado com base no maior `daysExtra` entre os serviços selecionados
+- **Lookup automático por e-mail**: busca conta em `/clientProfiles` (pré-preenche nome, telefone, veículo) e vincula pontos de fidelidade se o cliente tiver conta
+- Status inicial configurável: **Aprovado**, **Confirmado** ou **🏁 Concluído** (registro histórico de serviços passados — aceita datas retroativas)
+- Se `confirmed` ou `completed` com conta vinculada → `_awardPoints()` concedido imediatamente
+- Checkbox para enviar **e-mail de confirmação** ao cliente via EmailJS
+- Checkbox para abrir **WhatsApp** com resumo do agendamento (lista todos os serviços quando múltiplos)
+- Booking salvo com `createdByAdmin: true` e entra no mesmo pipeline: agenda, Ficha de Cliente, estatísticas, check-in, survey e InfinitePay
 
 ### Serviços (Admin)
 - Aba dedicada **🔧 Serviços** no painel administrativo
@@ -329,6 +343,10 @@ sp-car-clean/
 | Lista de espera para dias esgotados | ✅ |
 | FAQ por serviço com modal dedicado | ✅ |
 | Check-in do veículo com fotos e notificação ao cliente | ✅ |
+| Cancelamento bloqueado pelo admin após check-in (somente reagendar retirada) | ✅ |
+| Agendamento manual pelo admin (presencial / WhatsApp / telefone) | ✅ |
+| Múltiplos serviços por agendamento manual com total calculado automaticamente | ✅ |
+| Registro histórico com data retroativa e status "Concluído" direto | ✅ |
 
 ---
 
