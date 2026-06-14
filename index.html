@@ -27,7 +27,7 @@ nav{position:fixed;top:0;left:0;width:100%;z-index:100;background:rgba(6,9,15,.7
 nav.scrolled{height:60px;background:rgba(6,9,15,.92);box-shadow:0 4px 30px rgba(0,0,0,.4);border-bottom-color:rgba(42,159,214,.12)}
 .logo-wrap{display:flex;align-items:center;gap:.8rem;text-decoration:none}
 .logo-svg{width:82px;height:42px}
-.logo-img{height:64px;width:auto;object-fit:contain;display:block}
+.logo-img{height:54px;width:auto;object-fit:contain;display:block;filter:drop-shadow(0 0 6px rgba(72,201,245,.45)) drop-shadow(0 0 2px rgba(255,255,255,.3))}
 .logo-text .name{font-family:'Montserrat',sans-serif;font-size:1.15rem;font-weight:800;color:var(--white);letter-spacing:.02em}
 .logo-text .name span{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
 .logo-text .tag{font-size:.58rem;color:var(--muted);letter-spacing:.18em;text-transform:uppercase;margin-top:1px}
@@ -454,11 +454,12 @@ footer p{font-size:.72rem;color:var(--muted)}
   .svc-pick-grid{grid-template-columns:1fr}
   .form-row{grid-template-columns:1fr}
   .admin-body{flex-direction:column}
-  .admin-sidebar{width:100%;flex-direction:row;padding:0;order:2;border-top:1px solid var(--border);border-right:none;position:sticky;bottom:0;z-index:20;flex-shrink:0;background:var(--bg2)}
-  .admin-tab{flex:1;flex-direction:column;gap:.15rem;padding:.55rem .2rem;font-size:.58rem;letter-spacing:.04em;border-left:none;border-top:3px solid transparent;justify-content:center;align-items:center;text-align:center}
+  .admin-sidebar{width:100%;flex-direction:row;padding:0;order:2;border-top:1px solid var(--border);border-right:none;position:sticky;bottom:0;z-index:20;flex-shrink:0;background:var(--bg2);overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .admin-sidebar::-webkit-scrollbar{display:none}
+  .admin-tab{flex:0 0 auto;min-width:64px;flex-direction:column;gap:.12rem;padding:.5rem .6rem;font-size:.56rem;letter-spacing:.04em;border-left:none;border-top:3px solid transparent;justify-content:center;align-items:center;text-align:center;white-space:nowrap}
   .admin-tab.active{border-left-color:transparent;border-top-color:var(--accent);background:rgba(72,201,245,.06)}
   .admin-tab span{display:block}
-  .admin-tab-icon{font-size:1.25rem}
+  .admin-tab-icon{font-size:1.2rem}
   .admin-content{order:1;padding:1.2rem;min-height:0;flex:1}
 }
 
@@ -624,7 +625,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 <!-- ===== NAV ===== -->
 <nav>
   <a href="#" class="logo-wrap">
-    <img src="assets/logo.png" alt="SP Car Clean" class="logo-img"/>
+    <img src="assets/logo.png" alt="SP Car Clean" class="logo-img" onerror="this.style.display='none'"/>
     <div class="logo-text">
       <div class="name">SP <span>Car</span> Clean</div>
       <div class="tag">Centro Estético Automotivo</div>
@@ -783,7 +784,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 <!-- ===== FOOTER ===== -->
 <footer>
   <a href="#" class="logo-wrap" style="text-decoration:none">
-    <img src="assets/logo.png" alt="SP Car Clean" class="logo-img"/>
+    <img src="assets/logo.png" alt="SP Car Clean" class="logo-img" onerror="this.style.display='none'"/>
     <div class="logo-text">
       <div class="name">SP <span>Car</span> Clean</div>
       <div class="tag">Centro Estético Automotivo</div>
