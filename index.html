@@ -153,6 +153,27 @@ h2{font-family:'Montserrat',sans-serif;font-size:clamp(1.8rem,3.5vw,3rem);font-w
 .coupon-input-wrap input{flex:1;font-family:'Montserrat',sans-serif;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .coupon-applied{background:var(--green-lt);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:.5rem .8rem;font-size:.8rem;color:var(--green);margin-top:.4rem}
 .coupon-error{color:var(--red);font-size:.78rem;margin-top:.3rem}
+/* ── Gift Card ── */
+#gift-card{padding:5rem 1.5rem;text-align:center}
+.gc-wrap{max-width:640px;margin:2rem auto 0;background:var(--card);border:1px solid var(--border-glow);border-radius:20px;padding:2rem;text-align:left}
+.gc-values{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1.4rem}
+.gc-val-btn{flex:1;min-width:80px;padding:.75rem .5rem;border:2px solid var(--border);border-radius:10px;background:transparent;color:var(--white);font-family:'Montserrat',sans-serif;font-size:.9rem;font-weight:700;cursor:pointer;text-align:center;transition:all .2s}
+.gc-val-btn:hover{border-color:var(--accent);color:var(--accent)}
+.gc-val-btn.selected{border-color:var(--accent);background:rgba(72,201,245,.1);color:var(--accent)}
+.gc-card-preview{background:linear-gradient(135deg,#0d1b2e 0%,#1a3a5c 100%);border:1px solid var(--accent);border-radius:16px;padding:1.5rem;margin-bottom:1.4rem;position:relative;overflow:hidden}
+.gc-card-preview::before{content:'';position:absolute;top:-30px;right:-30px;width:120px;height:120px;background:rgba(72,201,245,.08);border-radius:50%}
+.gc-card-preview::after{content:'';position:absolute;bottom:-20px;left:-20px;width:80px;height:80px;background:rgba(72,201,245,.05);border-radius:50%}
+.gc-preview-label{font-size:.62rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:rgba(72,201,245,.6);margin-bottom:.4rem}
+.gc-preview-amount{font-family:'Montserrat',sans-serif;font-size:2.2rem;font-weight:900;color:var(--accent);line-height:1}
+.gc-preview-to{font-size:.8rem;color:var(--muted);margin-top:.6rem}
+.gc-preview-msg{font-size:.78rem;color:rgba(255,255,255,.6);margin-top:.3rem;font-style:italic}
+.gc-admin-table{width:100%;border-collapse:collapse;font-size:.82rem}
+.gc-admin-table th{text-align:left;padding:.5rem .8rem;font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);border-bottom:1px solid var(--border)}
+.gc-admin-table td{padding:.6rem .8rem;border-bottom:1px solid var(--border)}
+.gc-badge{display:inline-block;border-radius:20px;padding:.1rem .55rem;font-size:.68rem;font-weight:700}
+.gc-badge.active{background:rgba(34,197,94,.15);color:var(--green)}
+.gc-badge.pending{background:rgba(246,166,35,.15);color:var(--orange)}
+.gc-badge.depleted{background:rgba(150,150,150,.15);color:var(--muted)}
 .reactivation-row{display:grid;grid-template-columns:1fr auto auto;gap:.6rem;align-items:center;padding:.6rem .8rem;border-bottom:1px solid var(--border);font-size:.8rem}
 .reactivation-row:last-child{border-bottom:none}
 .inactive-days{font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:700;color:var(--red);background:var(--red-lt);border-radius:4px;padding:.15rem .45rem}
@@ -647,6 +668,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
     <li><a href="#porque">Diferenciais</a></li>
     <li><a href="#galeria">Galeria</a></li>
     <li><a href="#depoimentos">Clientes</a></li>
+    <li><a href="#gift-card">Gift Card</a></li>
     <li><a onclick="openBooking()" class="cta" style="cursor:pointer">Agendar</a></li>
   </ul>
 </nav>
@@ -770,6 +792,55 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
     <div class="dep-card"><div class="dep-stars">★★★★★</div><p class="dep-text">Meu carro preto estava cheio de hologramas. O resultado foi incrível — parece que saiu da concessionária hoje.</p><hr class="dep-hr"/><div class="dep-author">Rodrigo M.</div><div class="dep-svc">Polimento Carro Preto</div></div>
     <div class="dep-card"><div class="dep-stars">★★★★★</div><p class="dep-text">Higienização de couro ficou perfeita. Cheiro de novo, macio, sem aquele brilho escorregadio.</p><hr class="dep-hr"/><div class="dep-author">Fernanda L.</div><div class="dep-svc">Higienização de Couro</div></div>
     <div class="dep-card"><div class="dep-stars">★★★★★</div><p class="dep-text">Trinca no para-brisa resolvida em menos de uma hora e ficou invisível. Economizei a troca do vidro!</p><hr class="dep-hr"/><div class="dep-author">Carlos T.</div><div class="dep-svc">Reparo de Trinca</div></div>
+  </div>
+</section>
+
+<!-- ===== GIFT CARD ===== -->
+<section id="gift-card">
+  <div class="sec-header">
+    <div class="sec-label">Presente Perfeito</div>
+    <h2>🎁 Gift Card SP Car Clean</h2>
+    <p style="color:var(--muted);max-width:480px;margin:.8rem auto 0">Dê de presente o cuidado que o carro merece. O destinatário usa o código ao agendar um serviço.</p>
+  </div>
+  <div class="gc-wrap">
+    <div class="gc-card-preview">
+      <div class="gc-preview-label">SP Car Clean · Gift Card</div>
+      <div class="gc-preview-amount" id="gcPreviewAmount">R$ —</div>
+      <div class="gc-preview-to" id="gcPreviewTo">Para: —</div>
+      <div class="gc-preview-msg" id="gcPreviewMsg"></div>
+    </div>
+    <label style="font-size:.82rem;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:.6rem">Valor do Gift Card *</label>
+    <div class="gc-values">
+      <button class="gc-val-btn" onclick="gcSelectValue(50,this)">R$ 50</button>
+      <button class="gc-val-btn" onclick="gcSelectValue(100,this)">R$ 100</button>
+      <button class="gc-val-btn" onclick="gcSelectValue(200,this)">R$ 200</button>
+      <button class="gc-val-btn" onclick="gcSelectValue(300,this)">R$ 300</button>
+      <button class="gc-val-btn" id="gcCustomBtn" onclick="gcSelectValue('custom',this)">Outro</button>
+    </div>
+    <div id="gcCustomWrap" style="display:none;margin-bottom:1rem">
+      <div class="form-group">
+        <label>Valor personalizado (R$)</label>
+        <input type="number" id="gcCustomVal" placeholder="Ex: 150" min="30" step="10" oninput="gcUpdatePreviewAmount()"/>
+      </div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:1.2rem 0"/>
+    <label style="font-size:.82rem;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:.8rem">Quem compra</label>
+    <div class="form-row">
+      <div class="form-group"><label>Seu nome *</label><input id="gcBuyerName" placeholder="Maria Silva" oninput="gcUpdatePreview()"/></div>
+      <div class="form-group"><label>Seu e-mail *</label><input id="gcBuyerEmail" type="email" placeholder="maria@email.com"/></div>
+    </div>
+    <div class="form-row full">
+      <div class="form-group"><label>Seu telefone (opcional)</label><input id="gcBuyerPhone" placeholder="(11) 99999-9999"/></div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:1.2rem 0"/>
+    <label style="font-size:.82rem;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:.8rem">Destinatário (opcional)</label>
+    <div class="form-row">
+      <div class="form-group"><label>Nome do presenteado</label><input id="gcRecipient" placeholder="João da Silva" oninput="gcUpdatePreview()"/></div>
+      <div class="form-group"><label>Mensagem personalizada</label><input id="gcMessage" placeholder="Feliz aniversário! 🎉" oninput="gcUpdatePreview()"/></div>
+    </div>
+    <div id="gcBuyMsg" style="margin-bottom:.8rem"></div>
+    <button class="btn-primary btn-full" style="margin-top:.4rem;font-size:1rem;padding:.9rem" onclick="buyGiftCard()">🎁 Comprar Gift Card</button>
+    <p style="font-size:.72rem;color:var(--muted);text-align:center;margin-top:.8rem">Pagamento via PIX ou cartão de crédito · Código enviado por e-mail após confirmação</p>
   </div>
 </section>
 
@@ -1133,6 +1204,9 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <div class="admin-tab" onclick="switchAdminTab('avaliacoes',this)" id="tab-avaliacoes">
         <span class="admin-tab-icon">⭐</span><span>&nbsp;Avaliações</span>
       </div>
+      <div class="admin-tab" onclick="switchAdminTab('giftcards',this)" id="tab-giftcards">
+        <span class="admin-tab-icon">🎁</span><span>&nbsp;Gift Cards</span>
+      </div>
       <div class="admin-tab" onclick="switchAdminTab('config',this)" id="tab-config">
         <span class="admin-tab-icon">⚙️</span><span>&nbsp;Configurações</span>
       </div>
@@ -1206,7 +1280,7 @@ let _checkinPhotos    = {};
 
 let _bookings = [];
 let _blocked  = [];
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef;
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef;
 const _COMBOS = {};
 let _authUser = null;
 let _clientProfile = null;
@@ -1601,6 +1675,14 @@ function renderBookingStep() {
         </div>
         <div id="couponMsg"></div>
       </div>
+      <div class="form-group" style="margin-top:.6rem">
+        <label>🎁 Gift Card (opcional)</label>
+        <div class="coupon-input-wrap">
+          <input id="fGiftCode" placeholder="EX: GIFT-X7K2M9" oninput="this.value=this.value.toUpperCase()"/>
+          <button class="btn-ghost" onclick="applyGiftCardInBooking()" style="white-space:nowrap">Aplicar</button>
+        </div>
+        <div id="giftMsg"></div>
+      </div>
       <div id="clientAuthSection" class="client-auth-section">
         <div id="clientLoggedBadge" class="client-logged-badge" style="display:none">
           ✅ Logado como <strong id="clientLoggedEmail"></strong> — agendamento será vinculado à sua conta.
@@ -1720,19 +1802,22 @@ async function submitBooking() {
   const id = genId();
   const _maxDaysSub = bkMaxDays(booking);
   const basePrice = bkPrice(booking, booking.carSize);
-  const couponDiscount = _appliedCoupon?.discount || 0;
+  const couponDiscount   = _appliedCoupon?.discount        || 0;
+  const giftCardDiscount = _appliedGiftCard?.amountToUse   || 0;
   const b = {
     id, services: booking.services, service: booking.services[0], carSize: booking.carSize,
     date: booking.date, pickup: _maxDaysSub > 0 ? addDays(booking.date, _maxDaysSub) : booking.date,
-    price: Math.max(0, basePrice - couponDiscount),
+    price: Math.max(0, basePrice - couponDiscount - giftCardDiscount),
     name, email, phone, car, plate, bairro, cep, obs,
     status: 'pending',
     submittedAt: new Date().toISOString(),
     adminNotes: '',
     ...(clientUid ? { clientUid } : {}),
-    ...(_appliedCoupon ? { couponCode: _appliedCoupon.code, couponDiscount } : {}),
+    ...(_appliedCoupon   ? { couponCode: _appliedCoupon.code, couponDiscount }                                           : {}),
+    ...(_appliedGiftCard ? { giftCardCode: _appliedGiftCard.code, giftCardUsed: _appliedGiftCard.amountToUse } : {}),
   };
-  if (_appliedCoupon) { _markCouponUsed(_appliedCoupon.code); _appliedCoupon = null; }
+  if (_appliedCoupon)   { _markCouponUsed(_appliedCoupon.code); _appliedCoupon = null; }
+  if (_appliedGiftCard) { _useGiftCard(_appliedGiftCard.code, _appliedGiftCard.amountToUse); _appliedGiftCard = null; }
 
   // Salvar booking (usa set individual para compatibilidade futura com regras por uid)
   _bookings.push(b);
@@ -2090,7 +2175,226 @@ function _adminAdjustPoints(uid, delta, reason) {
 }
 
 // --- Cupons ---
-let _appliedCoupon = null; // cupom aplicado no booking atual
+let _appliedCoupon   = null;
+let _appliedGiftCard = null; // { code, balance, amountToUse }
+let _gcSelectedAmount = 0;   // valor escolhido na seção de compra
+
+// ============================================================
+// GIFT CARD — compra (site público) e resgate (step 3)
+// ============================================================
+function genGiftId() {
+  return 'GIFT-' + Math.random().toString(36).slice(2,8).toUpperCase();
+}
+
+function gcSelectValue(val, btn) {
+  document.querySelectorAll('.gc-val-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  const customWrap = document.getElementById('gcCustomWrap');
+  if (val === 'custom') {
+    customWrap.style.display = 'block';
+    _gcSelectedAmount = 0;
+    gcUpdatePreviewAmount();
+  } else {
+    customWrap.style.display = 'none';
+    _gcSelectedAmount = val;
+    document.getElementById('gcPreviewAmount').textContent = 'R$ ' + val;
+  }
+}
+
+function gcUpdatePreviewAmount() {
+  const v = parseFloat(document.getElementById('gcCustomVal')?.value) || 0;
+  _gcSelectedAmount = v;
+  document.getElementById('gcPreviewAmount').textContent = v > 0 ? 'R$ ' + v : 'R$ —';
+}
+
+function gcUpdatePreview() {
+  const rec = document.getElementById('gcRecipient')?.value.trim() || '—';
+  const msg = document.getElementById('gcMessage')?.value.trim()   || '';
+  document.getElementById('gcPreviewTo').textContent   = 'Para: ' + rec;
+  document.getElementById('gcPreviewMsg').textContent  = msg;
+}
+
+async function buyGiftCard() {
+  const amount      = _gcSelectedAmount;
+  const buyerName   = document.getElementById('gcBuyerName')?.value.trim()  || '';
+  const buyerEmail  = document.getElementById('gcBuyerEmail')?.value.trim() || '';
+  const buyerPhone  = document.getElementById('gcBuyerPhone')?.value.trim() || '';
+  const recipient   = document.getElementById('gcRecipient')?.value.trim()  || '';
+  const message     = document.getElementById('gcMessage')?.value.trim()    || '';
+  const msgEl       = document.getElementById('gcBuyMsg');
+
+  if (!amount || amount < 30) { if (msgEl) msgEl.innerHTML = '<span class="coupon-error">Selecione ou informe um valor mínimo de R$ 30.</span>'; return; }
+  if (!buyerName)  { if (msgEl) msgEl.innerHTML = '<span class="coupon-error">Informe seu nome.</span>'; return; }
+  if (!buyerEmail || !buyerEmail.includes('@')) { if (msgEl) msgEl.innerHTML = '<span class="coupon-error">Informe um e-mail válido.</span>'; return; }
+  if (msgEl) msgEl.innerHTML = '<span style="color:var(--muted);font-size:.8rem">⏳ Gerando link de pagamento...</span>';
+
+  const code = genGiftId();
+
+  // Save as pending before redirecting to payment
+  if (_giftcardsRef) {
+    await _giftcardsRef.child(code).set({
+      code, amount, balance: 0, status: 'pending',
+      buyerName, buyerEmail, buyerPhone,
+      ...(recipient ? { recipientName: recipient } : {}),
+      ...(message   ? { message }                 : {}),
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  try {
+    const resp = await fetch('/.netlify/functions/create-gift-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, amount, buyerName, buyerEmail, buyerPhone })
+    });
+    const data = await resp.json();
+    if (!data.ok || !data.paymentUrl) throw new Error(data.error || 'Erro ao gerar link.');
+    window.location.href = data.paymentUrl;
+  } catch (err) {
+    if (msgEl) msgEl.innerHTML = `<span class="coupon-error">Erro: ${err.message}</span>`;
+    // Remove pending gift card on error
+    if (_giftcardsRef) _giftcardsRef.child(code).remove().catch(() => {});
+  }
+}
+
+async function applyGiftCardInBooking() {
+  const code  = (document.getElementById('fGiftCode')?.value || '').trim().toUpperCase();
+  const msgEl = document.getElementById('giftMsg');
+  if (!code) return;
+  if (!_giftcardsRef) { if (msgEl) msgEl.innerHTML = '<span class="coupon-error">Firebase não conectado.</span>'; return; }
+
+  const snap = await _giftcardsRef.child(code).once('value');
+  const gc   = snap.val();
+
+  if (!gc) { if (msgEl) msgEl.innerHTML = '<span class="coupon-error">Gift card não encontrado.</span>'; return; }
+  if (gc.status === 'pending')  { if (msgEl) msgEl.innerHTML = '<span class="coupon-error">Gift card ainda não ativado — pagamento pendente.</span>'; return; }
+  if (gc.status === 'depleted') { if (msgEl) msgEl.innerHTML = '<span class="coupon-error">Gift card sem saldo.</span>'; return; }
+  if (gc.status !== 'active' || !gc.balance || gc.balance <= 0) { if (msgEl) msgEl.innerHTML = '<span class="coupon-error">Gift card inválido ou sem saldo.</span>'; return; }
+
+  const basePrice    = bkPrice(booking, booking.carSize);
+  const couponOff    = _appliedCoupon?.discount || 0;
+  const remaining    = Math.max(0, basePrice - couponOff);
+  const amountToUse  = Math.min(gc.balance, remaining);
+  const leftover     = gc.balance - amountToUse;
+
+  _appliedGiftCard = { code, balance: gc.balance, amountToUse };
+  if (msgEl) msgEl.innerHTML = `<div class="coupon-applied">🎁 Gift Card aplicado! ${fmtMoney(amountToUse)} abatido${leftover > 0 ? ` · ${fmtMoney(leftover)} de saldo residual para próxima visita` : ''}.</div>`;
+}
+
+async function _useGiftCard(code, amount) {
+  if (!_giftcardsRef || !code || !amount) return;
+  const snap = await _giftcardsRef.child(code).once('value');
+  const gc   = snap.val();
+  if (!gc) return;
+  const newBalance = Math.max(0, (gc.balance || 0) - amount);
+  _giftcardsRef.child(code).update({
+    balance: newBalance,
+    status: newBalance <= 0 ? 'depleted' : 'active',
+    [`uses/${Date.now()}`]: { amount, usedAt: new Date().toISOString() }
+  }).catch(console.error);
+}
+
+async function renderAdminGiftCards() {
+  const el = document.getElementById('adminContent');
+  el.innerHTML = '<h2>🎁 Gift Cards</h2><p style="color:var(--muted)">Carregando...</p>';
+  if (!_giftcardsRef) { el.innerHTML += '<p style="color:var(--red)">Firebase não conectado.</p>'; return; }
+
+  const snap = await _giftcardsRef.once('value');
+  const data = snap.val() || {};
+  const cards = Object.values(data).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+
+  const badgeHtml = s => `<span class="gc-badge ${s}">${{active:'✅ Ativo',pending:'⏳ Pendente',depleted:'✓ Esgotado'}[s]||s}</span>`;
+
+  const rows = cards.map(gc => `<tr>
+    <td style="font-family:monospace;font-weight:700">${gc.code}</td>
+    <td>${fmtMoney(gc.amount)}</td>
+    <td style="color:${gc.balance>0?'var(--green)':'var(--muted)'};font-weight:700">${fmtMoney(gc.balance||0)}</td>
+    <td>${badgeHtml(gc.status||'pending')}</td>
+    <td>${gc.buyerName||'—'}<br><span style="font-size:.72rem;color:var(--muted)">${gc.buyerEmail||''}</span></td>
+    <td>${gc.recipientName||'—'}</td>
+    <td style="font-size:.75rem;color:var(--muted)">${gc.createdAt?new Date(gc.createdAt).toLocaleDateString('pt-BR'):'—'}</td>
+    <td>
+      ${gc.status==='pending'?`<button class="btn-ghost" style="font-size:.72rem;padding:.25rem .7rem" onclick="activateGiftCardManually('${gc.code}')">Ativar</button>`:''}
+      <button class="btn-reject" style="font-size:.72rem;padding:.25rem .7rem;margin-left:.3rem" onclick="deleteGiftCard('${gc.code}')">🗑</button>
+    </td>
+  </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:2rem">Nenhum gift card ainda.</td></tr>';
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.8rem;margin-bottom:1.2rem">
+      <h2 style="margin:0">🎁 Gift Cards</h2>
+      <button class="btn-primary" style="font-size:.8rem;padding:.5rem 1.2rem" onclick="openCreateGiftCard()">➕ Criar Gift Card</button>
+    </div>
+    <div id="gcCreatePanel" style="display:none" class="admin-panel" style="margin-bottom:1.5rem"></div>
+    <div class="admin-panel" style="overflow-x:auto">
+      <table class="gc-admin-table">
+        <thead><tr>
+          <th>Código</th><th>Valor</th><th>Saldo</th><th>Status</th>
+          <th>Comprador</th><th>Destinatário</th><th>Data</th><th>Ações</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function openCreateGiftCard() {
+  const panel = document.getElementById('gcCreatePanel');
+  if (!panel) return;
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'block' && !panel.innerHTML.includes('gcAdminAmount')) {
+    panel.innerHTML = `
+      <h3>Criar Gift Card Manual</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Valor (R$) *</label><input type="number" id="gcAdminAmount" placeholder="100" min="30" step="10"/></div>
+        <div class="form-group"><label>Nome do comprador *</label><input id="gcAdminBuyer" placeholder="Maria Silva"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>E-mail do comprador</label><input id="gcAdminEmail" type="email" placeholder="maria@email.com"/></div>
+        <div class="form-group"><label>Destinatário</label><input id="gcAdminRecipient" placeholder="João (opcional)"/></div>
+      </div>
+      <div class="form-row full"><div class="form-group"><label>Mensagem</label><input id="gcAdminMsg" placeholder="Feliz aniversário!"/></div></div>
+      <div style="display:flex;gap:.8rem;margin-top:.4rem">
+        <button class="btn-primary" onclick="createAdminGiftCard()">✅ Criar e Ativar</button>
+        <button class="btn-ghost" onclick="document.getElementById('gcCreatePanel').style.display='none'">Cancelar</button>
+      </div>`;
+  }
+}
+
+async function createAdminGiftCard() {
+  const amount    = parseFloat(document.getElementById('gcAdminAmount')?.value) || 0;
+  const buyer     = document.getElementById('gcAdminBuyer')?.value.trim()    || '';
+  const email     = document.getElementById('gcAdminEmail')?.value.trim()    || '';
+  const recipient = document.getElementById('gcAdminRecipient')?.value.trim()|| '';
+  const message   = document.getElementById('gcAdminMsg')?.value.trim()      || '';
+  if (amount < 30) { alert('Informe um valor mínimo de R$ 30.'); return; }
+  if (!buyer)      { alert('Informe o nome do comprador.'); return; }
+  const code = genGiftId();
+  await _giftcardsRef.child(code).set({
+    code, amount, balance: amount, status: 'active',
+    buyerName: buyer, buyerEmail: email,
+    ...(recipient ? { recipientName: recipient } : {}),
+    ...(message   ? { message }                 : {}),
+    createdAt: new Date().toISOString(),
+    activatedAt: new Date().toISOString(),
+    createdByAdmin: true,
+  });
+  alert(`✅ Gift Card ${code} criado com saldo de ${fmtMoney(amount)}!`);
+  renderAdminGiftCards();
+}
+
+async function activateGiftCardManually(code) {
+  if (!confirm(`Ativar gift card ${code} manualmente?`)) return;
+  const snap = await _giftcardsRef.child(code).once('value');
+  const gc   = snap.val();
+  if (!gc) { alert('Não encontrado.'); return; }
+  await _giftcardsRef.child(code).update({ status: 'active', balance: gc.amount, activatedAt: new Date().toISOString() });
+  renderAdminGiftCards();
+}
+
+async function deleteGiftCard(code) {
+  if (!confirm(`Excluir gift card ${code}? Esta ação é irreversível.`)) return;
+  await _giftcardsRef.child(code).remove();
+  renderAdminGiftCards();
+}
 
 async function validateCoupon(code, orderValue) {
   if (!_couponsRef || !code) return null;
@@ -2313,6 +2617,7 @@ function switchAdminTab(tab, el) {
   else if(tab==='galeria') renderAdminGaleria();
   else if(tab==='espera') renderAdminWaitlist();
   else if(tab==='avaliacoes') renderAdminFeedback();
+  else if(tab==='giftcards') renderAdminGiftCards();
   else if(tab==='config') renderAdminConfig();
 }
 
@@ -2643,6 +2948,7 @@ function viewBooking(id) {
       ${hasFinalPrice ? `<div class="summary-row"><strong>Valor definido (adm)</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.finalPrice)}</span></div>` : ''}
       ${b.priceWithFee ? `<div class="summary-row"><strong>Valor cobrado (c/ taxa)</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.priceWithFee)}</span></div>` : ''}
       ${b.paidAmount ? `<div class="summary-row"><strong>💳 Valor pago (InfinitePay)</strong><span style="color:var(--green);font-weight:800;font-size:1.05em">${fmtMoney(b.paidAmount)}</span></div>` : ''}
+      ${b.giftCardCode ? `<div class="summary-row"><strong>🎁 Gift Card usado</strong><span style="color:var(--accent)">${b.giftCardCode} · ${fmtMoney(b.giftCardUsed||0)} abatido</span></div>` : ''}
       ${b.paymentUrl ? `<div class="summary-row"><strong>Link de pagamento</strong><span><a href="${b.paymentUrl}" target="_blank" rel="noopener" style="color:var(--blue);font-size:.8rem">Abrir link ↗</a></span></div>` : ''}
       ${b.paymentConfirmedAt ? `<div class="summary-row"><strong>Pagamento confirmado</strong><span style="color:var(--green);font-weight:700">✅ ${new Date(b.paymentConfirmedAt).toLocaleString('pt-BR')}</span></div>` : ''}
       ${b.paymentMethod ? `<div class="summary-row"><strong>Método</strong><span>${b.paymentMethod}</span></div>` : ''}
@@ -5035,6 +5341,7 @@ function updateWaLink() {
     _clientNotesRef    = _fbDB.ref('clientNotes');
     _clientProfilesRef = _fbDB.ref('clientProfiles');
     _couponsRef        = _fbDB.ref('coupons');
+    _giftcardsRef      = _fbDB.ref('giftcards');
     _waitlistRef       = _fbDB.ref('waitlist');
     _feedbackRef       = _fbDB.ref('feedback');
     _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
@@ -5181,6 +5488,32 @@ _updateClientNavUI();
 
 // Auto-open admin if ?admin in URL
 if(window.location.search.includes('admin')) openAdminLogin();
+
+// Gift card activation redirect: ?gift=ok&codigo=GIFT-XXXXXX
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('gift') === 'ok') {
+    const code = params.get('codigo') || '';
+    const tryShow = () => {
+      if (_giftcardsRef) {
+        _giftcardsRef.child(code).once('value', snap => {
+          const gc = snap.val();
+          const status = gc?.status || 'pending';
+          const amount = gc?.amount || '—';
+          const msg = status === 'active'
+            ? `🎁 Gift Card <strong>${code}</strong> ativado com sucesso!<br>Saldo: <strong>R$ ${amount}</strong><br><br>O código foi enviado por e-mail. Guarde-o para usar ao agendar um serviço.`
+            : `⏳ Gift Card <strong>${code}</strong> gerado. O saldo será liberado após a confirmação do pagamento.`;
+          alert(msg.replace(/<[^>]+>/g, ''));
+        });
+      } else { setTimeout(tryShow, 400); }
+    };
+    setTimeout(tryShow, 600);
+    // Clean URL without reload
+    history.replaceState({}, '', window.location.pathname);
+    // Scroll to gift card section
+    setTimeout(() => document.getElementById('gift-card')?.scrollIntoView({ behavior:'smooth', block:'center' }), 800);
+  }
+})();
 
 // Auto-open survey if ?avaliar=CODE in URL
 (function() {

@@ -11,7 +11,7 @@ exports.handler = async (event) => {
   const { order_nsu, transaction_nsu, capture_method, paid_amount, status } = data;
   if (!order_nsu) return ok('no order_nsu');
 
-  // Only mark confirmed when payment is actually captured/approved
+  // Only act when payment is actually captured/approved
   const paidStatuses = ['paid', 'approved', 'captured', 'succeeded', 'complete', 'completed'];
   if (status && !paidStatuses.includes(String(status).toLowerCase())) {
     return ok(`status ${status} ignored`);
@@ -24,8 +24,72 @@ exports.handler = async (event) => {
     return ok('db not configured');
   }
 
+  // ── Gift Card activation ────────────────────────────────────────────────
+  if (String(order_nsu).startsWith('GIFT-')) {
+    try {
+      const gcResp = await fetch(
+        `${dbUrl}/giftcards/${encodeURIComponent(order_nsu)}.json?auth=${dbSecret}`
+      );
+      const gc = await gcResp.json();
+      if (!gc) return ok('gift card not found');
+      if (gc.status === 'active') return ok('gift card already active');
+
+      await fetch(
+        `${dbUrl}/giftcards/${encodeURIComponent(order_nsu)}.json?auth=${dbSecret}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'active',
+            balance: gc.amount,
+            activatedAt: new Date().toISOString(),
+            paymentTransactionId: transaction_nsu || '',
+            paymentMethod: capture_method || '',
+            paidAmount: paid_amount || gc.amount
+          })
+        }
+      );
+
+      // Send e-mail to buyer via EmailJS REST
+      const sjsService  = process.env.EMAILJS_SERVICE_ID;
+      const sjsPublic   = process.env.EMAILJS_PUBLIC_KEY;
+      const sjsPrivate  = process.env.EMAILJS_PRIVATE_KEY;
+      const sjsTemplate = process.env.EMAILJS_GIFT_TEMPLATE || process.env.EMAILJS_SERVICE_ID && 'template_update';
+      const siteUrl     = (process.env.URL || 'https://www.spcarclean.com.br').replace(/\/$/, '');
+
+      if (sjsService && sjsPublic && sjsTemplate && gc.buyerEmail) {
+        const recipientLine = gc.recipientName ? `\n\nDestinatário: ${gc.recipientName}` : '';
+        const messageLine   = gc.message ? `\nMensagem: "${gc.message}"` : '';
+        await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            service_id:  sjsService,
+            template_id: sjsTemplate,
+            user_id:     sjsPublic,
+            ...(sjsPrivate ? { accessToken: sjsPrivate } : {}),
+            template_params: {
+              to_name:      gc.buyerName || 'Cliente',
+              to_email:     gc.buyerEmail,
+              booking_id:   order_nsu,
+              service:      `🎁 Gift Card SP Car Clean – R$ ${gc.amount}`,
+              status_label: 'Ativo e pronto para usar',
+              price:        `R$ ${gc.amount}`,
+              msg: `Seu gift card foi ativado com sucesso!${recipientLine}${messageLine}\n\nCódigo: ${order_nsu}\nSaldo: R$ ${gc.amount}\n\nPara usar: acesse ${siteUrl} e insira o código no campo "Gift Card" ao finalizar o agendamento.`
+            }
+          })
+        }).catch(e => console.error('gift card email error:', e.message));
+      }
+
+      return ok('gift card activated');
+    } catch (err) {
+      console.error('infinitepay-webhook gift card error:', err.message);
+      return ok('gift card error handled');
+    }
+  }
+
+  // ── Regular booking confirmation ────────────────────────────────────────
   try {
-    // Read current booking to check idempotency
     const readResp = await fetch(
       `${dbUrl}/bookings/${encodeURIComponent(order_nsu)}.json?auth=${dbSecret}`
     );
@@ -33,7 +97,6 @@ exports.handler = async (event) => {
     if (!booking) return ok('booking not found');
     if (booking.status === 'confirmed') return ok('already confirmed');
 
-    // Update booking status to confirmed
     await fetch(
       `${dbUrl}/bookings/${encodeURIComponent(order_nsu)}.json?auth=${dbSecret}`,
       {
