@@ -1292,6 +1292,8 @@ function genId() {
   return r;
 }
 function fmtMoney(v) { return 'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:0}); }
+// Valor efetivo: pago via InfinitePay > definido pelo admin > estimativa inicial
+function paidValue(b) { return b.paidAmount || b.finalPrice || b.price || 0; }
 function fmtCep(el) { let v=el.value.replace(/\D/g,'').slice(0,8); el.value=v.length>5?v.slice(0,5)+'-'+v.slice(5):v; }
 
 // ============================================================
@@ -2217,7 +2219,7 @@ function renderClientAccount() {
       <div class="client-booking-card-svc">${bkLabel(b)}</div>
       <div class="client-booking-card-meta">
         ${b.startDate || b.date ? '📅 ' + fmtDate(b.startDate || b.date) : ''}
-        ${b.finalPrice ? ' · ' + fmtMoney(b.finalPrice) : b.price ? ' · ' + fmtMoney(b.price) : ''}
+        ${paidValue(b) > 0 ? ' · ' + fmtMoney(paidValue(b)) + (b.paidAmount ? ' <span style="font-size:.68rem;background:rgba(34,197,94,.15);color:var(--green);border-radius:20px;padding:.05rem .35rem;font-weight:700">💳 pago</span>' : '') : ''}
         · ${b.carSize === 'gr' ? '🚙 Grande' : '🚗 Pequeno'}
       </div>
       ${canAct ? `<div class="client-booking-card-actions">
@@ -2638,10 +2640,11 @@ function viewBooking(id) {
       <div class="summary-row"><strong>📅 Data solicitada</strong><span style="font-weight:700;color:var(--orange)">${fmtDate(b.date)}</span></div>
       <div class="summary-row"><strong>Solicitação recebida</strong><span>${new Date(b.submittedAt).toLocaleString('pt-BR')}</span></div>
       <div class="summary-row"><strong>Valor estimado</strong><span>${fmtMoney(b.price)}</span></div>
-      ${hasFinalPrice ? `<div class="summary-row"><strong>Valor final (adm)</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.finalPrice)}</span></div>` : ''}
+      ${hasFinalPrice ? `<div class="summary-row"><strong>Valor definido (adm)</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.finalPrice)}</span></div>` : ''}
       ${b.priceWithFee ? `<div class="summary-row"><strong>Valor cobrado (c/ taxa)</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.priceWithFee)}</span></div>` : ''}
+      ${b.paidAmount ? `<div class="summary-row"><strong>💳 Valor pago (InfinitePay)</strong><span style="color:var(--green);font-weight:800;font-size:1.05em">${fmtMoney(b.paidAmount)}</span></div>` : ''}
       ${b.paymentUrl ? `<div class="summary-row"><strong>Link de pagamento</strong><span><a href="${b.paymentUrl}" target="_blank" rel="noopener" style="color:var(--blue);font-size:.8rem">Abrir link ↗</a></span></div>` : ''}
-      ${b.paymentConfirmedAt ? `<div class="summary-row"><strong>Pagamento</strong><span style="color:var(--green);font-weight:700">✅ Confirmado em ${new Date(b.paymentConfirmedAt).toLocaleString('pt-BR')}</span></div>` : ''}
+      ${b.paymentConfirmedAt ? `<div class="summary-row"><strong>Pagamento confirmado</strong><span style="color:var(--green);font-weight:700">✅ ${new Date(b.paymentConfirmedAt).toLocaleString('pt-BR')}</span></div>` : ''}
       ${b.paymentMethod ? `<div class="summary-row"><strong>Método</strong><span>${b.paymentMethod}</span></div>` : ''}
       ${b.obs ? `<div class="summary-row"><strong>Obs. cliente</strong><span style="font-style:italic">${b.obs}</span></div>` : ''}
     </div>
@@ -3123,7 +3126,7 @@ function _buildClientMap() {
 
   return Object.values(clientMap).map(c => {
     const done = c.bookings.filter(b => ['confirmed','approved','completed'].includes(b.status));
-    const totalSpent = done.reduce((s,b) => s + (b.finalPrice || b.price || 0), 0);
+    const totalSpent = done.reduce((s,b) => s + paidValue(b), 0);
     const doneDates = done.map(b => b.startDate || b.date).filter(Boolean).sort();
     const lastVisit = doneDates[doneDates.length - 1] || null;
     const vip = totalSpent >= 1000 || done.length >= 3;
@@ -3631,13 +3634,16 @@ function openClientProfile(encodedEmail) {
   };
   const histRows = sorted.map(b => {
     const svc = (b.services||[b.service]).filter(Boolean).map(id => SVCS[id]?SVCS[id].name:id).join(', ');
-    const valor = b.finalPrice || b.price || 0;
+    const valor = paidValue(b);
     const dateStr = b.startDate || b.date;
+    const valorHtml = valor > 0
+      ? fmtMoney(valor) + (b.paidAmount ? ' <span style="font-size:.65rem;background:rgba(34,197,94,.15);color:var(--green);border-radius:20px;padding:.05rem .4rem;font-weight:700;vertical-align:middle">💳 pago</span>' : '')
+      : '—';
     return `<tr>
       <td style="white-space:nowrap">${dateStr ? fmtDateShort(dateStr) : '—'}</td>
       <td>${svc}</td>
       <td style="color:var(--muted);white-space:nowrap">${b.car||'—'}${b.plate?' ('+b.plate+')':''}</td>
-      <td style="font-weight:700;color:var(--blue);white-space:nowrap">${valor>0?fmtMoney(valor):'—'}</td>
+      <td style="font-weight:700;color:var(--blue);white-space:nowrap">${valorHtml}</td>
       <td>${statusLabel[b.status]||b.status}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1.2rem">Sem atendimentos.</td></tr>';
@@ -3730,7 +3736,10 @@ function renderAdminStats() {
   const bookings = getBookings();
   const total = bookings.length;
   const confirmed = bookings.filter(b=>b.status==='confirmed'||b.status==='approved').length;
-  const revenue = bookings.filter(b=>b.status==='confirmed'||b.status==='approved').reduce((s,b)=>s+(b.finalPrice||b.price),0);
+  // Receita real = serviços já entregues (completed)
+  const realRevenue = bookings.filter(b=>b.status==='completed').reduce((s,b)=>s+paidValue(b),0);
+  // Receita projetada = aprovados/confirmados ainda em andamento
+  const revenue = bookings.filter(b=>b.status==='confirmed'||b.status==='approved').reduce((s,b)=>s+paidValue(b),0);
   const pending = bookings.filter(b=>b.status==='pending').length;
 
   // Services breakdown
@@ -3758,7 +3767,8 @@ function renderAdminStats() {
       <div class="stat-card"><div class="num">${total}</div><div class="lbl">Total de Solicitações</div></div>
       <div class="stat-card"><div class="num">${confirmed}</div><div class="lbl">Aprovados / Confirmados</div></div>
       <div class="stat-card"><div class="num">${pending}</div><div class="lbl">Aguardando Aprovação</div></div>
-      <div class="stat-card"><div class="num">${fmtMoney(revenue)}</div><div class="lbl">Receita Projetada</div></div>
+      <div class="stat-card"><div class="num" style="color:var(--green)">${fmtMoney(realRevenue)}</div><div class="lbl">Receita Real (entregues)</div></div>
+      <div class="stat-card"><div class="num">${fmtMoney(revenue)}</div><div class="lbl">Receita Projetada (em andamento)</div></div>
       <div class="stat-card"><div class="num">${unique}</div><div class="lbl">Clientes Únicos</div></div>
       <div class="stat-card"><div class="num">${returning}</div><div class="lbl">Clientes Recorrentes</div></div>
     </div>
@@ -3770,7 +3780,7 @@ function renderAdminStats() {
       <div class="admin-panel">
         <h3>Indicadores de Fidelização</h3>
         <div class="summary-row" style="margin-bottom:.6rem"><strong>Taxa de retorno</strong><span style="font-weight:800;color:var(--blue)">${unique>0?Math.round(returning/unique*100):0}%</span></div>
-        <div class="summary-row" style="margin-bottom:.6rem"><strong>Ticket médio</strong><span style="font-weight:800;color:var(--blue)">${confirmed>0?fmtMoney(Math.round(revenue/confirmed)):'—'}</span></div>
+        <div class="summary-row" style="margin-bottom:.6rem"><strong>Ticket médio</strong><span style="font-weight:800;color:var(--blue)">${(()=>{const completedBks=bookings.filter(b=>b.status==='completed');return completedBks.length>0?fmtMoney(Math.round(realRevenue/completedBks.length)):confirmed>0?fmtMoney(Math.round(revenue/confirmed)):'—';})()}</span></div>
         <div class="summary-row"><strong>Taxa de aprovação</strong><span style="font-weight:800;color:var(--green)">${total>0?Math.round(confirmed/total*100):0}%</span></div>
       </div>
     </div>
@@ -3809,7 +3819,7 @@ function _renderRevenueChart(year) {
     .forEach(b => {
       const d = new Date(b.startDate || b.date);
       if (isNaN(d) || d.getFullYear() !== year) return;
-      monthly[d.getMonth()] += b.finalPrice || b.price || 0;
+      monthly[d.getMonth()] += paidValue(b);
     });
 
   const maxRev = Math.max(...monthly, 1);
