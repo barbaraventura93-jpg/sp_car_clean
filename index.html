@@ -1014,13 +1014,11 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <button class="modal-close" onclick="closeModal('adminBookingModal')">✕</button>
     </div>
     <div class="modal-body">
+      <div class="form-group" style="margin-bottom:1rem">
+        <label>Serviços * <span style="font-weight:400;color:var(--muted)">(selecione um ou mais)</span></label>
+        <div id="abServiceList" style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:.7rem .8rem;background:rgba(255,255,255,.02)"></div>
+      </div>
       <div class="form-row">
-        <div class="form-group">
-          <label>Serviço *</label>
-          <select id="abService" class="form-control" onchange="abUpdatePrice()">
-            <option value="">— selecione o serviço —</option>
-          </select>
-        </div>
         <div class="form-group">
           <label>Porte do veículo</label>
           <select id="abSize" class="form-control" onchange="abUpdatePrice()">
@@ -1028,15 +1026,15 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
             <option value="gr">Grande (SUV/van/pickup)</option>
           </select>
         </div>
+        <div class="form-group">
+          <label>Valor total (R$) *</label>
+          <input type="number" id="abPrice" placeholder="0" min="0" step="10"/>
+        </div>
       </div>
-      <div class="form-row">
+      <div class="form-row full">
         <div class="form-group">
           <label>Data do serviço *</label>
           <input type="date" id="abDate"/>
-        </div>
-        <div class="form-group">
-          <label>Valor cobrado (R$) *</label>
-          <input type="number" id="abPrice" placeholder="0" min="0" step="10"/>
         </div>
       </div>
       <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0"/>
@@ -2370,19 +2368,32 @@ function unblockRange() {
 // ADMIN — AGENDAMENTO MANUAL
 // ============================================================
 function openAdminBooking() {
-  // populate service dropdown
-  const sel = document.getElementById('abService');
-  if (sel && sel.options.length <= 1) {
-    Object.entries(SVCS).forEach(([id, s]) => {
-      const opt = document.createElement('option');
-      opt.value = id;
-      opt.textContent = s.icon + ' ' + s.name;
-      sel.appendChild(opt);
+  // populate service checkboxes grouped by category
+  const list = document.getElementById('abServiceList');
+  if (list && !list.dataset.built) {
+    list.dataset.built = '1';
+    CATS_ORDER.forEach(cat => {
+      const entries = Object.entries(SVCS).filter(([,s]) => s.cat === cat);
+      if (!entries.length) return;
+      const hdr = document.createElement('div');
+      hdr.style.cssText = 'grid-column:1/-1;font-size:.67rem;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-top:.3rem;padding-bottom:.2rem;border-bottom:1px solid var(--border)';
+      hdr.textContent = cat;
+      list.appendChild(hdr);
+      entries.forEach(([id, s]) => {
+        const lbl = document.createElement('label');
+        lbl.style.cssText = 'display:flex;align-items:flex-start;gap:.45rem;cursor:pointer;font-size:.78rem;padding:.3rem .35rem;border-radius:6px;line-height:1.3;transition:background .15s';
+        lbl.onmouseenter = () => lbl.style.background = 'rgba(72,201,245,.07)';
+        lbl.onmouseleave = () => lbl.style.background = '';
+        lbl.innerHTML = `<input type="checkbox" value="${id}" onchange="abUpdatePrice()" style="margin-top:2px;accent-color:var(--accent);width:14px;height:14px;flex-shrink:0"/> <span>${s.icon} ${s.name} <span style="color:var(--muted);font-size:.7rem">R$${s.pq}</span></span>`;
+        list.appendChild(lbl);
+      });
     });
+  } else if (list) {
+    list.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
   }
   // default date = today
   const dateEl = document.getElementById('abDate');
-  if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().split('T')[0];
+  if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
   // reset state
   _abClientUid = null;
   ['abName','abPhone','abEmail','abCar','abPlate','abBairro','abObs'].forEach(id => {
@@ -2393,18 +2404,16 @@ function openAdminBooking() {
   document.getElementById('abStatus').value = 'approved';
   document.getElementById('abSendEmail').checked = true;
   document.getElementById('abSendWa').checked = false;
-  abUpdatePrice();
+  document.getElementById('abPrice').value = '';
   document.getElementById('adminBookingModal').style.display = 'flex';
 }
 
 function abUpdatePrice() {
-  const svcId = document.getElementById('abService')?.value;
-  const size  = document.getElementById('abSize')?.value || 'pq';
+  const size    = document.getElementById('abSize')?.value || 'pq';
+  const checked = [...document.querySelectorAll('#abServiceList input[type=checkbox]:checked')];
+  const total   = checked.reduce((sum, cb) => sum + (SVCS[cb.value]?.[size] || 0), 0);
   const priceEl = document.getElementById('abPrice');
-  if (!priceEl) return;
-  if (svcId && SVCS[svcId]) {
-    priceEl.value = SVCS[svcId][size] || '';
-  }
+  if (priceEl) priceEl.value = total || '';
 }
 
 function abLookupClient() {
@@ -2453,7 +2462,7 @@ function abLookupClient() {
 }
 
 async function submitAdminBooking() {
-  const svcId  = document.getElementById('abService')?.value;
+  const checkedSvcs = [...document.querySelectorAll('#abServiceList input[type=checkbox]:checked')].map(cb => cb.value);
   const size   = document.getElementById('abSize')?.value   || 'pq';
   const date   = document.getElementById('abDate')?.value;
   const price  = parseFloat(document.getElementById('abPrice')?.value) || 0;
@@ -2468,20 +2477,29 @@ async function submitAdminBooking() {
   const sendEmail_ = document.getElementById('abSendEmail')?.checked;
   const sendWa     = document.getElementById('abSendWa')?.checked;
 
-  if (!svcId)  { alert('Selecione o serviço.'); return; }
+  if (!checkedSvcs.length) { alert('Selecione ao menos um serviço.'); return; }
   if (!date)   { alert('Informe a data do serviço.'); return; }
   if (!name)   { alert('Informe o nome do cliente.'); return; }
   if (!phone)  { alert('Informe o telefone.'); return; }
   if (price <= 0) { alert('Informe o valor cobrado.'); return; }
 
-  const svc = SVCS[svcId];
+  // primary service (for backward compat with rest of pipeline)
+  const svcId = checkedSvcs[0];
+  const svc   = SVCS[svcId];
+  // use max daysExtra across all selected services
+  const maxDaysExtra = checkedSvcs.reduce((m, id) => Math.max(m, SVCS[id]?.daysExtra || 0), 0);
+  // label for e-mail / WhatsApp
+  const svcLabel = checkedSvcs.length === 1
+    ? svc.icon + ' ' + svc.name
+    : checkedSvcs.map(id => SVCS[id].icon + ' ' + SVCS[id].name).join('\n  • ');
+
   const now = new Date().toISOString();
   const id  = genId();
 
-  // calc pickup date
+  // calc pickup date using max daysExtra
   const startD = new Date(date + 'T08:00:00');
   const endD   = new Date(startD);
-  endD.setDate(endD.getDate() + (svc.daysExtra || 0));
+  endD.setDate(endD.getDate() + maxDaysExtra);
   const pickup = endD.toISOString().split('T')[0];
 
   const b = {
@@ -2491,7 +2509,9 @@ async function submitAdminBooking() {
     ...(email ? { email } : {}),
     car: car || '', plate: plate || '', bairro: bairro || '',
     ...(obs ? { obs } : {}),
-    service: svcId, carSize: size,
+    service: svcId,
+    ...(checkedSvcs.length > 1 ? { services: checkedSvcs } : {}),
+    carSize: size,
     price, finalPrice: price,
     date, startDate: date, endDate: pickup, pickup,
     submittedAt: now,
@@ -2511,11 +2531,11 @@ async function submitAdminBooking() {
       sendEmail('template_update', {
         to_email: email, to_name: name,
         booking_id: id,
-        service: svc.icon + ' ' + svc.name,
+        service: checkedSvcs.length === 1 ? svc.icon + ' ' + svc.name : '🔧 Pacote de serviços (' + checkedSvcs.length + ')',
         date: new Date(date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long' }),
         status_label: status === 'confirmed' ? 'Confirmado' : 'Aprovado — aguardando confirmação',
         price: 'R$ ' + price.toFixed(2).replace('.',','),
-        msg: obs || 'Agendamento registrado pela equipe SP Car Clean.',
+        msg: (checkedSvcs.length > 1 ? 'Serviços incluídos:\n  • ' + checkedSvcs.map(id => SVCS[id].icon + ' ' + SVCS[id].name).join('\n  • ') + '\n\n' : '') + (obs || 'Agendamento registrado pela equipe SP Car Clean.'),
       });
     }
     closeModal('adminBookingModal');
@@ -2525,9 +2545,11 @@ async function submitAdminBooking() {
       const waMsg = encodeURIComponent(
         '✅ Olá ' + name + ', seu agendamento foi registrado!\n\n' +
         '📋 ID: ' + id + '\n' +
-        '🔧 Serviço: ' + svc.icon + ' ' + svc.name + '\n' +
+        (checkedSvcs.length === 1
+          ? '🔧 Serviço: ' + svc.icon + ' ' + svc.name
+          : '🔧 Serviços:\n  • ' + checkedSvcs.map(id => SVCS[id].icon + ' ' + SVCS[id].name).join('\n  • ')) + '\n' +
         '📅 Data: ' + new Date(date + 'T12:00:00').toLocaleDateString('pt-BR') + '\n' +
-        '💰 Valor: R$ ' + price.toFixed(2).replace('.',',') + '\n\n' +
+        '💰 Valor total: R$ ' + price.toFixed(2).replace('.',',') + '\n\n' +
         'Qualquer dúvida, estamos à disposição! 🚗✨'
       );
       window.open('https://wa.me/55' + waPhone + '?text=' + waMsg, '_blank');
