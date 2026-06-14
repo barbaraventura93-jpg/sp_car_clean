@@ -1116,10 +1116,15 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <div class="form-row full">
         <div class="form-group">
           <label>E-mail <span style="color:var(--muted);font-weight:400">(busca conta automaticamente)</span></label>
-          <input id="abEmail" type="email" placeholder="cliente@email.com" oninput="abLookupClient()"/>
+          <input id="abEmail" type="email" placeholder="cliente@email.com" onblur="abLookupClient()"/>
         </div>
       </div>
       <div id="abClientInfo" style="display:none;border-radius:8px;padding:.6rem 1rem;margin-bottom:.8rem;font-size:.82rem"></div>
+      <div id="abFleetPicker" style="display:none;margin-bottom:.8rem">
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.45rem">Frota cadastrada — clique para selecionar o veículo desta visita:</div>
+        <div id="abFleetCards" class="vehicle-cards"></div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:.45rem">Ou preencha manualmente abaixo para cadastrar um veículo novo.</div>
+      </div>
       <div class="form-row">
         <div class="form-group"><label>Veículo</label><input id="abCar" placeholder="Ex: Honda Civic prata 2020"/></div>
         <div class="form-group"><label>Placa</label><input id="abPlate" placeholder="ABC-1234" oninput="this.value=this.value.toUpperCase()"/></div>
@@ -1285,6 +1290,8 @@ const _COMBOS = {};
 let _authUser = null;
 let _clientProfile = null;
 let _abClientUid   = null;
+let _abFleet       = [];   // frota carregada no modal admin
+let _fFleet        = [];   // frota carregada no formulário público
 let _clientNotes = {};
 let _clientNotesRef = null;
 let _geoCache = {};
@@ -1663,7 +1670,13 @@ function renderBookingStep() {
       </div>
       <div class="step-label">Seus dados para contato</div>
       <div class="form-row"><div class="form-group"><label>Nome completo</label><input id="fName" placeholder="João da Silva"/></div><div class="form-group"><label>Telefone / WhatsApp</label><input id="fPhone" placeholder="(11) 99999-9999"/></div></div>
-      <div class="form-row full"><div class="form-group"><label>E-mail</label><input id="fEmail" type="email" placeholder="joao@email.com"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>E-mail</label><input id="fEmail" type="email" placeholder="joao@email.com" onblur="fLookupClient()"/></div></div>
+      <div id="fClientInfo" style="display:none;border-radius:8px;padding:.55rem .9rem;margin-bottom:.7rem;font-size:.8rem"></div>
+      <div id="fFleetPicker" style="display:none;margin-bottom:.8rem">
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.45rem">Seus veículos anteriores — clique para selecionar:</div>
+        <div id="fFleetCards" class="vehicle-cards"></div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:.45rem">Ou preencha manualmente abaixo para adicionar um veículo novo.</div>
+      </div>
       <div class="form-row"><div class="form-group"><label>Veículo (modelo/ano)</label><input id="fCar" placeholder="Honda Civic 2020"/></div><div class="form-group"><label>Placa</label><input id="fPlate" placeholder="ABC-1234"/></div></div>
       <div class="form-row"><div class="form-group"><label>Bairro *</label><input id="fBairro" placeholder="Moema, Brooklin, Vila Mariana..."/></div><div class="form-group"><label>CEP (opcional)</label><input id="fCep" placeholder="04543-000" maxlength="9" oninput="fmtCep(this)"/></div></div>
       <div class="form-row full"><div class="form-group"><label>Observações (opcional)</label><textarea id="fObs" placeholder="Informe alguma particularidade do veículo, manchas específicas, etc."></textarea></div></div>
@@ -2708,6 +2721,9 @@ function openAdminBooking() {
   });
   const info = document.getElementById('abClientInfo');
   if (info) { info.style.display = 'none'; info.textContent = ''; }
+  const fleet = document.getElementById('abFleetPicker');
+  if (fleet) fleet.style.display = 'none';
+  _abFleet = [];
   document.getElementById('abStatus').value = 'approved';
   document.getElementById('abSendEmail').checked = true;
   document.getElementById('abSendWa').checked = false;
@@ -2726,46 +2742,175 @@ function abUpdatePrice() {
 function abLookupClient() {
   const email = (document.getElementById('abEmail')?.value || '').trim().toLowerCase();
   const info  = document.getElementById('abClientInfo');
+  const fleet = document.getElementById('abFleetPicker');
   _abClientUid = null;
   if (!info) return;
-  if (!email || !email.includes('@')) { info.style.display = 'none'; return; }
+  if (!email || !email.includes('@')) {
+    info.style.display = 'none';
+    if (fleet) fleet.style.display = 'none';
+    return;
+  }
 
-  // 1) check clientProfiles
+  // Coleta todos os veículos únicos (por placa) associados ao e-mail, do mais recente ao mais antigo
+  function buildFleet() {
+    const seen = new Set();
+    return _bookings
+      .filter(b => b.email?.toLowerCase() === email && (b.car || b.plate))
+      .sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''))
+      .filter(b => {
+        const key = (b.plate || b.car || '').trim().toUpperCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map(b => ({ car: b.car || '', plate: b.plate || '', carSize: b.carSize || '' }));
+  }
+
+  function showAdminFleet(vehicles) {
+    if (!fleet) return;
+    const cards = document.getElementById('abFleetCards');
+    if (!vehicles.length || !cards) { fleet.style.display = 'none'; return; }
+    _abFleet = vehicles;
+    cards.innerHTML = vehicles.map((v, i) => `
+      <div class="vehicle-card" style="cursor:pointer;border:1px solid var(--border);transition:border-color .15s" onclick="abPickVehicle(${i},this)">
+        <div class="vehicle-card-label">${esc(v.car || 'Veículo')}</div>
+        ${v.plate ? `<div class="vehicle-card-plate">${esc(v.plate)}</div>` : ''}
+      </div>`).join('');
+    fleet.style.display = 'block';
+  }
+
   if (_clientProfilesRef) {
     _clientProfilesRef.orderByChild('email').equalTo(email).once('value', snap => {
       if (snap.exists()) {
         const data = Object.values(snap.val())[0];
         _abClientUid = Object.keys(snap.val())[0];
         info.style.cssText = 'display:block;background:rgba(72,201,245,.08);border:1px solid var(--accent);border-radius:8px;padding:.6rem 1rem;margin-bottom:.8rem;font-size:.82rem;color:var(--accent)';
-        info.innerHTML = '✅ Cliente encontrado: <strong>' + (data.name||email) + '</strong> — pontos de fidelidade vinculados automaticamente.';
+        info.innerHTML = '✅ Cliente encontrado: <strong>' + (data.name || email) + '</strong> — pontos de fidelidade vinculados automaticamente.';
         if (data.name  && !document.getElementById('abName').value)  document.getElementById('abName').value  = data.name;
         if (data.phone && !document.getElementById('abPhone').value) document.getElementById('abPhone').value = data.phone;
       } else {
-        // 2) fallback: search bookings by email
         const match = _bookings.find(b => b.email?.toLowerCase() === email);
         if (match) {
           info.style.cssText = 'display:block;background:rgba(255,200,100,.08);border:1px solid var(--warn,#f6a623);border-radius:8px;padding:.6rem 1rem;margin-bottom:.8rem;font-size:.82rem;color:var(--warn,#f6a623)';
           info.innerHTML = '⚠️ Histórico encontrado por e-mail, mas cliente <strong>não tem conta</strong>. Pontos serão vinculados se ele criar conta depois.';
-          if (match.name  && !document.getElementById('abName').value)  document.getElementById('abName').value  = match.name;
-          if (match.phone && !document.getElementById('abPhone').value) document.getElementById('abPhone').value = match.phone;
-          if (match.car   && !document.getElementById('abCar').value)   document.getElementById('abCar').value   = match.car;
-          if (match.plate && !document.getElementById('abPlate').value) document.getElementById('abPlate').value = match.plate;
+          if (match.name   && !document.getElementById('abName').value)   document.getElementById('abName').value   = match.name;
+          if (match.phone  && !document.getElementById('abPhone').value)  document.getElementById('abPhone').value  = match.phone;
           if (match.bairro && !document.getElementById('abBairro').value) document.getElementById('abBairro').value = match.bairro;
         } else {
           info.style.cssText = 'display:block;background:rgba(150,150,150,.07);border:1px solid var(--border);border-radius:8px;padding:.6rem 1rem;margin-bottom:.8rem;font-size:.82rem;color:var(--muted)';
           info.innerHTML = 'ℹ️ E-mail não encontrado na base. Será criado como novo cliente.';
         }
       }
+      showAdminFleet(buildFleet());
     });
   } else {
-    // offline fallback
+    // sem Firebase (offline) — usa bookings em memória
     const match = _bookings.find(b => b.email?.toLowerCase() === email);
     if (match) {
       _abClientUid = match.clientUid || null;
       if (match.name  && !document.getElementById('abName').value)  document.getElementById('abName').value  = match.name;
       if (match.phone && !document.getElementById('abPhone').value) document.getElementById('abPhone').value = match.phone;
     }
+    showAdminFleet(buildFleet());
   }
+}
+
+function abPickVehicle(idx, el) {
+  const v = _abFleet[idx];
+  if (!v) return;
+  document.getElementById('abCar').value   = v.car   || '';
+  document.getElementById('abPlate').value = v.plate || '';
+  if (v.carSize) { document.getElementById('abSize').value = v.carSize; abUpdatePrice(); }
+  document.querySelectorAll('#abFleetCards .vehicle-card').forEach(c => c.style.borderColor = 'var(--border)');
+  el.style.borderColor = 'var(--accent)';
+}
+
+// ── Pré-preenchimento por e-mail no formulário público (clientes sem login) ──
+function fLookupClient() {
+  // Clientes já logados recebem pré-preenchimento ao abrir o modal; não duplicar aqui
+  if (isClient()) return;
+  const email = (document.getElementById('fEmail')?.value || '').trim().toLowerCase();
+  const info  = document.getElementById('fClientInfo');
+  const fleet = document.getElementById('fFleetPicker');
+  if (!email || !email.includes('@')) {
+    if (info)  info.style.display  = 'none';
+    if (fleet) fleet.style.display = 'none';
+    return;
+  }
+
+  const fill = (id, val) => { const el = document.getElementById(id); if (el && !el.value && val) el.value = val; };
+
+  // Veículos únicos do histórico desse e-mail (mais recente primeiro, deduplicado por placa)
+  function buildFleet() {
+    const seen = new Set();
+    return _bookings
+      .filter(b => b.email?.toLowerCase() === email && (b.car || b.plate))
+      .sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''))
+      .filter(b => {
+        const key = (b.plate || b.car || '').trim().toUpperCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map(b => ({ car: b.car || '', plate: b.plate || '' }));
+  }
+
+  function showPublicFleet(vehicles) {
+    if (!fleet) return;
+    const cards = document.getElementById('fFleetCards');
+    if (!vehicles.length || !cards) { fleet.style.display = 'none'; return; }
+    _fFleet = vehicles;
+    cards.innerHTML = vehicles.map((v, i) => `
+      <div class="vehicle-card" style="cursor:pointer;border:1px solid var(--border);transition:border-color .15s" onclick="fPickVehicle(${i},this)">
+        <div class="vehicle-card-label">${esc(v.car || 'Veículo')}</div>
+        ${v.plate ? `<div class="vehicle-card-plate">${esc(v.plate)}</div>` : ''}
+      </div>`).join('');
+    fleet.style.display = 'block';
+  }
+
+  // Tenta clientProfiles (pode falhar para usuários não autenticados; captura o erro silenciosamente)
+  const tryProfile = _clientProfilesRef
+    ? _clientProfilesRef.orderByChild('email').equalTo(email).once('value')
+        .then(snap => {
+          if (!snap.exists()) return null;
+          const d = Object.values(snap.val())[0];
+          return { name: d.name || '', phone: d.phone || '' }; // somente dados básicos, sem pontos/financeiro
+        })
+        .catch(() => null)
+    : Promise.resolve(null);
+
+  tryProfile.then(profile => {
+    const match    = _bookings.find(b => b.email?.toLowerCase() === email);
+    const vehicles = buildFleet();
+    if (!profile && !match && !vehicles.length) return; // e-mail desconhecido
+
+    if (profile) {
+      fill('fName',  profile.name);
+      fill('fPhone', profile.phone);
+    } else if (match) {
+      fill('fName',  match.name);
+      fill('fPhone', match.phone);
+    }
+    // bairro e CEP do agendamento mais recente
+    if (match) {
+      fill('fBairro', match.bairro);
+      fill('fCep',    match.cep);
+    }
+    if ((profile || match) && info) {
+      info.style.cssText = 'display:block;background:rgba(72,201,245,.06);border:1px solid var(--accent);border-radius:8px;padding:.55rem .9rem;margin-bottom:.7rem;font-size:.8rem;color:var(--accent)';
+      info.innerHTML = '✅ Encontramos seus dados anteriores e preenchemos automaticamente.';
+    }
+    showPublicFleet(vehicles);
+  });
+}
+
+function fPickVehicle(idx, el) {
+  const v = _fFleet[idx];
+  if (!v) return;
+  document.getElementById('fCar').value   = v.car   || '';
+  document.getElementById('fPlate').value = v.plate || '';
+  document.querySelectorAll('#fFleetCards .vehicle-card').forEach(c => c.style.borderColor = 'var(--border)');
+  el.style.borderColor = 'var(--accent)';
 }
 
 async function submitAdminBooking() {
@@ -4843,22 +4988,19 @@ function renderAdminFeedback() {
           👤 ${escHtml(f.clientName)} &nbsp;|&nbsp; 🔧 ${escHtml(f.service)} &nbsp;|&nbsp; 📅 ${f.date || ''}
           &nbsp;|&nbsp; 🆔 ${escHtml(f.bookingId || f.id)}
         </div>
-        ${showApprove ? `
-        <div style="display:flex;gap:.5rem;margin-top:.8rem">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin-top:.8rem">
+          ${showApprove ? `
           <button class="btn-approve" style="font-size:.75rem;padding:.35rem .9rem" onclick="approveFeedback('${f.id}')">✅ Publicar</button>
-          <button class="btn-reject" style="font-size:.75rem;padding:.35rem .9rem" onclick="hideFeedback('${f.id}')">🚫 Ignorar</button>
-        </div>` : ''}
-        ${f.status === 'approved' ? `
-        <div style="margin-top:.6rem;display:flex;align-items:center;gap:.8rem">
+          <button class="btn-reject" style="font-size:.75rem;padding:.35rem .9rem" onclick="hideFeedback('${f.id}')">🚫 Ignorar</button>` : ''}
+          ${f.status === 'approved' ? `
           <span style="font-size:.72rem;color:#10B981;font-weight:700">✅ Publicado</span>
-          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="hideFeedback('${f.id}')">Remover</button>
-        </div>` : ''}
-        ${f.status === 'internal' ? `<div style="margin-top:.5rem"><span style="font-size:.72rem;color:var(--orange);font-weight:700">⚠️ Avaliação negativa — não publicada</span></div>` : ''}
-        ${f.status === 'hidden' ? `
-        <div style="margin-top:.5rem;display:flex;align-items:center;gap:.8rem">
+          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="hideFeedback('${f.id}')">Remover</button>` : ''}
+          ${f.status === 'internal' ? `<span style="font-size:.72rem;color:var(--orange);font-weight:700">⚠️ Avaliação negativa — não publicada</span>` : ''}
+          ${f.status === 'hidden' ? `
           <span style="font-size:.72rem;color:var(--muted)">🚫 Ignorada</span>
-          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="approveFeedback('${f.id}')">Publicar mesmo assim</button>
-        </div>` : ''}
+          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="approveFeedback('${f.id}')">Publicar mesmo assim</button>` : ''}
+          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem;color:var(--red,#ef4444);margin-left:auto" onclick="deleteFeedback('${f.id}')">🗑 Excluir</button>
+        </div>
       </div>`;
 
     el.innerHTML = `<h2>⭐ Avaliações dos Clientes</h2>
@@ -4882,6 +5024,14 @@ function hideFeedback(id) {
   _feedbackRef.child(id).update({ status: 'hidden' })
     .then(() => renderAdminFeedback())
     .catch(e => alert('Erro: ' + e.message));
+}
+
+function deleteFeedback(id) {
+  if (!_feedbackRef) return;
+  if (!confirm('Excluir esta avaliação permanentemente? Esta ação não pode ser desfeita.')) return;
+  _feedbackRef.child(id).remove()
+    .then(() => renderAdminFeedback())
+    .catch(e => alert('Erro ao excluir: ' + e.message));
 }
 
 function renderAdminConfig() {
