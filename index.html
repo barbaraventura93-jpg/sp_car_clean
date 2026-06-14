@@ -443,6 +443,7 @@ footer p{font-size:.72rem;color:var(--muted)}
 .detail-modal{max-width:560px}
 #detailModal{z-index:3000}
 #checkinModal{z-index:3500}
+#adminBookingModal{z-index:3000}
 .approve-form{display:flex;flex-direction:column;gap:1rem}
 
 @media(max-width:880px){
@@ -1003,6 +1004,88 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
   </div>
 </div>
 
+<!-- ===================================================
+     ADMIN — NOVO AGENDAMENTO MANUAL
+=================================================== -->
+<div id="adminBookingModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:600px;max-height:92vh;overflow-y:auto">
+    <div class="modal-hdr">
+      <div><h3>➕ Novo Agendamento</h3><div class="sub">Registrar cliente presencial ou via WhatsApp/telefone</div></div>
+      <button class="modal-close" onclick="closeModal('adminBookingModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Serviço *</label>
+          <select id="abService" class="form-control" onchange="abUpdatePrice()">
+            <option value="">— selecione o serviço —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Porte do veículo</label>
+          <select id="abSize" class="form-control" onchange="abUpdatePrice()">
+            <option value="pq">Pequeno (hatch/sedan)</option>
+            <option value="gr">Grande (SUV/van/pickup)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Data do serviço *</label>
+          <input type="date" id="abDate"/>
+        </div>
+        <div class="form-group">
+          <label>Valor cobrado (R$) *</label>
+          <input type="number" id="abPrice" placeholder="0" min="0" step="10"/>
+        </div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0"/>
+      <div class="form-row">
+        <div class="form-group"><label>Nome do cliente *</label><input id="abName" placeholder="Nome completo"/></div>
+        <div class="form-group"><label>Telefone *</label><input id="abPhone" placeholder="(11) 99999-9999"/></div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group">
+          <label>E-mail <span style="color:var(--muted);font-weight:400">(busca conta automaticamente)</span></label>
+          <input id="abEmail" type="email" placeholder="cliente@email.com" oninput="abLookupClient()"/>
+        </div>
+      </div>
+      <div id="abClientInfo" style="display:none;border-radius:8px;padding:.6rem 1rem;margin-bottom:.8rem;font-size:.82rem"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Veículo</label><input id="abCar" placeholder="Ex: Honda Civic prata 2020"/></div>
+        <div class="form-group"><label>Placa</label><input id="abPlate" placeholder="ABC-1234" oninput="this.value=this.value.toUpperCase()"/></div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group"><label>Bairro / Referência</label><input id="abBairro" placeholder="Bairro onde o cliente reside"/></div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group"><label>Observações</label><textarea id="abObs" rows="2" placeholder="Detalhes extras, condição do veículo, acordos..."></textarea></div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0"/>
+      <div class="form-row full">
+        <div class="form-group">
+          <label>Status inicial</label>
+          <select id="abStatus" class="form-control">
+            <option value="approved">✅ Aprovado — cliente ainda confirma/paga</option>
+            <option value="confirmed">🔒 Confirmado — já combinado/pago</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:.5rem;margin-top:.6rem">
+        <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.83rem;color:var(--muted)">
+          <input type="checkbox" id="abSendEmail" checked style="width:15px;height:15px;accent-color:var(--accent)"/>
+          Enviar e-mail de confirmação ao cliente
+        </label>
+        <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.83rem;color:var(--muted)">
+          <input type="checkbox" id="abSendWa" style="width:15px;height:15px;accent-color:var(--accent)"/>
+          Abrir WhatsApp com resumo do agendamento
+        </label>
+      </div>
+      <button class="btn-primary btn-full" style="margin-top:1.4rem" onclick="submitAdminBooking()">✅ Criar Agendamento</button>
+    </div>
+  </div>
+</div>
+
 <div id="detailModal" class="modal-overlay" style="display:none">
   <div class="modal-box detail-modal">
     <div class="modal-hdr"><div><h3>Detalhes do Agendamento</h3></div><button class="modal-close" onclick="closeModal('detailModal')">✕</button></div>
@@ -1128,6 +1211,7 @@ let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesR
 const _COMBOS = {};
 let _authUser = null;
 let _clientProfile = null;
+let _abClientUid   = null;
 let _clientNotes = {};
 let _clientNotesRef = null;
 let _geoCache = {};
@@ -2281,12 +2365,183 @@ function unblockRange() {
   renderAdminCalendar();
 }
 
+// ============================================================
+// ADMIN — AGENDAMENTO MANUAL
+// ============================================================
+function openAdminBooking() {
+  // populate service dropdown
+  const sel = document.getElementById('abService');
+  if (sel && sel.options.length <= 1) {
+    Object.entries(SVCS).forEach(([id, s]) => {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = s.icon + ' ' + s.name;
+      sel.appendChild(opt);
+    });
+  }
+  // default date = today
+  const dateEl = document.getElementById('abDate');
+  if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().split('T')[0];
+  // reset state
+  _abClientUid = null;
+  ['abName','abPhone','abEmail','abCar','abPlate','abBairro','abObs'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const info = document.getElementById('abClientInfo');
+  if (info) { info.style.display = 'none'; info.textContent = ''; }
+  document.getElementById('abStatus').value = 'approved';
+  document.getElementById('abSendEmail').checked = true;
+  document.getElementById('abSendWa').checked = false;
+  abUpdatePrice();
+  document.getElementById('adminBookingModal').style.display = 'flex';
+}
+
+function abUpdatePrice() {
+  const svcId = document.getElementById('abService')?.value;
+  const size  = document.getElementById('abSize')?.value || 'pq';
+  const priceEl = document.getElementById('abPrice');
+  if (!priceEl) return;
+  if (svcId && SVCS[svcId]) {
+    priceEl.value = SVCS[svcId][size] || '';
+  }
+}
+
+function abLookupClient() {
+  const email = (document.getElementById('abEmail')?.value || '').trim().toLowerCase();
+  const info  = document.getElementById('abClientInfo');
+  _abClientUid = null;
+  if (!info) return;
+  if (!email || !email.includes('@')) { info.style.display = 'none'; return; }
+
+  // 1) check clientProfiles
+  if (_clientProfilesRef) {
+    _clientProfilesRef.orderByChild('email').equalTo(email).once('value', snap => {
+      if (snap.exists()) {
+        const data = Object.values(snap.val())[0];
+        _abClientUid = Object.keys(snap.val())[0];
+        info.style.cssText = 'display:block;background:rgba(72,201,245,.08);border:1px solid var(--accent);border-radius:8px;padding:.6rem 1rem;margin-bottom:.8rem;font-size:.82rem;color:var(--accent)';
+        info.innerHTML = '✅ Cliente encontrado: <strong>' + (data.name||email) + '</strong> — pontos de fidelidade vinculados automaticamente.';
+        if (data.name  && !document.getElementById('abName').value)  document.getElementById('abName').value  = data.name;
+        if (data.phone && !document.getElementById('abPhone').value) document.getElementById('abPhone').value = data.phone;
+      } else {
+        // 2) fallback: search bookings by email
+        const match = _bookings.find(b => b.email?.toLowerCase() === email);
+        if (match) {
+          info.style.cssText = 'display:block;background:rgba(255,200,100,.08);border:1px solid var(--warn,#f6a623);border-radius:8px;padding:.6rem 1rem;margin-bottom:.8rem;font-size:.82rem;color:var(--warn,#f6a623)';
+          info.innerHTML = '⚠️ Histórico encontrado por e-mail, mas cliente <strong>não tem conta</strong>. Pontos serão vinculados se ele criar conta depois.';
+          if (match.name  && !document.getElementById('abName').value)  document.getElementById('abName').value  = match.name;
+          if (match.phone && !document.getElementById('abPhone').value) document.getElementById('abPhone').value = match.phone;
+          if (match.car   && !document.getElementById('abCar').value)   document.getElementById('abCar').value   = match.car;
+          if (match.plate && !document.getElementById('abPlate').value) document.getElementById('abPlate').value = match.plate;
+          if (match.bairro && !document.getElementById('abBairro').value) document.getElementById('abBairro').value = match.bairro;
+        } else {
+          info.style.cssText = 'display:block;background:rgba(150,150,150,.07);border:1px solid var(--border);border-radius:8px;padding:.6rem 1rem;margin-bottom:.8rem;font-size:.82rem;color:var(--muted)';
+          info.innerHTML = 'ℹ️ E-mail não encontrado na base. Será criado como novo cliente.';
+        }
+      }
+    });
+  } else {
+    // offline fallback
+    const match = _bookings.find(b => b.email?.toLowerCase() === email);
+    if (match) {
+      _abClientUid = match.clientUid || null;
+      if (match.name  && !document.getElementById('abName').value)  document.getElementById('abName').value  = match.name;
+      if (match.phone && !document.getElementById('abPhone').value) document.getElementById('abPhone').value = match.phone;
+    }
+  }
+}
+
+async function submitAdminBooking() {
+  const svcId  = document.getElementById('abService')?.value;
+  const size   = document.getElementById('abSize')?.value   || 'pq';
+  const date   = document.getElementById('abDate')?.value;
+  const price  = parseFloat(document.getElementById('abPrice')?.value) || 0;
+  const name   = document.getElementById('abName')?.value.trim();
+  const phone  = document.getElementById('abPhone')?.value.trim();
+  const email  = document.getElementById('abEmail')?.value.trim();
+  const car    = document.getElementById('abCar')?.value.trim();
+  const plate  = document.getElementById('abPlate')?.value.trim();
+  const bairro = document.getElementById('abBairro')?.value.trim();
+  const obs    = document.getElementById('abObs')?.value.trim();
+  const status = document.getElementById('abStatus')?.value || 'approved';
+  const sendEmail_ = document.getElementById('abSendEmail')?.checked;
+  const sendWa     = document.getElementById('abSendWa')?.checked;
+
+  if (!svcId)  { alert('Selecione o serviço.'); return; }
+  if (!date)   { alert('Informe a data do serviço.'); return; }
+  if (!name)   { alert('Informe o nome do cliente.'); return; }
+  if (!phone)  { alert('Informe o telefone.'); return; }
+  if (price <= 0) { alert('Informe o valor cobrado.'); return; }
+
+  const svc = SVCS[svcId];
+  const now = new Date().toISOString();
+  const id  = genId();
+
+  // calc pickup date
+  const startD = new Date(date + 'T08:00:00');
+  const endD   = new Date(startD);
+  endD.setDate(endD.getDate() + (svc.daysExtra || 0));
+  const pickup = endD.toISOString().split('T')[0];
+
+  const b = {
+    id,
+    status,
+    name, phone,
+    ...(email ? { email } : {}),
+    car: car || '', plate: plate || '', bairro: bairro || '',
+    ...(obs ? { obs } : {}),
+    service: svcId, carSize: size,
+    price, finalPrice: price,
+    date, startDate: date, endDate: pickup, pickup,
+    submittedAt: now,
+    approvedAt: now,
+    createdByAdmin: true,
+    ...(status === 'confirmed' ? { confirmedAt: now } : {}),
+    ...(_abClientUid ? { clientUid: _abClientUid } : {}),
+  };
+
+  try {
+    await _bookingsRef.child(id).set(b);
+    if (status === 'confirmed' && _abClientUid) {
+      _awardPoints(b);
+    }
+    if (sendEmail_ && email) {
+      sendEmail('template_update', {
+        to_email: email, to_name: name,
+        booking_id: id,
+        service: svc.icon + ' ' + svc.name,
+        date: new Date(date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long' }),
+        status_label: status === 'confirmed' ? 'Confirmado' : 'Aprovado — aguardando confirmação',
+        price: 'R$ ' + price.toFixed(2).replace('.',','),
+        msg: obs || 'Agendamento registrado pela equipe SP Car Clean.',
+      });
+    }
+    closeModal('adminBookingModal');
+    renderAdminBookings();
+    if (sendWa && phone) {
+      const waPhone = phone.replace(/\D/g, '');
+      const waMsg = encodeURIComponent(
+        '✅ Olá ' + name + ', seu agendamento foi registrado!\n\n' +
+        '📋 ID: ' + id + '\n' +
+        '🔧 Serviço: ' + svc.icon + ' ' + svc.name + '\n' +
+        '📅 Data: ' + new Date(date + 'T12:00:00').toLocaleDateString('pt-BR') + '\n' +
+        '💰 Valor: R$ ' + price.toFixed(2).replace('.',',') + '\n\n' +
+        'Qualquer dúvida, estamos à disposição! 🚗✨'
+      );
+      window.open('https://wa.me/55' + waPhone + '?text=' + waMsg, '_blank');
+    }
+  } catch(err) {
+    console.error('submitAdminBooking', err);
+    alert('Erro ao salvar agendamento: ' + err.message);
+  }
+}
+
 function renderAdminBookings() {
   const bookings = getBookings();
   const filterEl = `<div style="display:flex;gap:.5rem;margin-bottom:1.2rem;flex-wrap:wrap">
     ${['all','pending','approved','confirmed','completed','rejected','cancelled'].map(f=>`<button onclick="filterBookings('${f}',this)" class="${f==='all'?'btn-primary':'btn-ghost'}" style="font-size:.72rem;padding:.4rem 1rem" id="filter-${f}">${{all:'Todos',pending:'⏳ Pendentes',approved:'✅ Aprovados',confirmed:'🔒 Confirmados',completed:'🏁 Concluídos',rejected:'❌ Rejeitados',cancelled:'🚫 Cancelados'}[f]}</button>`).join('')}
   </div>`;
-  document.getElementById('adminContent').innerHTML = `<h2>📋 Agendamentos</h2>${filterEl}<div id="bookingsList"></div>`;
+  document.getElementById('adminContent').innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.8rem;margin-bottom:1.2rem"><h2 style="margin:0">📋 Agendamentos</h2><button class="btn-primary" onclick="openAdminBooking()" style="font-size:.8rem;padding:.5rem 1.2rem">➕ Novo agendamento</button></div>${filterEl}<div id="bookingsList"></div>`;
   renderBookingsList('all');
 }
 
