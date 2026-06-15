@@ -1321,6 +1321,7 @@ let _surveyBookingData = null;
 function escHtml(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+const esc = escHtml;
 
 const isAdmin  = () => _authUser != null && _authUser.email === CFG.adminEmail;
 const isClient = () => _authUser != null && _authUser.email !== CFG.adminEmail;
