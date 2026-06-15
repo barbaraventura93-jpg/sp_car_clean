@@ -1076,6 +1076,19 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 </div>
 
 <!-- ===================================================
+     ADMIN — INSUMO (ADD / EDIT)
+=================================================== -->
+<div id="stockProductModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-hdr">
+      <div><h3>📦 Insumo</h3></div>
+      <button class="modal-close" onclick="closeModal('stockProductModal')">✕</button>
+    </div>
+    <div class="modal-body" id="stockProductModalBody"></div>
+  </div>
+</div>
+
+<!-- ===================================================
      ADMIN — NOVO AGENDAMENTO MANUAL
 =================================================== -->
 <div id="adminBookingModal" class="modal-overlay" style="display:none">
@@ -1200,6 +1213,9 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <div class="admin-tab" onclick="switchAdminTab('servicos',this)" id="tab-servicos">
         <span class="admin-tab-icon">🔧</span><span>&nbsp;Serviços</span>
       </div>
+      <div class="admin-tab" onclick="switchAdminTab('estoque',this)" id="tab-estoque">
+        <span class="admin-tab-icon">📦</span><span>&nbsp;Estoque</span>
+      </div>
       <div class="admin-tab" onclick="switchAdminTab('galeria',this)" id="tab-galeria">
         <span class="admin-tab-icon">📸</span><span>&nbsp;Galeria</span>
       </div>
@@ -1285,7 +1301,7 @@ let _checkinPhotos    = {};
 
 let _bookings = [];
 let _blocked  = [];
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef;
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef, _stockRef, _stockRecipesRef;
 const _COMBOS = {};
 let _authUser = null;
 let _clientProfile = null;
@@ -2627,6 +2643,7 @@ function switchAdminTab(tab, el) {
   else if(tab==='clientes') renderAdminClients();
   else if(tab==='combos') renderAdminCombos();
   else if(tab==='servicos') renderAdminServices();
+  else if(tab==='estoque')  renderAdminEstoque();
   else if(tab==='galeria') renderAdminGaleria();
   else if(tab==='espera') renderAdminWaitlist();
   else if(tab==='avaliacoes') renderAdminFeedback();
@@ -3475,6 +3492,7 @@ async function markCompleted(id) {
   if (!_bookingsRef) { alert('Firebase não conectado.'); return; }
 
   await _bookingsRef.child(id).update({ status: 'completed', completedAt: new Date().toISOString() });
+  deductStock(b); // deduz insumos do estoque em background
 
   const surveyLink = `${window.location.origin}/?avaliar=${id}`;
   const svcName = SVCS[b.service]?.name || b.service || 'Serviço';
@@ -5034,6 +5052,326 @@ function deleteFeedback(id) {
     .catch(e => alert('Erro ao excluir: ' + e.message));
 }
 
+// ============================================================
+// ADMIN — ESTOQUE
+// ============================================================
+const STOCK_DEFAULTS = {
+  'sabao-sujeira':          { name: 'Sabão Sujeira',                        unit: 'ml', qty: 0, costPerUnit: 0, minQty: 500  },
+  'desengraxante':          { name: 'Desengraxante',                        unit: 'ml', qty: 0, costPerUnit: 0, minQty: 500  },
+  'verniz-motor':           { name: 'Verniz de Motor',                      unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
+  'mo':                     { name: 'Mão de Obra',                          unit: 'h',  qty: 0, costPerUnit: 0, minQty: 0    },
+  'shampoo-ph':             { name: 'Shampoo pH Neutro',                    unit: 'ml', qty: 0, costPerUnit: 0, minQty: 500  },
+  'pretinho':               { name: 'Pretinho',                             unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
+  'limpa-rodas':            { name: 'Limpa Rodas (Descontaminante ferroso)', unit: 'ml', qty: 0, costPerUnit: 0, minQty: 200  },
+  'revitalizador-plastico': { name: 'Revitalizador de plástico',            unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
+  'flotador-apc':           { name: 'Flotador (APC)',                       unit: 'ml', qty: 0, costPerUnit: 0, minQty: 1000 },
+  'bactericida':            { name: 'Bactericida/Sanitizante',              unit: 'ml', qty: 0, costPerUnit: 0, minQty: 200  },
+  'limpador-couro':         { name: 'Limpador de couro',                    unit: 'ml', qty: 0, costPerUnit: 0, minQty: 200  },
+  'hidratante-couro':       { name: 'Hidratante / Selante de couro',        unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
+  'cera-corte':             { name: 'Cera para Corte',                      unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
+  'cera-refino':            { name: 'Cera de Refino e Lustre',              unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
+  'ipa':                    { name: 'Álcool Isopropílico (IPA)',             unit: 'ml', qty: 0, costPerUnit: 0, minQty: 300  },
+  'selante-sintetico':      { name: 'Selante sintético',                    unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
+  'polidor-vidro':          { name: 'Polidor de Vidro',                     unit: 'ml', qty: 0, costPerUnit: 0, minQty: 50   },
+  'resina-estrutural':      { name: 'Resina estrutural',                    unit: 'ml', qty: 0, costPerUnit: 0, minQty: 5    },
+  'resina-acabamento':      { name: 'Resina de acabamento',                 unit: 'ml', qty: 0, costPerUnit: 0, minQty: 5    },
+};
+
+const RECIPE_DEFAULTS = {
+  'lavagem-motor': {
+    'sabao-sujeira':  { pq: 300, gr: 500 },
+    'desengraxante':  { pq: 400, gr: 700 },
+    'verniz-motor':   { pq: 50,  gr: 80  },
+    'mo':             { pq: 1,   gr: 1   },
+  },
+  'lavagem-detalhada': {
+    'shampoo-ph':             { pq: 300, gr: 500 },
+    'desengraxante':          { pq: 400, gr: 700 },
+    'mo':                     { pq: 3,   gr: 5   },
+    'pretinho':               { pq: 20,  gr: 40  },
+    'limpa-rodas':            { pq: 150, gr: 250 },
+    'revitalizador-plastico': { pq: 30,  gr: 50  },
+  },
+  'higienizacao-tecido': {
+    'flotador-apc': { pq: 1500, gr: 2500 },
+    'bactericida':  { pq: 200,  gr: 400  },
+    'mo':           { pq: 4,    gr: 6.5  },
+  },
+  'higienizacao-couro': {
+    'limpador-couro':   { pq: 150, gr: 250 },
+    'hidratante-couro': { pq: 30,  gr: 60  },
+    'mo':               { pq: 2,   gr: 2   },
+  },
+  'polimento-geral': {
+    'cera-corte':  { pq: 30,  gr: 50  },
+    'cera-refino': { pq: 25,  gr: 40  },
+    'ipa':         { pq: 150, gr: 250 },
+    'mo':          { pq: 6,   gr: 10  },
+  },
+  'polimento-preto': {
+    'cera-corte':  { pq: 30,  gr: 50  },
+    'cera-refino': { pq: 30,  gr: 50  },
+    'ipa':         { pq: 200, gr: 350 },
+    'mo':          { pq: 8,   gr: 12  },
+  },
+  'polimento-cristal': {
+    'cera-corte':        { pq: 30,  gr: 50  },
+    'cera-refino':       { pq: 25,  gr: 40  },
+    'ipa':               { pq: 150, gr: 250 },
+    'mo':                { pq: 7,   gr: 11  },
+    'selante-sintetico': { pq: 15,  gr: 25  },
+  },
+  'polimento-vidros': {
+    'polidor-vidro': { pq: 20, gr: 30 },
+    'mo':            { pq: 2,  gr: 2  },
+  },
+  'reparo-trinca': {
+    'resina-estrutural': { pq: 0.5, gr: 0.5 },
+    'resina-acabamento': { pq: 0.2, gr: 0.2 },
+    'polidor-vidro':     { pq: 5,   gr: 5   },
+    'mo':                { pq: 1,   gr: 1   },
+  },
+};
+
+function renderAdminEstoque() {
+  const el = document.getElementById('adminContent');
+  if (!_stockRef) { el.innerHTML = '<p style="color:var(--muted)">Firebase não conectado.</p>'; return; }
+
+  Promise.all([_stockRef.once('value'), _stockRecipesRef.once('value')])
+    .then(([stockSnap, recipesSnap]) => {
+      const stock   = stockSnap.val()   || {};
+      const recipes = recipesSnap.val() || {};
+
+      const products = Object.entries(stock)
+        .map(([id, p]) => ({ id, ...p }))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+      // Custo calculado por serviço
+      const svcCosts = Object.entries(recipes).map(([svcId, recipe]) => {
+        let costPq = 0, costGr = 0;
+        Object.entries(recipe).forEach(([pid, amounts]) => {
+          const cpu = stock[pid]?.costPerUnit || 0;
+          costPq += (amounts.pq || 0) * cpu;
+          costGr += (amounts.gr || 0) * cpu;
+        });
+        return { svcId, svcName: SVCS[svcId]?.name || svcId, costPq, costGr };
+      }).sort((a, b) => a.svcName.localeCompare(b.svcName));
+
+      const lowStock = products.filter(p => p.minQty > 0 && p.qty < p.minQty);
+      const totalStockVal = products.reduce((s, p) => s + (p.qty * (p.costPerUnit || 0)), 0);
+
+      el.innerHTML = `
+        <h2>📦 Controle de Estoque</h2>
+
+        ${lowStock.length ? `
+        <div style="background:rgba(239,68,68,.1);border:1px solid var(--red);border-radius:10px;padding:.8rem 1.1rem;margin-bottom:1.2rem;font-size:.83rem;color:var(--red)">
+          ⚠️ <strong>${lowStock.length} insumo${lowStock.length > 1 ? 's abaixo' : ' abaixo'} do estoque mínimo:</strong>
+          ${lowStock.map(p => `<strong>${esc(p.name)}</strong> (${p.qty} ${p.unit})`).join(' · ')}
+        </div>` : ''}
+
+        <div style="display:flex;gap:.7rem;flex-wrap:wrap;margin-bottom:1.2rem;align-items:center">
+          <button class="btn-primary" onclick="openProductForm()">➕ Novo Insumo</button>
+          <button class="btn-ghost" onclick="seedStockDefaults()">🌱 Carregar Lista Padrão</button>
+          ${products.length ? `<span style="margin-left:auto;font-size:.8rem;color:var(--muted)">Valor total em estoque: <strong style="color:var(--text)">R$ ${totalStockVal.toFixed(2)}</strong></span>` : ''}
+        </div>
+
+        <div style="overflow-x:auto;margin-bottom:2.5rem">
+          <table class="history-table" style="min-width:680px">
+            <thead><tr>
+              <th>Produto</th><th>Unid.</th><th>Saldo</th><th>Custo / Unid.</th><th>Valor em Estoque</th><th>Mínimo</th><th></th>
+            </tr></thead>
+            <tbody>
+              ${products.length ? products.map(p => {
+                const low = p.minQty > 0 && p.qty < p.minQty;
+                return `<tr style="${low ? 'background:rgba(239,68,68,.05)' : ''}">
+                  <td style="font-weight:500${low ? ';color:var(--red)' : ''}">${low ? '⚠️ ' : ''}${esc(p.name)}</td>
+                  <td style="color:var(--muted)">${esc(p.unit)}</td>
+                  <td style="font-weight:700${low ? ';color:var(--red)' : ''}">${p.qty}</td>
+                  <td>R$ ${(p.costPerUnit || 0).toFixed(4)}</td>
+                  <td style="color:var(--muted)">R$ ${(p.qty * (p.costPerUnit || 0)).toFixed(2)}</td>
+                  <td style="color:var(--muted)">${p.minQty || '—'}</td>
+                  <td style="white-space:nowrap;text-align:right">
+                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="restockProduct('${p.id}','${esc(p.name).replace(/'/g,"\\'")  }','${p.unit}')">📥 Repor</button>
+                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="openProductForm('${p.id}')">✏️</button>
+                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem;color:var(--red)" onclick="deleteProduct('${p.id}','${esc(p.name).replace(/'/g,"\\'")}')">🗑</button>
+                  </td>
+                </tr>`;
+              }).join('') : `<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:2rem">
+                Nenhum insumo cadastrado ainda. Clique em <strong>Carregar Lista Padrão</strong> para começar.
+              </td></tr>`}
+            </tbody>
+          </table>
+        </div>
+
+        ${svcCosts.length ? `
+        <h3 style="font-size:.95rem;margin-bottom:.8rem">💰 Custo de Insumos por Serviço</h3>
+        <div style="overflow-x:auto;margin-bottom:2.5rem">
+          <table class="history-table" style="min-width:420px">
+            <thead><tr><th>Serviço</th><th>Carro Pequeno</th><th>Carro Grande</th></tr></thead>
+            <tbody>
+              ${svcCosts.map(s => `<tr>
+                <td>${esc(s.svcName)}</td>
+                <td style="color:var(--accent);font-weight:600">R$ ${s.costPq.toFixed(2)}</td>
+                <td style="color:var(--accent);font-weight:600">R$ ${s.costGr.toFixed(2)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>` : ''}
+
+        ${Object.keys(recipes).length ? `
+        <h3 style="font-size:.95rem;margin-bottom:.8rem">🧪 Receitas — Consumo por Serviço</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:.8rem">
+          ${Object.entries(recipes)
+            .sort((a, b) => (SVCS[a[0]]?.name || a[0]).localeCompare(SVCS[b[0]]?.name || b[0]))
+            .map(([svcId, recipe]) => `
+            <div style="background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:10px;padding:.9rem 1rem">
+              <div style="font-weight:700;font-size:.85rem;margin-bottom:.55rem">${esc(SVCS[svcId]?.name || svcId)}</div>
+              ${Object.entries(recipe).map(([pid, amounts]) => {
+                const p = stock[pid];
+                return `<div style="font-size:.76rem;color:var(--muted);display:flex;justify-content:space-between;padding:.13rem 0;border-bottom:1px solid rgba(255,255,255,.04)">
+                  <span>${esc(p?.name || pid)}</span>
+                  <span style="color:var(--text);font-variant-numeric:tabular-nums">${amounts.pq} / ${amounts.gr} ${p?.unit || ''}</span>
+                </div>`;
+              }).join('')}
+            </div>`).join('')}
+        </div>` : ''}
+      `;
+    })
+    .catch(e => { document.getElementById('adminContent').innerHTML = `<p style="color:var(--red)">Erro: ${e.message}</p>`; });
+}
+
+function openProductForm(id) {
+  const body = document.getElementById('stockProductModalBody');
+  if (!body) return;
+
+  const render = p => {
+    body.innerHTML = `
+      <div class="form-row full"><div class="form-group"><label>Nome do insumo *</label>
+        <input id="spName" value="${esc(p.name || '')}"/>
+      </div></div>
+      <div class="form-row">
+        <div class="form-group"><label>Unidade de medida</label>
+          <select id="spUnit" class="form-control">
+            <option value="ml" ${(p.unit||'ml')==='ml'?'selected':''}>ml</option>
+            <option value="g"  ${p.unit==='g' ?'selected':''}>g (gramas)</option>
+            <option value="h"  ${p.unit==='h' ?'selected':''}>h (horas)</option>
+            <option value="un" ${p.unit==='un'?'selected':''}>un (unidade)</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Saldo atual</label>
+          <input id="spQty" type="number" value="${p.qty ?? 0}" min="0" step="0.01"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Custo por unidade (R$)</label>
+          <input id="spCost" type="number" value="${p.costPerUnit ?? 0}" min="0" step="0.0001" placeholder="0.0500"/>
+        </div>
+        <div class="form-group"><label>Estoque mínimo (alerta)</label>
+          <input id="spMin" type="number" value="${p.minQty ?? 0}" min="0" step="1"/>
+        </div>
+      </div>
+      <button class="btn-primary btn-full" style="margin-top:1.2rem"
+        onclick="saveProduct(${id ? `'${id}'` : 'null'})">💾 Salvar</button>
+    `;
+  };
+
+  if (id) {
+    _stockRef.child(id).once('value', snap => render(snap.val() || {}));
+  } else {
+    render({});
+  }
+  document.getElementById('stockProductModal').style.display = 'flex';
+}
+
+async function saveProduct(id) {
+  const name = document.getElementById('spName')?.value.trim();
+  const unit = document.getElementById('spUnit')?.value || 'ml';
+  const qty  = parseFloat(document.getElementById('spQty')?.value)  || 0;
+  const cost = parseFloat(document.getElementById('spCost')?.value) || 0;
+  const min  = parseFloat(document.getElementById('spMin')?.value)  || 0;
+  if (!name) { alert('Informe o nome do insumo.'); return; }
+
+  const productId = id || name.toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
+  try {
+    await _stockRef.child(productId).set({ name, unit, qty, costPerUnit: cost, minQty: min, updatedAt: new Date().toISOString() });
+    closeModal('stockProductModal');
+    renderAdminEstoque();
+  } catch(e) { alert('Erro ao salvar: ' + e.message); }
+}
+
+function restockProduct(id, name, unit) {
+  const input = prompt(`📥 Repor estoque\n${name}\n\nQuantidade a adicionar (${unit}):`, '');
+  if (input === null || input.trim() === '') return;
+  const add = parseFloat(input);
+  if (isNaN(add) || add <= 0) { alert('Quantidade inválida.'); return; }
+  _stockRef.child(id).once('value', snap => {
+    const current = snap.val()?.qty || 0;
+    _stockRef.child(id).update({ qty: +(current + add).toFixed(4), updatedAt: new Date().toISOString() })
+      .then(() => renderAdminEstoque())
+      .catch(e => alert('Erro: ' + e.message));
+  });
+}
+
+function deleteProduct(id, name) {
+  if (!confirm(`Excluir "${name}" do estoque permanentemente?`)) return;
+  _stockRef.child(id).remove()
+    .then(() => renderAdminEstoque())
+    .catch(e => alert('Erro: ' + e.message));
+}
+
+async function seedStockDefaults() {
+  if (!confirm('Carregar a lista padrão de insumos e receitas?\n\nInsumos já existentes com mesmo ID serão atualizados (saldo e custo não serão zerados). Os demais não serão afetados.')) return;
+  const now = new Date().toISOString();
+  try {
+    // Atualiza/cria produtos sem sobrescrever qty e costPerUnit existentes
+    const existSnap = await _stockRef.once('value');
+    const existing  = existSnap.val() || {};
+    const stockUpd  = {};
+    Object.entries(STOCK_DEFAULTS).forEach(([id, p]) => {
+      const ex = existing[id] || {};
+      stockUpd[id] = {
+        ...p,
+        qty:         ex.qty         ?? p.qty,
+        costPerUnit: ex.costPerUnit ?? p.costPerUnit,
+        updatedAt: now,
+      };
+    });
+    await _stockRef.update(stockUpd);
+    await _stockRecipesRef.set(RECIPE_DEFAULTS);
+    alert('✅ Lista padrão carregada! Agora configure saldo e custo de cada insumo clicando em ✏️.');
+    renderAdminEstoque();
+  } catch(e) { alert('Erro: ' + e.message); }
+}
+
+// Deduz insumos do estoque ao concluir um agendamento
+async function deductStock(booking) {
+  if (!_stockRef || !_stockRecipesRef) return;
+  const svcIds = (booking.services || [booking.service]).filter(Boolean);
+  const size   = booking.carSize || 'pq';
+  try {
+    const [stockSnap, recipesSnap] = await Promise.all([
+      _stockRef.once('value'),
+      _stockRecipesRef.once('value'),
+    ]);
+    const stock   = stockSnap.val()   || {};
+    const recipes = recipesSnap.val() || {};
+    const updates = {};
+    svcIds.forEach(svcId => {
+      const recipe = recipes[svcId];
+      if (!recipe) return;
+      Object.entries(recipe).forEach(([pid, amounts]) => {
+        const consume = amounts[size] ?? amounts.pq ?? 0;
+        const current = stock[pid]?.qty ?? 0;
+        updates[pid + '/qty'] = +Math.max(0, current - consume).toFixed(4);
+      });
+    });
+    if (Object.keys(updates).length) await _stockRef.update(updates);
+  } catch(e) { console.warn('deductStock:', e); }
+}
+
 function renderAdminConfig() {
   document.getElementById('adminContent').innerHTML = `
     <h2>⚙️ Configurações</h2>
@@ -5494,6 +5832,8 @@ function updateWaLink() {
     _giftcardsRef      = _fbDB.ref('giftcards');
     _waitlistRef       = _fbDB.ref('waitlist');
     _feedbackRef       = _fbDB.ref('feedback');
+    _stockRef          = _fbDB.ref('stock');
+    _stockRecipesRef   = _fbDB.ref('stockRecipes');
     _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
 
     // Avaliações aprovadas: escuta em tempo real → atualiza depoimentos públicos
