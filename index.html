@@ -1308,6 +1308,8 @@ let _clientProfile = null;
 let _abClientUid   = null;
 let _abFleet       = [];   // frota carregada no modal admin
 let _fFleet        = [];   // frota carregada no formulário público
+let _stock         = {};   // insumos carregados do Firebase
+let _stockRecipes  = {};   // receitas (serviço → insumos consumidos)
 let _clientNotes = {};
 let _clientNotesRef = null;
 let _geoCache = {};
@@ -5056,25 +5058,26 @@ function deleteFeedback(id) {
 // ADMIN — ESTOQUE
 // ============================================================
 const STOCK_DEFAULTS = {
-  'sabao-sujeira':          { name: 'Sabão Sujeira',                        unit: 'ml', qty: 0, costPerUnit: 0, minQty: 500  },
-  'desengraxante':          { name: 'Desengraxante',                        unit: 'ml', qty: 0, costPerUnit: 0, minQty: 500  },
-  'verniz-motor':           { name: 'Verniz de Motor',                      unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
-  'mo':                     { name: 'Mão de Obra',                          unit: 'h',  qty: 0, costPerUnit: 0, minQty: 0    },
-  'shampoo-ph':             { name: 'Shampoo pH Neutro',                    unit: 'ml', qty: 0, costPerUnit: 0, minQty: 500  },
-  'pretinho':               { name: 'Pretinho',                             unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
-  'limpa-rodas':            { name: 'Limpa Rodas (Descontaminante ferroso)', unit: 'ml', qty: 0, costPerUnit: 0, minQty: 200  },
-  'revitalizador-plastico': { name: 'Revitalizador de plástico',            unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
-  'flotador-apc':           { name: 'Flotador (APC)',                       unit: 'ml', qty: 0, costPerUnit: 0, minQty: 1000 },
-  'bactericida':            { name: 'Bactericida/Sanitizante',              unit: 'ml', qty: 0, costPerUnit: 0, minQty: 200  },
-  'limpador-couro':         { name: 'Limpador de couro',                    unit: 'ml', qty: 0, costPerUnit: 0, minQty: 200  },
-  'hidratante-couro':       { name: 'Hidratante / Selante de couro',        unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
-  'cera-corte':             { name: 'Cera para Corte',                      unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
-  'cera-refino':            { name: 'Cera de Refino e Lustre',              unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
-  'ipa':                    { name: 'Álcool Isopropílico (IPA)',             unit: 'ml', qty: 0, costPerUnit: 0, minQty: 300  },
-  'selante-sintetico':      { name: 'Selante sintético',                    unit: 'ml', qty: 0, costPerUnit: 0, minQty: 100  },
-  'polidor-vidro':          { name: 'Polidor de Vidro',                     unit: 'ml', qty: 0, costPerUnit: 0, minQty: 50   },
-  'resina-estrutural':      { name: 'Resina estrutural',                    unit: 'ml', qty: 0, costPerUnit: 0, minQty: 5    },
-  'resina-acabamento':      { name: 'Resina de acabamento',                 unit: 'ml', qty: 0, costPerUnit: 0, minQty: 5    },
+  'sabao-sujeira':          { name: 'Sabão Sujeira',                         unit: 'ml', qty: 0, costPerUnit: 0.03,  minQty: 500  },
+  'desengraxante':          { name: 'Desengraxante',                         unit: 'ml', qty: 0, costPerUnit: 0.03,  minQty: 500  },
+  'verniz-motor':           { name: 'Verniz de Motor',                       unit: 'ml', qty: 0, costPerUnit: 0.05,  minQty: 100  },
+  'mo':                     { name: 'Mão de Obra (R$35/h)',                  unit: 'h',  qty: 0, costPerUnit: 35.00, minQty: 0    },
+  'mo-especializada':       { name: 'Mão de Obra Especializada (R$45/h)',    unit: 'h',  qty: 0, costPerUnit: 45.00, minQty: 0    },
+  'shampoo-ph':             { name: 'Shampoo pH Neutro',                     unit: 'ml', qty: 0, costPerUnit: 0.03,  minQty: 500  },
+  'pretinho':               { name: 'Pretinho',                              unit: 'ml', qty: 0, costPerUnit: 0.01,  minQty: 100  },
+  'limpa-rodas':            { name: 'Limpa Rodas (Descontaminante Ferroso)', unit: 'ml', qty: 0, costPerUnit: 0.08,  minQty: 200  },
+  'revitalizador-plastico': { name: 'Revitalizador de Plástico',             unit: 'ml', qty: 0, costPerUnit: 0.13,  minQty: 100  },
+  'flotador-apc':           { name: 'Flotador (APC)',                        unit: 'ml', qty: 0, costPerUnit: 0.01,  minQty: 1000 },
+  'bactericida':            { name: 'Bactericida / Sanitizante',             unit: 'ml', qty: 0, costPerUnit: 0.02,  minQty: 200  },
+  'limpador-couro':         { name: 'Limpador de Couro',                     unit: 'ml', qty: 0, costPerUnit: 0.07,  minQty: 200  },
+  'hidratante-couro':       { name: 'Hidratante / Selante de Couro',         unit: 'ml', qty: 0, costPerUnit: 0.07,  minQty: 100  },
+  'cera-corte':             { name: 'Cera para Corte',                       unit: 'ml', qty: 0, costPerUnit: 0.48,  minQty: 100  },
+  'cera-refino':            { name: 'Cera de Refino e Lustre',               unit: 'ml', qty: 0, costPerUnit: 0.40,  minQty: 100  },
+  'ipa':                    { name: 'Álcool Isopropílico (IPA)',              unit: 'ml', qty: 0, costPerUnit: 0.04,  minQty: 300  },
+  'selante-sintetico':      { name: 'Selante Sintético',                     unit: 'ml', qty: 0, costPerUnit: 3.65,  minQty: 100  },
+  'polidor-vidro':          { name: 'Polidor de Vidro',                      unit: 'ml', qty: 0, costPerUnit: 0.86,  minQty: 50   },
+  'resina-estrutural':      { name: 'Resina Estrutural',                     unit: 'ml', qty: 0, costPerUnit: 6.67,  minQty: 5    },
+  'resina-acabamento':      { name: 'Resina de Acabamento',                  unit: 'ml', qty: 0, costPerUnit: 6.67,  minQty: 5    },
 };
 
 const RECIPE_DEFAULTS = {
@@ -5087,10 +5090,10 @@ const RECIPE_DEFAULTS = {
   'lavagem-detalhada': {
     'shampoo-ph':             { pq: 300, gr: 500 },
     'desengraxante':          { pq: 400, gr: 700 },
-    'mo':                     { pq: 3,   gr: 5   },
     'pretinho':               { pq: 20,  gr: 40  },
     'limpa-rodas':            { pq: 150, gr: 250 },
     'revitalizador-plastico': { pq: 30,  gr: 50  },
+    'mo':                     { pq: 3,   gr: 5   },
   },
   'higienizacao-tecido': {
     'flotador-apc': { pq: 1500, gr: 2500 },
@@ -5109,17 +5112,17 @@ const RECIPE_DEFAULTS = {
     'mo':          { pq: 6,   gr: 10  },
   },
   'polimento-preto': {
-    'cera-corte':  { pq: 30,  gr: 50  },
-    'cera-refino': { pq: 30,  gr: 50  },
-    'ipa':         { pq: 200, gr: 350 },
-    'mo':          { pq: 8,   gr: 12  },
+    'cera-corte':       { pq: 30,  gr: 50  },
+    'cera-refino':      { pq: 30,  gr: 50  },
+    'ipa':              { pq: 200, gr: 350 },
+    'mo-especializada': { pq: 8,   gr: 12  },
   },
   'polimento-cristal': {
     'cera-corte':        { pq: 30,  gr: 50  },
     'cera-refino':       { pq: 25,  gr: 40  },
     'ipa':               { pq: 150, gr: 250 },
-    'mo':                { pq: 7,   gr: 11  },
     'selante-sintetico': { pq: 15,  gr: 25  },
+    'mo-especializada':  { pq: 7,   gr: 11  },
   },
   'polimento-vidros': {
     'polidor-vidro': { pq: 20, gr: 30 },
