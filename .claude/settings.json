@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd \"c:\\\\Users\\\\barba\\\\Local\\\\sp_car_clean\"; $env:FIREBASE_API_KEY=\"test\"; node build.js)",
+      "PowerShell(Head -30)",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\barba\\\\Local\\\\sp_car_clean\" -Directory | Where-Object {$_.Name -in @\\(\"src\", \"pages\", \"components\", \"lib\", \"utils\"\\)} | Select-Object Name)"
+    ]
+  }
+}
