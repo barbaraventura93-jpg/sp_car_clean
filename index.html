@@ -1100,6 +1100,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
     <div class="modal-body">
       <div class="form-group" style="margin-bottom:1rem">
         <label>Serviços * <span style="font-weight:400;color:var(--muted)">(selecione um ou mais)</span></label>
+        <div id="abPresetSection" style="display:none;margin-bottom:.7rem"></div>
         <div id="abServiceList" style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:.7rem .8rem;background:rgba(255,255,255,.02)"></div>
       </div>
       <div class="form-row">
@@ -1306,6 +1307,7 @@ const _COMBOS = {};
 let _authUser = null;
 let _clientProfile = null;
 let _abClientUid   = null;
+let _abComboUsed   = null; // ID do combo aplicado no agendamento manual (analytics)
 let _abFleet       = [];   // frota carregada no modal admin
 let _fFleet        = [];   // frota carregada no formulário público
 let _stock         = {};   // insumos carregados do Firebase
@@ -2731,6 +2733,36 @@ function openAdminBooking() {
   } else if (list) {
     list.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
   }
+  // Combo quick-select section (refresh sempre para refletir combos atualizados)
+  const presetSection = document.getElementById('abPresetSection');
+  if (presetSection) {
+    const activeCombos = Object.entries(_COMBOS).filter(([, c]) => c.active !== false);
+    if (activeCombos.length) {
+      presetSection.style.display = 'block';
+      presetSection.innerHTML =
+        `<div style="font-size:.7rem;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-bottom:.5rem">⚡ Atalhos Rápidos</div>` +
+        `<div style="display:flex;flex-wrap:wrap;gap:.45rem;margin-bottom:.8rem">` +
+        activeCombos.map(([cid, c]) => {
+          const pPq = (c.serviceIds || []).reduce((s, id) => s + (SVCS[id]?.pq ?? 0), 0);
+          const pGr = (c.serviceIds || []).reduce((s, id) => s + (SVCS[id]?.gr ?? 0), 0);
+          const names = (c.serviceIds || []).map(id => SVCS[id]?.name || id);
+          const preview = names.slice(0, 3).join(' + ') + (names.length > 3 ? ' +' + (names.length - 3) : '');
+          const badge = c.internal ? '<span style="font-size:.6rem;color:#a0a0ff;margin-left:.3rem">🔒</span>' : '<span style="font-size:.6rem;color:var(--accent);margin-left:.3rem">🌐</span>';
+          return `<button type="button" id="abCombo-${cid}" onclick="abApplyCombo('${cid}')"
+            style="display:flex;flex-direction:column;align-items:flex-start;background:rgba(72,201,245,.07);border:1px solid rgba(72,201,245,.2);border-radius:10px;padding:.5rem .8rem;cursor:pointer;text-align:left;font-size:.78rem;transition:all .15s"
+            onmouseenter="this.style.background='rgba(72,201,245,.14)'" onmouseleave="if(this.dataset.sel!='1')this.style.background='rgba(72,201,245,.07)'">
+            <span style="font-weight:700;color:var(--fg)">${c.emoji || '🎁'} ${escHtml(c.name)}${badge}</span>
+            <span style="color:var(--muted);font-size:.68rem;margin-top:.1rem">${escHtml(preview)}</span>
+            <span style="color:var(--accent);font-size:.69rem;margin-top:.1rem">pq: ${fmtMoney(pPq)} · gr: ${fmtMoney(pGr)}</span>
+          </button>`;
+        }).join('') +
+        `</div><div style="font-size:.68rem;color:var(--muted);padding-top:.35rem;border-top:1px solid var(--border)">ou selecione serviços individualmente abaixo</div>`;
+    } else {
+      presetSection.style.display = 'none';
+      presetSection.innerHTML = '';
+    }
+  }
+  _abComboUsed = null;
   // default date = today
   const dateEl = document.getElementById('abDate');
   if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
@@ -2757,6 +2789,31 @@ function abUpdatePrice() {
   const total   = checked.reduce((sum, cb) => sum + (SVCS[cb.value]?.[size] || 0), 0);
   const priceEl = document.getElementById('abPrice');
   if (priceEl) priceEl.value = total || '';
+}
+
+function abApplyCombo(comboId) {
+  const combo = _COMBOS[comboId];
+  if (!combo) return;
+  // Desmarca todos os serviços e marca os do combo
+  document.querySelectorAll('#abServiceList input[type=checkbox]').forEach(cb => cb.checked = false);
+  (combo.serviceIds || []).forEach(svcId => {
+    const cb = document.querySelector(`#abServiceList input[type=checkbox][value="${svcId}"]`);
+    if (cb) cb.checked = true;
+  });
+  abUpdatePrice();
+  _abComboUsed = comboId;
+  // Destaque visual do botão selecionado
+  document.querySelectorAll('[id^="abCombo-"]').forEach(btn => {
+    btn.style.background = 'rgba(72,201,245,.07)';
+    btn.style.borderColor = 'rgba(72,201,245,.2)';
+    btn.dataset.sel = '0';
+  });
+  const selBtn = document.getElementById('abCombo-' + comboId);
+  if (selBtn) {
+    selBtn.style.background = 'rgba(72,201,245,.22)';
+    selBtn.style.borderColor = 'var(--accent)';
+    selBtn.dataset.sel = '1';
+  }
 }
 
 function abLookupClient() {
@@ -2992,6 +3049,7 @@ async function submitAdminBooking() {
     ...(status === 'confirmed' || status === 'completed' ? { confirmedAt: now } : {}),
     ...(status === 'completed' ? { completedAt: now } : {}),
     ...(_abClientUid ? { clientUid: _abClientUid } : {}),
+    ...(_abComboUsed ? { comboUsed: _abComboUsed } : {}),
   };
 
   try {
@@ -4482,12 +4540,17 @@ function buildComboList(entries) {
       const s = SVCS[sid];
       return s ? `<span class="combo-svc-tag">${s.icon} ${s.name}</span>` : '';
     }).join('');
+    const isInternal = combo.internal === true;
     return `<div class="svc-admin-card${isActive ? '' : ' inactive-svc'}">
       <div class="svc-admin-header">
         <span class="svc-admin-icon">${combo.emoji || '🎁'}</span>
         <div class="svc-admin-meta">
-          <div class="svc-admin-name">${combo.name}</div>
-          <div class="svc-admin-sub">Desconto: ${combo.discountPercent || 0}%</div>
+          <div class="svc-admin-name">${combo.name}
+            <span style="font-size:.68rem;font-weight:600;padding:.1rem .45rem;border-radius:20px;margin-left:.4rem;vertical-align:middle;${isInternal ? 'background:rgba(150,150,255,.15);color:#a0a0ff' : 'background:rgba(72,201,245,.12);color:var(--accent)'}">
+              ${isInternal ? '🔒 Interno' : '🌐 Público'}
+            </span>
+          </div>
+          <div class="svc-admin-sub">${isInternal ? 'Atalho de agendamento admin' : 'Desconto: ' + (combo.discountPercent || 0) + '%'}</div>
         </div>
         <button class="btn-toggle-svc${isActive ? '' : ' off'}" onclick="toggleCombo('${id}')">
           ${isActive ? '✅ Ativo' : '⛔ Inativo'}
@@ -4525,15 +4588,22 @@ function openComboForm(id) {
       ${s.icon} ${s.name} <span style="color:var(--muted);font-size:.72rem">(pq: ${fmtMoney(s.pq)} / gr: ${fmtMoney(s.gr)})</span>
     </label>`
   ).join('');
+  const isInternal = combo?.internal === true;
   wrap.innerHTML = `
     <div class="svc-form-panel">
       <h4>${id ? 'Editar Combo' : 'Novo Combo'}</h4>
       <div class="form-row">
         <div class="form-group" style="flex:3"><label>Nome do combo</label><input id="cfName" value="${combo?.name || ''}"/></div>
         <div class="form-group" style="flex:1"><label>Emoji</label><input id="cfEmoji" value="${combo?.emoji || '🎁'}" maxlength="4"/></div>
-        <div class="form-group" style="flex:1"><label>Desconto %</label><input id="cfDisc" type="number" value="${combo?.discountPercent || 10}" min="0" max="50"/></div>
+        <div class="form-group" style="flex:1" id="cfDiscGroup"><label>Desconto %</label><input id="cfDisc" type="number" value="${combo?.discountPercent || 0}" min="0" max="50"/></div>
       </div>
       <div class="form-row">
+        <div class="form-group" style="flex:2"><label>Visibilidade</label>
+          <select id="cfInternal" onchange="toggleComboInternalUI()">
+            <option value="0"${!isInternal ? ' selected' : ''}>🌐 Público — visível no site para clientes</option>
+            <option value="1"${isInternal ? ' selected' : ''}>🔒 Interno — somente para agendamento admin</option>
+          </select>
+        </div>
         <div class="form-group"><label>Ativo</label>
           <select id="cfActive">
             <option value="1"${combo?.active !== false ? ' selected' : ''}>✅ Ativo</option>
@@ -4551,7 +4621,14 @@ function openComboForm(id) {
         <button class="btn-ghost" onclick="document.getElementById('comboFormWrap').innerHTML=''">Cancelar</button>
       </div>
     </div>`;
+  toggleComboInternalUI();
   wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function toggleComboInternalUI() {
+  const internal = document.getElementById('cfInternal')?.value === '1';
+  const discGroup = document.getElementById('cfDiscGroup');
+  if (discGroup) discGroup.style.display = internal ? 'none' : '';
 }
 
 async function saveCombo(id) {
@@ -4559,6 +4636,7 @@ async function saveCombo(id) {
   const emoji = document.getElementById('cfEmoji')?.value.trim() || '🎁';
   const disc = parseFloat(document.getElementById('cfDisc')?.value) || 0;
   const active = document.getElementById('cfActive')?.value === '1';
+  const internal = document.getElementById('cfInternal')?.value === '1';
   const serviceIds = [...document.querySelectorAll('#comboFormWrap input[type=checkbox]:checked')].map(c => c.value);
 
   if (!name) { alert('Informe o nome do combo.'); return; }
@@ -4566,7 +4644,13 @@ async function saveCombo(id) {
   if (!_combosRef) { alert('Firebase não conectado.'); return; }
 
   const key = id || slugify(name);
-  const data = { name, emoji, discountPercent: disc, active, serviceIds, createdAt: id ? (_COMBOS[id]?.createdAt || Date.now()) : Date.now() };
+  const data = {
+    name, emoji,
+    discountPercent: internal ? 0 : disc,
+    active, internal,
+    serviceIds,
+    createdAt: id ? (_COMBOS[id]?.createdAt || Date.now()) : Date.now(),
+  };
   try {
     await _combosRef.child(key).set(data);
     document.getElementById('comboFormWrap').innerHTML = '';
@@ -5598,7 +5682,7 @@ function renderCombos() {
   const grid = document.getElementById('combosGrid');
   if (!section || !grid) return;
   const size = currentSizeGlobal || 'pq';
-  const active = Object.entries(_COMBOS).filter(([, c]) => c.active !== false);
+  const active = Object.entries(_COMBOS).filter(([, c]) => c.active !== false && !c.internal);
   if (!active.length) { section.classList.add('combos-hidden'); return; }
   section.classList.remove('combos-hidden');
   grid.innerHTML = active.map(([id, combo]) => {
