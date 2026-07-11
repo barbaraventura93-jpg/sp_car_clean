@@ -1116,10 +1116,14 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
           <input type="number" id="abPrice" placeholder="0" min="0" step="10"/>
         </div>
       </div>
-      <div class="form-row full">
+      <div class="form-row">
         <div class="form-group">
-          <label>Data do serviço *</label>
-          <input type="date" id="abDate"/>
+          <label>Data de início *</label>
+          <input type="date" id="abDate" onchange="abUpdateEndDate()"/>
+        </div>
+        <div class="form-group">
+          <label>Data de fim * <span id="abEndDateHint" style="font-weight:400;color:var(--muted);font-size:.7rem"></span></label>
+          <input type="date" id="abEndDate"/>
         </div>
       </div>
       <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0"/>
@@ -1350,6 +1354,77 @@ function setBlocked(arr) {
   const obj = {};
   arr.forEach(d => { obj[d] = true; });
   _blockedRef.set(arr.length ? obj : null).catch(e => console.error('Firebase setBlocked:', e));
+}
+
+// ============================================================
+// CLIENTES — AUTO-UPSERT (localStorage cache para clientes guest)
+// ============================================================
+function getClients() {
+  try { return JSON.parse(localStorage.getItem('spcc_clients') || '{}'); } catch { return {}; }
+}
+function setClients(obj) {
+  try { localStorage.setItem('spcc_clients', JSON.stringify(obj)); } catch {}
+}
+function normalizeEmailKey(email) {
+  return (email || '').trim().toLowerCase();
+}
+function upsertClient(email, clientData) {
+  const clients  = getClients();
+  const emailKey = normalizeEmailKey(email);
+  if (!emailKey) return;
+  const existing = clients[emailKey];
+  if (!existing) {
+    clients[emailKey] = {
+      email: emailKey, emailKey,
+      name: clientData.name || '',
+      phone: clientData.phone || '',
+      car: clientData.car || '',
+      plate: clientData.plate || '',
+      bairro: clientData.bairro || '',
+      cep: clientData.cep || '',
+      obs: clientData.obs || '',
+      registeredAt: new Date().toISOString(),
+      lastBookingId: clientData.bookingId || '',
+      observationsLocked: false,
+    };
+  } else {
+    existing.name  = clientData.name  || existing.name;
+    existing.phone = clientData.phone || existing.phone;
+    existing.plate = clientData.plate || existing.plate;
+    existing.bairro = clientData.bairro || existing.bairro;
+    existing.cep   = clientData.cep   || existing.cep;
+    existing.lastBookingId = clientData.bookingId || existing.lastBookingId;
+    if (clientData.car && clientData.car !== existing.car) existing.car = clientData.car;
+    if (!existing.observationsLocked) {
+      const newObs = (clientData.obs || '').trim();
+      if (newObs && newObs !== existing.obs) {
+        existing.obs = newObs;
+        existing.observationsLocked = true;
+      } else if (newObs) {
+        existing.obs = newObs;
+      }
+    }
+  }
+  setClients(clients);
+  return clients[emailKey];
+}
+function loadClientData(email) {
+  const emailKey = normalizeEmailKey(email);
+  if (!emailKey) return null;
+  const existing = getClients()[emailKey];
+  if (!existing) return null;
+  return {
+    name: existing.name, phone: existing.phone,
+    car: existing.car, plate: existing.plate,
+    bairro: existing.bairro, cep: existing.cep,
+    obs: existing.obs,
+    isReturning: true,
+    observationsLocked: existing.observationsLocked,
+  };
+}
+function canEditObservations(email) {
+  const existing = getClients()[normalizeEmailKey(email)];
+  return !existing || !existing.observationsLocked;
 }
 
 // ============================================================
@@ -1865,6 +1940,9 @@ async function submitBooking() {
     _clientProfile = { ..._clientProfile, name, phone, bairro };
     _updateClientNavUI();
   }
+
+  // Auto-upsert cliente no cache local (funciona mesmo sem conta criada)
+  upsertClient(email, { email, name, phone, car, plate, bairro, cep, obs, bookingId: id });
 
   // Notificar negócio via Netlify Function
   fetch('/.netlify/functions/notify-booking', {
@@ -2764,8 +2842,13 @@ function openAdminBooking() {
   }
   _abComboUsed = null;
   // default date = today
+  const today = new Date().toISOString().split('T')[0];
   const dateEl = document.getElementById('abDate');
-  if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
+  if (dateEl) dateEl.value = today;
+  const endDateEl = document.getElementById('abEndDate');
+  if (endDateEl) { endDateEl.value = today; endDateEl.min = today; }
+  const endHint = document.getElementById('abEndDateHint');
+  if (endHint) endHint.textContent = '(mesmo dia)';
   // reset state
   _abClientUid = null;
   ['abName','abPhone','abEmail','abCar','abPlate','abBairro','abObs'].forEach(id => {
@@ -2789,6 +2872,23 @@ function abUpdatePrice() {
   const total   = checked.reduce((sum, cb) => sum + (SVCS[cb.value]?.[size] || 0), 0);
   const priceEl = document.getElementById('abPrice');
   if (priceEl) priceEl.value = total || '';
+  abUpdateEndDate();
+}
+
+function abUpdateEndDate() {
+  const dateVal  = document.getElementById('abDate')?.value;
+  const endEl    = document.getElementById('abEndDate');
+  const hint     = document.getElementById('abEndDateHint');
+  if (!endEl) return;
+  if (dateVal) endEl.min = dateVal;
+  const checkedSvcs = [...document.querySelectorAll('#abServiceList input[type=checkbox]:checked')].map(cb => cb.value);
+  const maxDays = checkedSvcs.reduce((m, id) => Math.max(m, SVCS[id]?.daysExtra || 0), 0);
+  if (hint) hint.textContent = maxDays === 0 ? '(mesmo dia)' : `(+${maxDays} dia${maxDays > 1 ? 's' : ''})`;
+  if (!dateVal) return;
+  const startD = new Date(dateVal + 'T08:00:00');
+  const endD   = new Date(startD);
+  endD.setDate(endD.getDate() + maxDays);
+  endEl.value = endD.toISOString().split('T')[0];
 }
 
 function abApplyCombo(comboId) {
@@ -2959,7 +3059,8 @@ function fLookupClient() {
   tryProfile.then(profile => {
     const match    = _bookings.find(b => b.email?.toLowerCase() === email);
     const vehicles = buildFleet();
-    if (!profile && !match && !vehicles.length) return; // e-mail desconhecido
+    const cached   = loadClientData(email); // cache localStorage
+    if (!profile && !match && !vehicles.length && !cached) return; // e-mail desconhecido
 
     if (profile) {
       fill('fName',  profile.name);
@@ -2973,7 +3074,33 @@ function fLookupClient() {
       fill('fBairro', match.bairro);
       fill('fCep',    match.cep);
     }
-    if ((profile || match) && info) {
+    // obs do cache localStorage (com suporte a observationsLocked)
+    if (cached?.obs) {
+      const obsEl = document.getElementById('fObs');
+      if (obsEl && !obsEl.value) {
+        obsEl.value = cached.obs;
+        if (cached.observationsLocked) {
+          obsEl.style.opacity = '.6';
+          obsEl.readOnly = true;
+          const obsGroup = obsEl.closest('.form-group');
+          if (obsGroup && !obsGroup.querySelector('.obs-lock-note')) {
+            const note = document.createElement('p');
+            note.className = 'obs-lock-note';
+            note.style.cssText = 'font-size:.7rem;color:var(--muted);margin-top:.3rem';
+            note.textContent = '⚠️ Observações do agendamento anterior. Apague para editar.';
+            obsGroup.appendChild(note);
+          }
+          obsEl.addEventListener('focus', function onFocusUnlock() {
+            obsEl.readOnly = false;
+            obsEl.style.opacity = '';
+            const note = obsEl.closest('.form-group')?.querySelector('.obs-lock-note');
+            if (note) note.remove();
+            obsEl.removeEventListener('focus', onFocusUnlock);
+          });
+        }
+      }
+    }
+    if ((profile || match || cached) && info) {
       info.style.cssText = 'display:block;background:rgba(72,201,245,.06);border:1px solid var(--accent);border-radius:8px;padding:.55rem .9rem;margin-bottom:.7rem;font-size:.8rem;color:var(--accent)';
       info.innerHTML = '✅ Encontramos seus dados anteriores e preenchemos automaticamente.';
     }
@@ -3006,30 +3133,27 @@ async function submitAdminBooking() {
   const sendEmail_ = document.getElementById('abSendEmail')?.checked;
   const sendWa     = document.getElementById('abSendWa')?.checked;
 
+  const endDate = document.getElementById('abEndDate')?.value;
+
   if (!checkedSvcs.length) { alert('Selecione ao menos um serviço.'); return; }
-  if (!date)   { alert('Informe a data do serviço.'); return; }
-  if (!name)   { alert('Informe o nome do cliente.'); return; }
-  if (!phone)  { alert('Informe o telefone.'); return; }
+  if (!date)    { alert('Informe a data de início do serviço.'); return; }
+  if (!endDate) { alert('Informe a data de fim do serviço.'); return; }
+  if (endDate < date) { alert('A data de fim não pode ser anterior à data de início.'); return; }
+  if (!name)    { alert('Informe o nome do cliente.'); return; }
+  if (!phone)   { alert('Informe o telefone.'); return; }
   if (price <= 0) { alert('Informe o valor cobrado.'); return; }
 
   // primary service (for backward compat with rest of pipeline)
   const svcId = checkedSvcs[0];
   const svc   = SVCS[svcId];
-  // use max daysExtra across all selected services
-  const maxDaysExtra = checkedSvcs.reduce((m, id) => Math.max(m, SVCS[id]?.daysExtra || 0), 0);
   // label for e-mail / WhatsApp
   const svcLabel = checkedSvcs.length === 1
     ? svc.icon + ' ' + svc.name
     : checkedSvcs.map(id => SVCS[id].icon + ' ' + SVCS[id].name).join('\n  • ');
 
-  const now = new Date().toISOString();
-  const id  = genId();
-
-  // calc pickup date using max daysExtra
-  const startD = new Date(date + 'T08:00:00');
-  const endD   = new Date(startD);
-  endD.setDate(endD.getDate() + maxDaysExtra);
-  const pickup = endD.toISOString().split('T')[0];
+  const now    = new Date().toISOString();
+  const id     = genId();
+  const pickup = endDate;
 
   const b = {
     id,
@@ -5646,7 +5770,7 @@ async function migrateBookingsToUid() {
 }
 
 function exportData() {
-  const data = { bookings: getBookings(), blocked: getBlocked(), exportedAt: new Date().toISOString() };
+  const data = { bookings: getBookings(), blocked: getBlocked(), clients: getClients(), exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download='spcarclean-dados.json'; a.click();
