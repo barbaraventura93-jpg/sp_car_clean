@@ -466,6 +466,11 @@ footer p{font-size:.72rem;color:var(--muted)}
 #checkinModal{z-index:3500}
 #adminBookingModal{z-index:3000}
 .approve-form{display:flex;flex-direction:column;gap:1rem}
+/* AB client search */
+.ab-dropdown-item{padding:.6rem 1rem;cursor:pointer;border-bottom:1px solid var(--border);line-height:1.4;transition:background .12s}
+.ab-dropdown-item:last-child{border-bottom:none}
+.ab-dropdown-item:hover,.ab-dropdown-item.focused{background:rgba(72,201,245,.09)}
+.ab-autofill{background:var(--blue-lt)!important;border-color:var(--border-glow)!important}
 
 @media(max-width:880px){
   #hero{grid-template-columns:1fr;min-height:auto}
@@ -1113,7 +1118,8 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
         </div>
         <div class="form-group">
           <label>Valor total (R$) *</label>
-          <input type="number" id="abPrice" placeholder="0" min="0" step="10"/>
+          <input type="number" id="abPrice" placeholder="0" min="0" step="10" oninput="abUpdateNegociadoInfo()"/>
+          <div id="abNegociadoInfo" style="display:none;margin-top:.35rem;font-size:.73rem;color:var(--muted);background:rgba(42,159,214,.06);border:1px solid rgba(42,159,214,.18);border-radius:6px;padding:.35rem .6rem;line-height:1.6"></div>
         </div>
       </div>
       <div class="form-row">
@@ -1127,14 +1133,34 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
         </div>
       </div>
       <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0"/>
+      <!-- AB mode toggle -->
+      <div id="abModeSwitcher" style="margin-bottom:1rem">
+        <div class="size-toggle">
+          <button id="abModeExist" class="active" onclick="abSetMode('existente')">🔍 Cliente existente</button>
+          <button id="abModeNovo" onclick="abSetMode('novo')">🆕 Novo cliente</button>
+        </div>
+      </div>
+      <!-- AB client search -->
+      <div id="abClientSearchBox" style="margin-bottom:1rem;position:relative">
+        <input id="abSearchInput" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:.7rem .9rem;font-family:'Open Sans',sans-serif;font-size:.88rem;color:var(--text);background:rgba(255,255,255,.04);outline:none;transition:border-color .2s,box-shadow .2s" placeholder="Buscar por nome, e-mail ou telefone..." autocomplete="off" oninput="abOnSearchInput(this.value)" onkeydown="abSearchKeydown(event)" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor=''"/>
+        <div id="abSearchDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:1001;background:var(--card);border:1px solid var(--border-glow);border-radius:10px;max-height:300px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.5)"></div>
+      </div>
+      <!-- AB selected chip -->
+      <div id="abSelectedChip" style="display:none;background:var(--blue-lt);border:1px solid var(--border-glow);border-radius:8px;padding:.5rem .9rem;margin-bottom:1rem;align-items:center;gap:.5rem;flex-wrap:wrap;font-size:.82rem">
+        <span>👤</span>
+        <span id="abChipName" style="font-weight:600;color:var(--accent)"></span>
+        <span id="abChipVip" style="color:#FFD700;display:none">⭐ VIP</span>
+        <button type="button" onclick="abClearClientSelection()" style="margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:.9rem;padding:0 .25rem;line-height:1;transition:color .15s" onmouseenter="this.style.color='var(--red)'" onmouseleave="this.style.color='var(--muted)'">✕</button>
+      </div>
       <div class="form-row">
         <div class="form-group"><label>Nome do cliente *</label><input id="abName" placeholder="Nome completo"/></div>
         <div class="form-group"><label>Telefone *</label><input id="abPhone" placeholder="(11) 99999-9999"/></div>
       </div>
       <div class="form-row full">
         <div class="form-group">
-          <label>E-mail <span style="color:var(--muted);font-weight:400">(busca conta automaticamente)</span></label>
-          <input id="abEmail" type="email" placeholder="cliente@email.com" onblur="abLookupClient()"/>
+          <label>E-mail <span style="color:var(--muted);font-weight:400">(opcional — vincula conta e fidelidade)</span></label>
+          <input id="abEmail" type="email" placeholder="cliente@email.com" oninput="abEmailEditWarning()"/>
+          <span id="abEmailWarning" style="display:none;font-size:.7rem;color:var(--orange);margin-top:.25rem">⚠️ Alterar o e-mail cria/atualiza outro registro no CRM — o e-mail é a chave do cliente.</span>
         </div>
       </div>
       <div id="abClientInfo" style="display:none;border-radius:8px;padding:.6rem 1rem;margin-bottom:.8rem;font-size:.82rem"></div>
@@ -1313,6 +1339,11 @@ let _clientProfile = null;
 let _abClientUid   = null;
 let _abComboUsed   = null; // ID do combo aplicado no agendamento manual (analytics)
 let _abFleet       = [];   // frota carregada no modal admin
+let _abMode = 'existente';          // 'existente' | 'novo'
+let _abSelectedClientKey = null;    // email do cliente selecionado via busca
+let _abClientCache = null;          // cache de _buildClientMap(); invalidado após salvar
+let _abSearchTimeout = null;        // debounce da busca
+let _abDropdownIdx = -1;            // índice focado no dropdown (teclado)
 let _fFleet        = [];   // frota carregada no formulário público
 let _stock         = {};   // insumos carregados do Firebase
 let _stockRecipes  = {};   // receitas (serviço → insumos consumidos)
@@ -2821,17 +2852,19 @@ function openAdminBooking() {
         `<div style="font-size:.7rem;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-bottom:.5rem">⚡ Atalhos Rápidos</div>` +
         `<div style="display:flex;flex-wrap:wrap;gap:.45rem;margin-bottom:.8rem">` +
         activeCombos.map(([cid, c]) => {
-          const pPq = (c.serviceIds || []).reduce((s, id) => s + (SVCS[id]?.pq ?? 0), 0);
-          const pGr = (c.serviceIds || []).reduce((s, id) => s + (SVCS[id]?.gr ?? 0), 0);
+          const pPq = comboPrice(c, 'pq');
+          const pGr = comboPrice(c, 'gr');
           const names = (c.serviceIds || []).map(id => SVCS[id]?.name || id);
           const preview = names.slice(0, 3).join(' + ') + (names.length > 3 ? ' +' + (names.length - 3) : '');
           const badge = c.internal ? '<span style="font-size:.6rem;color:#a0a0ff;margin-left:.3rem">🔒</span>' : '<span style="font-size:.6rem;color:var(--accent);margin-left:.3rem">🌐</span>';
+          const pqLabel = pPq.custom && pPq.savings > 0 ? `<s style="opacity:.5">${fmtMoney(pPq.regular)}</s> ${fmtMoney(pPq.final)}` : fmtMoney(pPq.final);
+          const grLabel = pGr.custom && pGr.savings > 0 ? `<s style="opacity:.5">${fmtMoney(pGr.regular)}</s> ${fmtMoney(pGr.final)}` : fmtMoney(pGr.final);
           return `<button type="button" id="abCombo-${cid}" onclick="abApplyCombo('${cid}')"
             style="display:flex;flex-direction:column;align-items:flex-start;background:rgba(72,201,245,.07);border:1px solid rgba(72,201,245,.2);border-radius:10px;padding:.5rem .8rem;cursor:pointer;text-align:left;font-size:.78rem;transition:all .15s"
             onmouseenter="this.style.background='rgba(72,201,245,.14)'" onmouseleave="if(this.dataset.sel!='1')this.style.background='rgba(72,201,245,.07)'">
             <span style="font-weight:700;color:var(--fg)">${c.emoji || '🎁'} ${escHtml(c.name)}${badge}</span>
             <span style="color:var(--muted);font-size:.68rem;margin-top:.1rem">${escHtml(preview)}</span>
-            <span style="color:var(--accent);font-size:.69rem;margin-top:.1rem">pq: ${fmtMoney(pPq)} · gr: ${fmtMoney(pGr)}</span>
+            <span style="color:var(--accent);font-size:.69rem;margin-top:.1rem">pq: ${pqLabel} · gr: ${grLabel}</span>
           </button>`;
         }).join('') +
         `</div><div style="font-size:.68rem;color:var(--muted);padding-top:.35rem;border-top:1px solid var(--border)">ou selecione serviços individualmente abaixo</div>`;
@@ -2851,14 +2884,30 @@ function openAdminBooking() {
   if (endHint) endHint.textContent = '(mesmo dia)';
   // reset state
   _abClientUid = null;
+  _abSelectedClientKey = null;
+  _abMode = 'existente';
   ['abName','abPhone','abEmail','abCar','abPlate','abBairro','abObs'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.value = '';
+    const el = document.getElementById(id);
+    if (el) { el.value = ''; el.classList.remove('ab-autofill'); el.style.background = ''; el.style.borderColor = ''; }
   });
   const info = document.getElementById('abClientInfo');
   if (info) { info.style.display = 'none'; info.textContent = ''; }
   const fleet = document.getElementById('abFleetPicker');
   if (fleet) fleet.style.display = 'none';
   _abFleet = [];
+  // Reset search UI
+  document.getElementById('abModeExist')?.classList.add('active');
+  document.getElementById('abModeNovo')?.classList.remove('active');
+  const searchBox = document.getElementById('abClientSearchBox');
+  if (searchBox) searchBox.style.display = 'block';
+  const si = document.getElementById('abSearchInput');
+  if (si) si.value = '';
+  const dd = document.getElementById('abSearchDropdown');
+  if (dd) dd.style.display = 'none';
+  const chip = document.getElementById('abSelectedChip');
+  if (chip) chip.style.display = 'none';
+  const warnEl = document.getElementById('abEmailWarning');
+  if (warnEl) { warnEl.style.display = 'none'; warnEl.dataset.baseEmail = ''; }
   document.getElementById('abStatus').value = 'approved';
   document.getElementById('abSendEmail').checked = true;
   document.getElementById('abSendWa').checked = false;
@@ -2869,9 +2918,31 @@ function openAdminBooking() {
 function abUpdatePrice() {
   const size    = document.getElementById('abSize')?.value || 'pq';
   const checked = [...document.querySelectorAll('#abServiceList input[type=checkbox]:checked')];
+  const checkedIds = checked.map(cb => cb.value).sort();
   const total   = checked.reduce((sum, cb) => sum + (SVCS[cb.value]?.[size] || 0), 0);
   const priceEl = document.getElementById('abPrice');
-  if (priceEl) priceEl.value = total || '';
+  // If a combo is active but user modified services, clear the combo selection
+  if (_abComboUsed) {
+    const combo = _COMBOS[_abComboUsed];
+    const comboIds = (combo?.serviceIds || []).slice().sort();
+    const match = comboIds.length === checkedIds.length && comboIds.every((v, i) => v === checkedIds[i]);
+    if (!match) {
+      _abComboUsed = null;
+      document.querySelectorAll('[id^="abCombo-"]').forEach(btn => {
+        btn.style.background = 'rgba(72,201,245,.07)';
+        btn.style.borderColor = 'rgba(72,201,245,.2)';
+        btn.dataset.sel = '0';
+      });
+    }
+  }
+  // Use combo's custom final price if still active
+  const combo = _abComboUsed ? _COMBOS[_abComboUsed] : null;
+  if (combo) {
+    const p = comboPrice(combo, size);
+    if (priceEl) priceEl.value = p.final || total || '';
+  } else {
+    if (priceEl) priceEl.value = total || '';
+  }
   abUpdateEndDate();
 }
 
@@ -2900,8 +2971,8 @@ function abApplyCombo(comboId) {
     const cb = document.querySelector(`#abServiceList input[type=checkbox][value="${svcId}"]`);
     if (cb) cb.checked = true;
   });
-  abUpdatePrice();
   _abComboUsed = comboId;
+  abUpdatePrice();
   // Destaque visual do botão selecionado
   document.querySelectorAll('[id^="abCombo-"]').forEach(btn => {
     btn.style.background = 'rgba(72,201,245,.07)';
@@ -2995,11 +3066,253 @@ function abLookupClient() {
 function abPickVehicle(idx, el) {
   const v = _abFleet[idx];
   if (!v) return;
-  document.getElementById('abCar').value   = v.car   || '';
-  document.getElementById('abPlate').value = v.plate || '';
+  const carEl   = document.getElementById('abCar');
+  const plateEl = document.getElementById('abPlate');
+  carEl.value   = v.car   || '';
+  plateEl.value = v.plate || '';
+  carEl.className   = 'ab-autofill';
+  plateEl.className = 'ab-autofill';
   if (v.carSize) { document.getElementById('abSize').value = v.carSize; abUpdatePrice(); }
   document.querySelectorAll('#abFleetCards .vehicle-card').forEach(c => c.style.borderColor = 'var(--border)');
   el.style.borderColor = 'var(--accent)';
+}
+
+function abPickOtherVehicle(el) {
+  const carEl   = document.getElementById('abCar');
+  const plateEl = document.getElementById('abPlate');
+  carEl.value   = '';
+  plateEl.value = '';
+  carEl.className   = '';
+  plateEl.className = '';
+  carEl.style.background = '';
+  carEl.style.borderColor = '';
+  plateEl.style.background = '';
+  plateEl.style.borderColor = '';
+  document.querySelectorAll('#abFleetCards .vehicle-card').forEach(c => c.style.borderColor = 'var(--border)');
+  el.style.borderColor = 'var(--accent)';
+  carEl.focus();
+}
+
+// ── Normalização sem acentos para busca ──
+function _abNorm(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+// ── Busca de cliente existente no modal admin ──
+function abSetMode(mode) {
+  _abMode = mode;
+  document.getElementById('abModeExist').classList.toggle('active', mode === 'existente');
+  document.getElementById('abModeNovo').classList.toggle('active', mode === 'novo');
+  const searchBox = document.getElementById('abClientSearchBox');
+  if (mode === 'novo') {
+    abClearClientSelection(false);
+    if (searchBox) searchBox.style.display = 'none';
+    // limpa highlights de autofill ao entrar em modo novo
+    ['abName','abPhone','abEmail','abCar','abPlate'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.classList.remove('ab-autofill'); el.style.background = ''; el.style.borderColor = ''; }
+    });
+  } else {
+    if (searchBox) searchBox.style.display = 'block';
+  }
+}
+
+function abOnSearchInput(q) {
+  clearTimeout(_abSearchTimeout);
+  const dd = document.getElementById('abSearchDropdown');
+  if (!q || q.length < 2) { if (dd) dd.style.display = 'none'; return; }
+  _abSearchTimeout = setTimeout(() => _abShowDropdown(q), 160);
+}
+
+function _abShowDropdown(q) {
+  if (!_abClientCache) _abClientCache = _buildClientMap();
+  const norm = _abNorm(q);
+  const results = _abClientCache
+    .filter(c => _abNorm(c.name).includes(norm) || _abNorm(c.email).includes(norm) || _abNorm(c.phone || '').includes(norm))
+    .slice(0, 8);
+  const dd = document.getElementById('abSearchDropdown');
+  if (!dd) return;
+  _abDropdownIdx = -1;
+  if (!results.length) {
+    const safeQ = escHtml(q);
+    const safeQAttr = encodeURIComponent(q);
+    dd.innerHTML = `<div style="padding:.75rem 1rem;font-size:.8rem;color:var(--muted)">Nenhum cliente encontrado — <a href="#" onclick="abSetMode('novo');var n=document.getElementById('abName');if(n)n.value=decodeURIComponent('${safeQAttr}');return false" style="color:var(--accent)">cadastrar como novo?</a></div>`;
+    dd.style.display = 'block';
+    return;
+  }
+  dd.innerHTML = results.map((c, i) => {
+    const vcCount = Object.keys(c.vehicles || {}).length;
+    const vcInfo  = vcCount > 1 ? `<span style="font-size:.68rem;color:var(--muted)"> · ${vcCount} veículos</span>` : '';
+    const vipHtml = c.vip ? '<span style="color:#FFD700;font-size:.72rem;margin-left:.3rem">⭐ VIP</span>' : '';
+    return `<div class="ab-dropdown-item" data-idx="${i}" data-email="${encodeURIComponent(c.email)}"
+      onclick="abSelectClient('${encodeURIComponent(c.email)}')"
+      onmouseenter="document.querySelectorAll('.ab-dropdown-item.focused').forEach(x=>x.classList.remove('focused'));this.classList.add('focused');_abDropdownIdx=${i}">
+      <div style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap">
+        <span style="font-weight:600;color:var(--text)">${escHtml(c.name)}</span>${vipHtml}${vcInfo}
+      </div>
+      <div style="font-size:.73rem;color:var(--muted);margin-top:.1rem">${escHtml(c.email)} · ${escHtml(c.phone || '—')}</div>
+    </div>`;
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function abSearchKeydown(e) {
+  const dd = document.getElementById('abSearchDropdown');
+  if (!dd || dd.style.display === 'none') return;
+  const items = dd.querySelectorAll('.ab-dropdown-item');
+  if (!items.length) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _abDropdownIdx = Math.min(_abDropdownIdx + 1, items.length - 1);
+    items.forEach((it, i) => it.classList.toggle('focused', i === _abDropdownIdx));
+    items[_abDropdownIdx]?.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _abDropdownIdx = Math.max(_abDropdownIdx - 1, 0);
+    items.forEach((it, i) => it.classList.toggle('focused', i === _abDropdownIdx));
+    items[_abDropdownIdx]?.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter' && _abDropdownIdx >= 0) {
+    e.preventDefault();
+    items[_abDropdownIdx]?.click();
+  } else if (e.key === 'Escape') {
+    dd.style.display = 'none';
+    _abDropdownIdx = -1;
+  }
+}
+
+function abSelectClient(encodedEmail) {
+  if (!_abClientCache) _abClientCache = _buildClientMap();
+  const email = decodeURIComponent(encodedEmail);
+  const c = _abClientCache.find(x => x.email.toLowerCase() === email.toLowerCase());
+  if (!c) return;
+
+  _abSelectedClientKey = email;
+  _abClientUid = c.uid || null;
+
+  // Tenta buscar uid do Firebase se ainda não temos
+  if (!_abClientUid && _clientProfilesRef) {
+    _clientProfilesRef.orderByChild('email').equalTo(email.toLowerCase()).once('value', snap => {
+      if (snap.exists()) _abClientUid = Object.keys(snap.val())[0];
+    });
+  }
+
+  // Esconde busca, mostra chip
+  const searchBox = document.getElementById('abClientSearchBox');
+  if (searchBox) searchBox.style.display = 'none';
+  document.getElementById('abSearchDropdown').style.display = 'none';
+  const chip = document.getElementById('abSelectedChip');
+  chip.style.display = 'flex';
+  document.getElementById('abChipName').textContent = c.name;
+  const vipEl = document.getElementById('abChipVip');
+  vipEl.style.display = c.vip ? 'inline' : 'none';
+
+  // Preenche campos com highlight de autofill
+  const autofill = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el || !val) return;
+    el.value = val;
+    el.classList.add('ab-autofill');
+  };
+  autofill('abName',  c.name);
+  autofill('abPhone', c.phone);
+  autofill('abEmail', c.email);
+  // Esconde aviso de e-mail (não foi editado ainda)
+  const warnEl = document.getElementById('abEmailWarning');
+  if (warnEl) { warnEl.style.display = 'none'; warnEl.dataset.baseEmail = c.email; }
+
+  // Monta frota
+  const vehicles = Object.entries(c.vehicles || {});
+  const emailKey = email.replace(/[.#$[\]]/g, '_');
+  const vNotes   = (_clientNotes[emailKey + '__vnotes']) || {};
+
+  const fleet = document.getElementById('abFleetPicker');
+  const clientInfo = document.getElementById('abClientInfo');
+  if (clientInfo) clientInfo.style.display = 'none';
+
+  if (!vehicles.length) {
+    if (fleet) fleet.style.display = 'none';
+    return;
+  }
+
+  if (vehicles.length === 1) {
+    const [vKey, v] = vehicles[0];
+    autofill('abCar',   v.car);
+    autofill('abPlate', v.plate);
+    if (v.carSize) { document.getElementById('abSize').value = v.carSize; abUpdatePrice(); }
+    const vObs = vNotes[vKey] || '';
+    if (vObs && fleet) {
+      fleet.innerHTML = `<div style="font-size:.78rem;color:var(--muted);margin-bottom:.45rem">Veículo selecionado automaticamente.</div>
+        <div id="abFleetCards" class="vehicle-cards">
+          <div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:.5rem .8rem;font-size:.75rem;grid-column:1/-1"><em style="color:var(--orange)">📝 Obs do veículo: ${escHtml(vObs)}</em></div>
+        </div>`;
+      fleet.style.display = 'block';
+    } else if (fleet) {
+      fleet.style.display = 'none';
+    }
+  } else {
+    // 2+ veículos — seletor de frota
+    _abFleet = vehicles.map(([vKey, v]) => ({ ...v, vKey, obs: vNotes[vKey] || '' }));
+    if (fleet) {
+      const cardsHtml = _abFleet.map((v, i) => {
+        const obsHtml = v.obs ? `<div style="font-size:.68rem;color:var(--orange);margin-top:.25rem;line-height:1.3">📝 ${escHtml(v.obs)}</div>` : '';
+        return `<div class="vehicle-card" style="cursor:pointer;border:1px solid var(--border);transition:border-color .15s" onclick="abPickVehicle(${i},this)">
+          <div class="vehicle-card-label">${escHtml(v.car || 'Veículo')}</div>
+          ${v.plate ? `<div class="vehicle-card-plate">${escHtml(v.plate)}</div>` : ''}
+          ${obsHtml}
+        </div>`;
+      }).join('') + `<div class="vehicle-card" style="cursor:pointer;border:1px dashed var(--border);transition:border-color .15s;display:flex;align-items:center;justify-content:center;min-height:60px" onclick="abPickOtherVehicle(this)">
+        <span style="color:var(--muted);font-size:.8rem">+ Outro veículo</span>
+      </div>`;
+      fleet.innerHTML = `<div style="font-size:.78rem;color:var(--muted);margin-bottom:.45rem">Frota cadastrada — clique para selecionar o veículo desta visita:</div>
+        <div id="abFleetCards" class="vehicle-cards">${cardsHtml}</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:.45rem">Ou escolha "Outro veículo" para cadastrar um novo.</div>`;
+      fleet.style.display = 'block';
+    }
+  }
+}
+
+function abClearClientSelection(keepSearchText) {
+  _abSelectedClientKey = null;
+  _abClientUid = null;
+
+  const chip = document.getElementById('abSelectedChip');
+  if (chip) chip.style.display = 'none';
+
+  if (_abMode === 'existente') {
+    const searchBox = document.getElementById('abClientSearchBox');
+    if (searchBox) searchBox.style.display = 'block';
+    if (!keepSearchText) {
+      const si = document.getElementById('abSearchInput');
+      if (si) si.value = '';
+    }
+    const dd = document.getElementById('abSearchDropdown');
+    if (dd) dd.style.display = 'none';
+  }
+
+  // Limpa campos e autofill
+  ['abName','abPhone','abEmail','abCar','abPlate'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.value = ''; el.classList.remove('ab-autofill'); el.style.background = ''; el.style.borderColor = ''; }
+  });
+
+  // Esconde fleet picker e client info
+  const fleet = document.getElementById('abFleetPicker');
+  if (fleet) fleet.style.display = 'none';
+  _abFleet = [];
+  const info = document.getElementById('abClientInfo');
+  if (info) info.style.display = 'none';
+  const warn = document.getElementById('abEmailWarning');
+  if (warn) { warn.style.display = 'none'; warn.dataset.baseEmail = ''; }
+}
+
+function abEmailEditWarning() {
+  if (!_abSelectedClientKey) return;
+  const warn = document.getElementById('abEmailWarning');
+  if (!warn) return;
+  const emailEl = document.getElementById('abEmail');
+  const currentVal = (emailEl?.value || '').trim().toLowerCase();
+  const baseEmail  = (warn.dataset.baseEmail || '').toLowerCase();
+  warn.style.display = (currentVal !== baseEmail && currentVal !== '') ? 'block' : 'none';
 }
 
 // ── Pré-preenchimento por e-mail no formulário público (clientes sem login) ──
@@ -3193,6 +3506,7 @@ async function submitAdminBooking() {
       });
     }
     closeModal('adminBookingModal');
+    _abClientCache = null; // invalida cache — upsertClient pode ter alterado dados
     renderAdminBookings();
     if (sendWa && phone) {
       const waPhone = phone.replace(/\D/g, '');
@@ -4674,7 +4988,11 @@ function buildComboList(entries) {
               ${isInternal ? '🔒 Interno' : '🌐 Público'}
             </span>
           </div>
-          <div class="svc-admin-sub">${isInternal ? 'Atalho de agendamento admin' : 'Desconto: ' + (combo.discountPercent || 0) + '%'}</div>
+          <div class="svc-admin-sub">${isInternal
+            ? (pPq.custom || pGr.custom
+                ? `🔒 Interno — preço final personalizado${pPq.savings > 0 ? ' · 🎁 pq: −' + fmtMoney(pPq.savings) : ''}${pGr.savings > 0 ? ' · gr: −' + fmtMoney(pGr.savings) : ''}`
+                : 'Atalho de agendamento admin')
+            : 'Desconto: ' + (combo.discountPercent || 0) + '%'}</div>
         </div>
         <button class="btn-toggle-svc${isActive ? '' : ' off'}" onclick="toggleCombo('${id}')">
           ${isActive ? '✅ Ativo' : '⛔ Inativo'}
@@ -4684,13 +5002,17 @@ function buildComboList(entries) {
       <div class="svc-pricing-grid">
         <div class="svc-pricing-cell">
           <b>🚗 Pequeno</b>
-          De ${fmtMoney(pPq.regular)} por <strong style="color:var(--accent)">${fmtMoney(pPq.final)}</strong>
-          ${pPq.savings ? `<div class="svc-pricing-margin">Economia: ${fmtMoney(pPq.savings)}</div>` : ''}
+          ${pPq.custom ? `<div style="font-size:.72rem;color:var(--muted)">Soma: ${fmtMoney(pPq.regular)}</div>` : (pPq.savings ? `De ${fmtMoney(pPq.regular)}` : '')}
+          ${pPq.custom || pPq.savings ? `por ` : ''}<strong style="color:var(--accent)">${fmtMoney(pPq.final)}</strong>
+          ${pPq.savings > 0 ? `<div class="svc-pricing-margin">🎁 Economia: ${fmtMoney(pPq.savings)}</div>` : ''}
+          ${!pPq.regular ? '<span style="color:var(--muted);font-size:.72rem">Sem preço configurado</span>' : ''}
         </div>
         <div class="svc-pricing-cell">
           <b>🚙 Grande</b>
-          De ${fmtMoney(pGr.regular)} por <strong style="color:var(--accent)">${fmtMoney(pGr.final)}</strong>
-          ${pGr.savings ? `<div class="svc-pricing-margin">Economia: ${fmtMoney(pGr.savings)}</div>` : ''}
+          ${pGr.custom ? `<div style="font-size:.72rem;color:var(--muted)">Soma: ${fmtMoney(pGr.regular)}</div>` : (pGr.savings ? `De ${fmtMoney(pGr.regular)}` : '')}
+          ${pGr.custom || pGr.savings ? `por ` : ''}<strong style="color:var(--accent)">${fmtMoney(pGr.final)}</strong>
+          ${pGr.savings > 0 ? `<div class="svc-pricing-margin">🎁 Economia: ${fmtMoney(pGr.savings)}</div>` : ''}
+          ${!pGr.regular ? '<span style="color:var(--muted);font-size:.72rem">Sem preço configurado</span>' : ''}
         </div>
       </div>
       <div class="svc-admin-actions">
@@ -4708,11 +5030,13 @@ function openComboForm(id) {
   const selectedIds = combo?.serviceIds || [];
   const svcChecks = Object.entries(SVCS).map(([sid, s]) =>
     `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.82rem;cursor:pointer">
-      <input type="checkbox" value="${sid}" ${selectedIds.includes(sid) ? 'checked' : ''}/>
+      <input type="checkbox" value="${sid}" ${selectedIds.includes(sid) ? 'checked' : ''} onchange="updateComboFinalPricePreview()"/>
       ${s.icon} ${s.name} <span style="color:var(--muted);font-size:.72rem">(pq: ${fmtMoney(s.pq)} / gr: ${fmtMoney(s.gr)})</span>
     </label>`
   ).join('');
   const isInternal = combo?.internal === true;
+  const fpPq = combo?.finalPricePq != null ? combo.finalPricePq : '';
+  const fpGr = combo?.finalPriceGr != null ? combo.finalPriceGr : '';
   wrap.innerHTML = `
     <div class="svc-form-panel">
       <h4>${id ? 'Editar Combo' : 'Novo Combo'}</h4>
@@ -4740,6 +5064,20 @@ function openComboForm(id) {
           ${svcChecks}
         </div>
       </div>
+      <div id="cfFinalPriceGroup" style="display:none">
+        <div style="font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:.9rem 0 .4rem">💰 Valor Final Personalizado <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(opcional — deixe em branco para usar a soma automática)</span></div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>🚗 Valor Final Pequeno (R$)</label>
+            <input id="cfFinalPricePq" type="number" value="${fpPq}" placeholder="ex: 650" min="0" step="10" oninput="updateComboFinalPricePreview()"/>
+          </div>
+          <div class="form-group">
+            <label>🚙 Valor Final Grande (R$)</label>
+            <input id="cfFinalPriceGr" type="number" value="${fpGr}" placeholder="ex: 850" min="0" step="10" oninput="updateComboFinalPricePreview()"/>
+          </div>
+        </div>
+        <div id="cfFinalPricePreview" style="display:none;background:rgba(42,159,214,.07);border:1px solid rgba(42,159,214,.2);border-radius:8px;padding:.6rem .9rem;font-size:.8rem;line-height:1.7"></div>
+      </div>
       <div style="display:flex;gap:.8rem;margin-top:1.2rem">
         <button class="btn-primary" onclick="saveCombo('${id || ''}')">💾 Salvar</button>
         <button class="btn-ghost" onclick="document.getElementById('comboFormWrap').innerHTML=''">Cancelar</button>
@@ -4753,6 +5091,46 @@ function toggleComboInternalUI() {
   const internal = document.getElementById('cfInternal')?.value === '1';
   const discGroup = document.getElementById('cfDiscGroup');
   if (discGroup) discGroup.style.display = internal ? 'none' : '';
+  const fpGroup = document.getElementById('cfFinalPriceGroup');
+  if (fpGroup) {
+    fpGroup.style.display = internal ? '' : 'none';
+    if (internal) updateComboFinalPricePreview();
+  }
+}
+
+function updateComboFinalPricePreview() {
+  const preview = document.getElementById('cfFinalPricePreview');
+  if (!preview) return;
+  const checked = [...document.querySelectorAll('#comboFormWrap input[type=checkbox]:checked')];
+  const subtotalPq = checked.reduce((s, cb) => s + (SVCS[cb.value]?.pq || 0), 0);
+  const subtotalGr = checked.reduce((s, cb) => s + (SVCS[cb.value]?.gr || 0), 0);
+  const rawPq = document.getElementById('cfFinalPricePq')?.value;
+  const rawGr = document.getElementById('cfFinalPriceGr')?.value;
+  const finalPq = rawPq !== '' && rawPq != null ? parseFloat(rawPq) : null;
+  const finalGr = rawGr !== '' && rawGr != null ? parseFloat(rawGr) : null;
+  let html = '';
+  function priceRow(label, subtotal, final) {
+    if (final == null) {
+      return `<div style="color:var(--muted)">${label} Soma automática: <b>${fmtMoney(subtotal)}</b></div>`;
+    }
+    const diff = subtotal - final;
+    const pct = subtotal > 0 ? Math.abs((diff / subtotal) * 100).toFixed(1) : 0;
+    if (final > subtotal) {
+      return `<div>${label} ${fmtMoney(subtotal)} → <b style="color:var(--orange)">${fmtMoney(final)}</b> <span style="color:var(--orange)">⚠️ Acréscimo de ${fmtMoney(final - subtotal)}</span></div>`;
+    }
+    if (diff > 0) {
+      return `<div>${label} ${fmtMoney(subtotal)} → <b style="color:var(--accent)">${fmtMoney(final)}</b> <span style="color:var(--green)">🎁 Desc. ${fmtMoney(diff)} (${pct}%)</span></div>`;
+    }
+    return `<div>${label} <b style="color:var(--accent)">${fmtMoney(final)}</b> (sem desconto)</div>`;
+  }
+  if (checked.length) {
+    html += priceRow('🚗 Pequeno:', subtotalPq, finalPq);
+    html += priceRow('🚙 Grande:', subtotalGr, finalGr);
+  } else {
+    html = '<div style="color:var(--muted)">Selecione ao menos um serviço para ver o preview.</div>';
+  }
+  preview.innerHTML = html;
+  preview.style.display = 'block';
 }
 
 async function saveCombo(id) {
@@ -4767,12 +5145,24 @@ async function saveCombo(id) {
   if (serviceIds.length < 2) { alert('Selecione pelo menos 2 serviços.'); return; }
   if (!_combosRef) { alert('Firebase não conectado.'); return; }
 
+  let finalPricePq = null, finalPriceGr = null;
+  if (internal) {
+    const rawPq = document.getElementById('cfFinalPricePq')?.value;
+    const rawGr = document.getElementById('cfFinalPriceGr')?.value;
+    if (rawPq !== '' && rawPq != null) finalPricePq = parseFloat(rawPq);
+    if (rawGr !== '' && rawGr != null) finalPriceGr = parseFloat(rawGr);
+    if (finalPricePq != null && finalPricePq < 0) { alert('Valor final não pode ser negativo.'); return; }
+    if (finalPriceGr != null && finalPriceGr < 0) { alert('Valor final não pode ser negativo.'); return; }
+  }
+
   const key = id || slugify(name);
   const data = {
     name, emoji,
     discountPercent: internal ? 0 : disc,
     active, internal,
     serviceIds,
+    ...(internal && finalPricePq != null ? { finalPricePq } : { finalPricePq: null }),
+    ...(internal && finalPriceGr != null ? { finalPriceGr } : { finalPriceGr: null }),
     createdAt: id ? (_COMBOS[id]?.createdAt || Date.now()) : Date.now(),
   };
   try {
@@ -5796,9 +6186,13 @@ function setSize(size, btn) {
 function comboPrice(combo, size) {
   const ids = combo.serviceIds || [];
   const regular = ids.reduce((sum, id) => sum + (SVCS[id]?.[size] || 0), 0);
+  const customFinal = size === 'pq' ? combo.finalPricePq : combo.finalPriceGr;
+  if (customFinal != null && customFinal >= 0) {
+    return { regular, final: customFinal, savings: regular - customFinal, custom: true };
+  }
   const disc = (combo.discountPercent || 0) / 100;
   const final = Math.round(regular * (1 - disc));
-  return { regular, final, savings: regular - final };
+  return { regular, final, savings: regular - final, custom: false };
 }
 
 function renderCombos() {
@@ -6303,6 +6697,15 @@ if(window.location.search.includes('admin')) openAdminLogin();
   }, { threshold: 0.5 });
   obs.observe(heroStats);
 })();
+
+// --- Fecha dropdown de busca admin ao clicar fora ---
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#abClientSearchBox')) {
+    const dd = document.getElementById('abSearchDropdown');
+    if (dd) dd.style.display = 'none';
+    _abDropdownIdx = -1;
+  }
+});
 
 // --- Ripple effect on all .btn-primary clicks ---
 document.addEventListener('click', function(e) {
