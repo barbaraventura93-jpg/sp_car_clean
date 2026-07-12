@@ -38,6 +38,7 @@ exports.handler = async (event) => {
 
   const config = require('./lib/core/config');
   const logger  = require('./lib/core/logger');
+  const AGENTS  = require('./lib/agents');
 
   // --- Autenticação / rate-limit ---
   if (ADMIN_AGENTS.has(agentId)) {
@@ -54,9 +55,8 @@ exports.handler = async (event) => {
   if (!budget.ok) return reply(200, { ok: false, reason: budget.reason });
 
   // --- Carregar e executar agente ---
-  let agentMod;
-  try { agentMod = require(`./lib/agents/${agentId}`); }
-  catch { return reply(404, { ok: false, error: 'agente não encontrado' }); }
+  const agentMod = AGENTS[agentId];
+  if (!agentMod) return reply(404, { ok: false, error: 'agente não encontrado' });
 
   const { core, getUsage } = buildCore();
   const t0 = Date.now();

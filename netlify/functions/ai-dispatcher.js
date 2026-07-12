@@ -6,6 +6,7 @@
 exports.handler = async () => {
   const config = require('./lib/core/config');
   const logger  = require('./lib/core/logger');
+  const AGENTS  = require('./lib/agents');
 
   const now = new Date();
   const dow = ['sun','mon','tue','wed','thu','fri','sat'][now.getDay()];
@@ -27,9 +28,8 @@ exports.handler = async () => {
         continue;
       }
 
-      let agentMod;
-      try { agentMod = require(`./lib/agents/${agentId}`); }
-      catch { console.log(`ai-dispatcher: módulo ${agentId} não encontrado`); continue; }
+      const agentMod = AGENTS[agentId];
+      if (!agentMod) { console.log(`ai-dispatcher: módulo ${agentId} não encontrado`); continue; }
 
       const { core, getUsage } = buildCore();
       const t0 = Date.now();
