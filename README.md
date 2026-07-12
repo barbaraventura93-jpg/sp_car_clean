@@ -244,6 +244,8 @@ const CFG = {
     "combos":         { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
     "gallery":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
     "clientNotes":    { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "clientLinks":            { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "clientLinkDismissals":   { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
     "coupons":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
     "waitlist":       { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": true },
     "clientProfiles": {
