@@ -582,6 +582,11 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 .bairro-bar-wrap{flex:1;background:rgba(255,255,255,.06);border-radius:4px;height:14px;overflow:hidden}
 .bairro-bar-fill{height:100%;background:linear-gradient(90deg,var(--blue),var(--accent));border-radius:4px;display:flex;align-items:center;justify-content:flex-end;padding-right:5px;min-width:18px;transition:width .5s ease}
 .bairro-bar-val{font-size:.64rem;font-weight:700;color:#fff}
+.bairro-warn{margin-top:.35rem;font-size:.74rem;border-radius:6px;padding:.5rem .7rem;flex-direction:column;gap:.4rem;line-height:1.4}
+.bairro-warn.suggest{display:flex;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);color:#F59E0B}
+.bairro-warn.neutral{display:flex;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--muted)}
+.bairro-warn-actions{display:flex;gap:.5rem}
+.bairro-warn-actions button{font-size:.7rem;padding:.25rem .6rem}
 .radius-row{display:flex;justify-content:space-between;align-items:center;padding:.35rem 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:.8rem}
 .radius-row:last-child{border-bottom:none}
 .radius-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
@@ -1093,6 +1098,16 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
   </div>
 </div>
 
+<div id="mergeClientsModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:640px;max-height:90vh;overflow-y:auto">
+    <div class="modal-hdr">
+      <div><h3>🔗 Mesclar clientes</h3></div>
+      <button class="modal-close" onclick="closeModal('mergeClientsModal')">✕</button>
+    </div>
+    <div class="modal-body" id="mergeClientsModalBody"></div>
+  </div>
+</div>
+
 <!-- ===================================================
      ADMIN — NOVO AGENDAMENTO MANUAL
 =================================================== -->
@@ -1175,7 +1190,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
         <div class="form-group"><label>Placa</label><input id="abPlate" placeholder="ABC-1234" oninput="this.value=this.value.toUpperCase()"/></div>
       </div>
       <div class="form-row full">
-        <div class="form-group"><label>Bairro / Referência</label><input id="abBairro" placeholder="Bairro onde o cliente reside"/></div>
+        <div class="form-group"><label>Bairro / Referência</label><input id="abBairro" placeholder="Bairro onde o cliente reside" onblur="handleBairroBlur('abBairro','abBairroWarn')"/><div id="abBairroWarn" class="bairro-warn" style="display:none"></div></div>
       </div>
       <div class="form-row full">
         <div class="form-group"><label>Observações</label><textarea id="abObs" rows="2" placeholder="Detalhes extras, condição do veículo, acordos..."></textarea></div>
@@ -1363,7 +1378,160 @@ let _stock         = {};   // insumos carregados do Firebase
 let _stockRecipes  = {};   // receitas (serviço → insumos consumidos)
 let _clientNotes = {};
 let _clientNotesRef = null;
+let _clientLinks = {};              // clientLinks/{canonicalKey} → { canonicalEmail, linkedEmails, mergedAt, mergedBy, reason, note }
+let _clientLinksRef = null;
+let _clientLinkDismissals = {};     // pares de duplicidade marcados como "não é a mesma pessoa"
+let _clientLinkDismissalsRef = null;
 let _geoCache = {};
+let _bairroValidationCache = {};
+let _lastNominatimCall = 0;
+// Distritos oficiais do município de São Paulo + bairros populares mais buscados,
+// usados como 1ª camada (offline) da validação do campo Bairro.
+const BAIRROS_SP = [
+  'Água Rasa','Alto de Pinheiros','Anhanguera','Aricanduva','Artur Alvim','Barra Funda','Bela Vista','Belém',
+  'Bom Retiro','Brasilândia','Brás','Butantã','Cachoeirinha','Cambuci','Campo Belo','Campo Grande','Campo Limpo',
+  'Cangaíba','Capão Redondo','Carrão','Casa Verde','Cidade Ademar','Cidade Dutra','Cidade Líder','Cidade Tiradentes',
+  'Consolação','Cursino','Ermelino Matarazzo','Freguesia do Ó','Grajaú','Guaianases','Iguatemi','Ipiranga',
+  'Itaim Bibi','Itaim Paulista','Itaquera','Jabaquara','Jaçanã','Jaguara','Jaguaré','Jardim Ângela','Jardim Helena',
+  'Jardim Paulista','Jardim São Luís','Jaraguá','José Bonifácio','Lajeado','Lapa','Liberdade','Limão','Mandaqui',
+  'Marsilac','Moema','Mooca','Morumbi','Parelheiros','Pari','Parque do Carmo','Pedreira','Penha','Perdizes',
+  'Perus','Pinheiros','Pirituba','Ponte Rasa','Raposo Tavares','República','Rio Pequeno','Sacomã','Santa Cecília',
+  'Santana','Santo Amaro','São Domingos','São Lucas','São Mateus','São Miguel Paulista','São Rafael','Sapopemba',
+  'Sé','Socorro','Tatuapé','Tremembé','Tucuruvi','Vila Andrade','Vila Curuçá','Vila Formosa','Vila Guilherme',
+  'Vila Jacuí','Vila Leopoldina','Vila Maria','Vila Matilde','Vila Medeiros','Vila Mariana','Vila Prudente',
+  'Vila Sônia',
+  // Bairros populares (não são distritos oficiais, mas de uso corrente)
+  'Brooklin','Chácara Klabin','Vila Olímpia','Vila Nova Conceição','Higienópolis','Alto da Lapa','Jardins',
+  'Real Parque','Vila Madalena','Vila Leopoldina','Interlagos','Vila Clementino','Jardim América','Paraíso'
+];
+
+function _stripAccents(s) { return String(s||'').normalize('NFD').replace(DIACRITICS_RE, ''); }
+const DIACRITICS_RE = new RegExp(String.fromCharCode(91) + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + String.fromCharCode(93), 'g');
+function _normBairro(s) { return _stripAccents(String(s||'').toLowerCase().trim()).replace(/\s+/g, ' '); }
+
+function _levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = [];
+  for (let i = 0; i <= m; i++) dp.push([i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  return dp[m][n];
+}
+
+// Valida um bairro digitado: 1ª camada = lista local de SP (offline, instantânea),
+// fallback = Nominatim (OpenStreetMap) só quando não há match local. Fail-open: qualquer
+// falha de rede retorna valido:null e nunca bloqueia o fluxo de agendamento/cadastro.
+async function validarBairro(textoOriginal) {
+  const texto = String(textoOriginal || '').trim();
+  if (!texto) return { valido: null, fonte: 'nao_validado', sugestao: null };
+  const key = _normBairro(texto);
+  if (_bairroValidationCache[key]) return _bairroValidationCache[key];
+
+  const exact = BAIRROS_SP.find(b => _normBairro(b) === key);
+  if (exact) {
+    const result = { valido: true, fonte: 'lista_local', sugestao: null };
+    _bairroValidationCache[key] = result;
+    return result;
+  }
+
+  let best = null, bestDist = Infinity;
+  for (const b of BAIRROS_SP) {
+    const d = _levenshtein(key, _normBairro(b));
+    if (d < bestDist) { bestDist = d; best = b; }
+  }
+  if (best && bestDist <= 2) {
+    const result = { valido: false, fonte: 'lista_local', sugestao: best };
+    _bairroValidationCache[key] = result;
+    return result;
+  }
+
+  const nominatimFound = await _checkBairroNominatim(texto);
+  if (nominatimFound === true) {
+    const result = { valido: true, fonte: 'nominatim', sugestao: null };
+    _bairroValidationCache[key] = result;
+    return result;
+  }
+  if (nominatimFound === false) {
+    const result = { valido: false, fonte: 'nao_validado', sugestao: null };
+    _bairroValidationCache[key] = result;
+    return result;
+  }
+  // nominatimFound === null → indisponível/erro: fail-open, não cacheia, sem aviso visível
+  return { valido: null, fonte: 'nao_validado', sugestao: null };
+}
+
+async function _checkBairroNominatim(bairro) {
+  const wait = 1000 - (Date.now() - _lastNominatimCall);
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  _lastNominatimCall = Date.now();
+  try {
+    const q = encodeURIComponent(`${bairro}, São Paulo, SP, Brasil`);
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=br`, {
+      headers: { 'Accept-Language': 'pt-BR', 'User-Agent': 'SPCarCleanApp/1.0' }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data) && data.length > 0;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function handleBairroBlur(inputId, warnId) {
+  const input = document.getElementById(inputId);
+  const warnEl = document.getElementById(warnId);
+  if (!input || !warnEl) return;
+  const texto = input.value.trim();
+  warnEl.style.display = 'none';
+  warnEl.innerHTML = '';
+  input.dataset.bairroValidado = '';
+  input.dataset.bairroFonte = '';
+  input.dataset.bairroSugestao = '';
+  if (!texto) return;
+
+  const r = await validarBairro(texto);
+  input.dataset.bairroValidado = r.valido === true ? 'true' : r.valido === false ? 'false' : '';
+  input.dataset.bairroFonte = r.fonte;
+  if (r.valido || r.valido === null) return; // ok, ou falha de rede: silencioso (fail-open)
+
+  if (r.sugestao) {
+    input.dataset.bairroSugestao = r.sugestao;
+    warnEl.className = 'bairro-warn suggest';
+    warnEl.innerHTML = `<span>Bairro não encontrado. Você quis dizer <strong>${esc(r.sugestao)}</strong>?</span>
+      <div class="bairro-warn-actions">
+        <button type="button" class="btn-ghost" onclick="_useBairroSuggestion('${inputId}','${warnId}')">Usar sugestão</button>
+        <button type="button" class="btn-ghost" onclick="_dismissBairroWarn('${warnId}')">Manter como digitado</button>
+      </div>`;
+    warnEl.style.display = 'flex';
+  } else {
+    warnEl.className = 'bairro-warn neutral';
+    warnEl.innerHTML = `<span>Não conseguimos confirmar esse bairro. Você pode continuar mesmo assim.</span>`;
+    warnEl.style.display = 'flex';
+  }
+}
+
+function _useBairroSuggestion(inputId, warnId) {
+  const input = document.getElementById(inputId);
+  const sugestao = input?.dataset.bairroSugestao;
+  if (input && sugestao) {
+    input.value = sugestao;
+    input.dataset.bairroValidado = 'true';
+    input.dataset.bairroFonte = 'lista_local';
+    input.dataset.bairroSugestao = '';
+  }
+  _dismissBairroWarn(warnId);
+}
+
+function _dismissBairroWarn(warnId) {
+  const warnEl = document.getElementById(warnId);
+  if (warnEl) { warnEl.style.display = 'none'; warnEl.innerHTML = ''; }
+}
 let _approvedFeedback = [];
 let _pendingSurveyCode = null;
 let _surveyRating = 0;
@@ -1819,7 +1987,7 @@ function renderBookingStep() {
         <div style="font-size:.72rem;color:var(--muted);margin-top:.45rem">Ou preencha manualmente abaixo para adicionar um veículo novo.</div>
       </div>
       <div class="form-row"><div class="form-group"><label>Veículo (modelo/ano)</label><input id="fCar" placeholder="Honda Civic 2020"/></div><div class="form-group"><label>Placa</label><input id="fPlate" placeholder="ABC-1234"/></div></div>
-      <div class="form-row"><div class="form-group"><label>Bairro *</label><input id="fBairro" placeholder="Moema, Brooklin, Vila Mariana..."/></div><div class="form-group"><label>CEP (opcional)</label><input id="fCep" placeholder="04543-000" maxlength="9" oninput="fmtCep(this)"/></div></div>
+      <div class="form-row"><div class="form-group"><label>Bairro *</label><input id="fBairro" placeholder="Moema, Brooklin, Vila Mariana..." onblur="handleBairroBlur('fBairro','fBairroWarn')"/><div id="fBairroWarn" class="bairro-warn" style="display:none"></div></div><div class="form-group"><label>CEP (opcional)</label><input id="fCep" placeholder="04543-000" maxlength="9" oninput="fmtCep(this)"/></div></div>
       <div class="form-row full"><div class="form-group"><label>Observações (opcional)</label><textarea id="fObs" placeholder="Informe alguma particularidade do veículo, manchas específicas, etc."></textarea></div></div>
       <div class="form-group" style="margin-top:.8rem">
         <label>Cupom de desconto (opcional)</label>
@@ -1931,7 +2099,11 @@ async function submitBooking() {
   const phone  = document.getElementById('fPhone').value.trim();
   const car    = document.getElementById('fCar').value.trim();
   const plate  = document.getElementById('fPlate').value.trim();
-  const bairro = document.getElementById('fBairro').value.trim();
+  const bairroEl = document.getElementById('fBairro');
+  const bairro = bairroEl.value.trim();
+  const bairroValidado = bairroEl.dataset.bairroValidado === 'true';
+  const bairroFonte    = bairroEl.dataset.bairroFonte || 'nao_validado';
+  const bairroSugestao = bairroEl.dataset.bairroSugestao || null;
   const cep    = document.getElementById('fCep').value.trim();
   const obs    = document.getElementById('fObs').value.trim();
   if(!name||!email||!phone||!car||!bairro) { alert('Preencha todos os campos obrigatórios (incluindo o bairro).'); return; }
@@ -1963,6 +2135,7 @@ async function submitBooking() {
     date: booking.date, pickup: _maxDaysSub > 0 ? addDays(booking.date, _maxDaysSub) : booking.date,
     price: Math.max(0, basePrice - couponDiscount - giftCardDiscount),
     name, email, phone, car, plate, bairro, cep, obs,
+    bairroValidado, bairroFonte, bairroSugestao,
     status: 'pending',
     submittedAt: new Date().toISOString(),
     adminNotes: '',
@@ -3106,6 +3279,11 @@ function abLookupClient() {
         info.innerHTML = '✅ Cliente encontrado: <strong>' + (data.name || email) + '</strong> — pontos de fidelidade vinculados automaticamente.';
         if (data.name  && !document.getElementById('abName').value)  document.getElementById('abName').value  = data.name;
         if (data.phone && !document.getElementById('abPhone').value) document.getElementById('abPhone').value = data.phone;
+        if (!document.getElementById('abBairro').value) {
+          if (!_abClientCache) _abClientCache = _buildClientMap();
+          const cached = _abClientCache.find(x => x.email.toLowerCase() === email.toLowerCase());
+          if (cached && cached.bairro) document.getElementById('abBairro').value = cached.bairro;
+        }
       } else {
         const match = _bookings.find(b => b.email?.toLowerCase() === email);
         if (match) {
@@ -3286,6 +3464,7 @@ function abSelectClient(encodedEmail) {
   autofill('abName',  c.name);
   autofill('abPhone', c.phone);
   autofill('abEmail', c.email);
+  autofill('abBairro', c.bairro);
   // Esconde aviso de e-mail (não foi editado ainda)
   const warnEl = document.getElementById('abEmailWarning');
   if (warnEl) { warnEl.style.display = 'none'; warnEl.dataset.baseEmail = c.email; }
@@ -3488,6 +3667,11 @@ function fLookupClient() {
       info.innerHTML = '✅ Encontramos seus dados anteriores e preenchemos automaticamente.';
     }
     showPublicFleet(vehicles);
+    // Hook silencioso — agente de upsell (Onda 1)
+    if (match) {
+      const selSvc = (typeof booking !== 'undefined' && booking.services?.length) ? booking.services[0] : null;
+      if (selSvc) setTimeout(() => iaUpsellSuggest(email, selSvc, match).catch(() => {}), 150);
+    }
   });
 }
 
@@ -3510,7 +3694,11 @@ async function submitAdminBooking() {
   const email  = document.getElementById('abEmail')?.value.trim();
   const car    = document.getElementById('abCar')?.value.trim();
   const plate  = document.getElementById('abPlate')?.value.trim();
-  const bairro = document.getElementById('abBairro')?.value.trim();
+  const abBairroEl = document.getElementById('abBairro');
+  const bairro = abBairroEl?.value.trim();
+  const bairroValidado = abBairroEl?.dataset.bairroValidado === 'true';
+  const bairroFonte    = abBairroEl?.dataset.bairroFonte || 'nao_validado';
+  const bairroSugestao = abBairroEl?.dataset.bairroSugestao || null;
   const obs    = document.getElementById('abObs')?.value.trim();
   const status = document.getElementById('abStatus')?.value || 'approved';
   const sendEmail_ = document.getElementById('abSendEmail')?.checked;
@@ -3549,6 +3737,7 @@ async function submitAdminBooking() {
     name, phone,
     ...(email ? { email } : {}),
     car: car || '', plate: plate || '', bairro: bairro || '',
+    bairroValidado, bairroFonte, bairroSugestao,
     ...(obs ? { obs } : {}),
     service: svcId,
     ...(checkedSvcs.length > 1 ? { services: checkedSvcs } : {}),
@@ -3713,7 +3902,12 @@ function viewBooking(id) {
       ${b.paymentConfirmedAt ? `<div class="summary-row"><strong>Pagamento confirmado</strong><span style="color:var(--green);font-weight:700">✅ ${new Date(b.paymentConfirmedAt).toLocaleString('pt-BR')}</span></div>` : ''}
       ${b.paymentMethod ? `<div class="summary-row"><strong>Método</strong><span>${b.paymentMethod}</span></div>` : ''}
       ${b.obs ? `<div class="summary-row"><strong>Obs. cliente</strong><span style="font-style:italic">${b.obs}</span></div>` : ''}
+      ${b.retroativo ? `<div class="summary-row"><strong>Tipo</strong><span style="color:var(--muted)">🕓 Registro retroativo</span></div>` : ''}
+      ${b.retroativo ? `<div class="summary-row"><strong>Pagamento</strong><span style="color:var(--muted)">💵 Pago fora do sistema</span></div>` : ''}
+      ${b.retroativo && b.feedbackSolicitado ? `<div class="summary-row"><strong>Pesquisa enviada</strong><span style="color:var(--green)">✅ ${b.feedbackEnviadoEm ? new Date(b.feedbackEnviadoEm).toLocaleString('pt-BR') : 'Sim'}</span></div>` : ''}
     </div>
+
+    ${b.status === 'completed' ? _buildPriceCorrectionHtml(b) : ''}
 
     ${(b.startDate || b.endDate) ? `
     <div style="background:var(--blue-lt);border:1px solid var(--blue-mid);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
@@ -3768,6 +3962,100 @@ function viewBooking(id) {
        <button class="btn-edit-date" onclick="openEditDate('${b.id}')">📅 Alterar Data</button>`
     : `${_delBtn}<button class="btn-primary" onclick="closeModal('detailModal')">Fechar</button>`;
   document.getElementById('detailModal').style.display = 'flex';
+}
+
+// ============================================================
+// CORREÇÃO DE VALOR (agendamentos concluídos)
+// ============================================================
+function _buildPriceCorrectionHtml(b) {
+  const corrections = b.priceCorrections || [];
+  const paidWarning = b.paidAmount ? `
+    <div style="background:#FEF5E7;border:1px solid #F39C12;border-radius:8px;padding:.7rem 1rem;font-size:.78rem;color:#7a5500;line-height:1.5;margin-bottom:.8rem">
+      ⚠️ Este agendamento tem um pagamento real registrado via InfinitePay (${fmtMoney(b.paidAmount)}). A correção altera apenas o valor de venda para fins de relatório — <strong>não gera estorno nem cobrança adicional</strong>.
+    </div>` : '';
+  const historyHtml = corrections.length ? `
+    <details style="margin-top:.8rem">
+      <summary style="cursor:pointer;font-size:.78rem;font-weight:700;color:var(--muted)">🕓 Histórico de correções (${corrections.length})</summary>
+      <div style="margin-top:.6rem;display:flex;flex-direction:column;gap:.5rem">
+        ${corrections.slice().reverse().map(c => `
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.6rem .8rem;font-size:.78rem">
+            <div><strong>${fmtMoney(c.oldPrice)} → ${fmtMoney(c.newPrice)}</strong> · ${new Date(c.correctedAt).toLocaleString('pt-BR')}</div>
+            <div style="color:var(--muted);margin-top:.2rem">${c.reason}</div>
+            <div style="color:var(--muted);font-size:.72rem;margin-top:.2rem">por ${c.correctedBy}</div>
+          </div>`).join('')}
+      </div>
+    </details>` : '';
+  return `
+  <div style="background:var(--off);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
+    <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">💵 Correção de Valor</div>
+    ${paidWarning}
+    <div class="summary-row"><strong>Valor final atual</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.finalPrice || b.price)}</span></div>
+    <button class="btn-edit-date" style="margin-top:.6rem" onclick="openPriceCorrection('${b.id}')">✏️ Corrigir valor</button>
+    ${historyHtml}
+  </div>`;
+}
+
+function openPriceCorrection(id) {
+  const b = getBookings().find(x=>x.id===id);
+  if(!b) return;
+  const current = b.finalPrice || b.price || 0;
+  document.getElementById('detailBody').innerHTML = `
+    <div class="confirm-card">
+      <h4>✏️ Corrigir Valor Final</h4>
+      <div class="confirm-row"><strong>Cliente</strong><span>${b.name}</span></div>
+      <div class="confirm-row"><strong>Valor atual</strong><span>${fmtMoney(current)}</span></div>
+    </div>
+    ${b.paidAmount ? `<div style="background:#FEF5E7;border:1px solid #F39C12;border-radius:8px;padding:.7rem 1rem;font-size:.78rem;color:#7a5500;line-height:1.5;margin-top:1rem">⚠️ Este agendamento tem um pagamento real registrado via InfinitePay (${fmtMoney(b.paidAmount)}). A correção altera apenas o valor de venda para fins de relatório — <strong>não gera estorno nem cobrança adicional</strong>.</div>` : ''}
+    <div class="form-row" style="margin-top:1.2rem">
+      <div class="form-group">
+        <label>Novo valor (R$)</label>
+        <input id="priceCorrectionValue" type="number" min="0.01" step="0.01" value="${current}"/>
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:.8rem">
+      <label>Motivo da correção</label>
+      <textarea id="priceCorrectionReason" rows="3" placeholder="Ex: Valor digitado errado no registro retroativo — combo incluía cera"></textarea>
+    </div>`;
+  document.getElementById('detailFooter').innerHTML = `
+    <button class="btn-ghost" onclick="viewBooking('${id}')">← Voltar</button>
+    <button class="btn-approve" style="padding:.6rem 1.4rem" onclick="savePriceCorrection('${id}')">💾 Salvar Correção</button>`;
+}
+
+function savePriceCorrection(id) {
+  const b = getBookings().find(x=>x.id===id);
+  if(!b) return;
+  const current  = b.finalPrice || b.price || 0;
+  const newPrice = parseFloat(document.getElementById('priceCorrectionValue').value);
+  const reason   = document.getElementById('priceCorrectionReason').value.trim();
+
+  if(!newPrice || newPrice <= 0)     { alert('Informe um valor válido, maior que zero.'); return; }
+  if(newPrice === current)           { alert('O novo valor deve ser diferente do valor atual.'); return; }
+  if(reason.length < 10)             { alert('Descreva o motivo da correção (mínimo 10 caracteres).'); return; }
+  if(!confirm(`Confirmar correção de valor?\n\n${fmtMoney(current)} → ${fmtMoney(newPrice)}`)) return;
+
+  const correction = {
+    oldPrice: current,
+    newPrice,
+    reason,
+    correctedBy: _authUser?.email || 'admin',
+    correctedAt: new Date().toISOString()
+  };
+  b.finalPrice = newPrice;
+  b.priceCorrections = [...(b.priceCorrections || []), correction];
+  b.lastPriceCorrectionAt = correction.correctedAt;
+  updateBooking(b);
+
+  fetch('/.netlify/functions/notify-booking', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'price-correction', id: b.id, name: b.name,
+      oldPrice: fmtMoney(current), newPrice: fmtMoney(newPrice), reason
+    })
+  }).catch(() => {});
+
+  renderAdminBookings();
+  viewBooking(id);
 }
 
 // ============================================================
@@ -4081,6 +4369,8 @@ function cancelBooking(id) {
   }
   closeModal('detailModal');
   renderAdminBookings();
+  // Hook silencioso — agente de agenda (Onda 1)
+  try { iaDispatchAgenda(cancelledDate, b.service || b.services?.[0], b.carSize); } catch {}
 }
 
 async function markCompleted(id) {
@@ -4164,6 +4454,57 @@ function doEditDate(id) {
 // ============================================================
 // CLIENTES
 // ============================================================
+function _fbKeyFromEmail(email) { return (email||'').toLowerCase().trim().replace(/[.#$[\]]/g,'_'); }
+
+function _normName(name) {
+  return (name||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+}
+function _normPhone(phone) {
+  // Compara sempre pelos 8 últimos dígitos — isso já ignora DDI e DDD trocados
+  // sem precisar decidir se um prefixo "55" é código de país ou o DDD de Santa Maria/RS.
+  const d = (phone||'').replace(/\D/g,'');
+  return d.length >= 8 ? d.slice(-8) : '';
+}
+function _normEmailForMatch(email) {
+  email = (email||'').toLowerCase().trim();
+  const at = email.indexOf('@');
+  if (at < 0) return email;
+  const local = email.slice(0, at), domain = email.slice(at+1);
+  if (domain === 'gmail.com' || domain === 'googlemail.com') {
+    return local.split('+')[0].replace(/\./g,'') + '@gmail.com';
+  }
+  return email;
+}
+
+// Une, dentro do próprio clientMap (chave = e-mail lowercase), os grupos apontados
+// por clientLinks sob a chave canônica. Não altera bookings — apenas a agregação em memória.
+function _applyClientLinks(clientMap) {
+  Object.values(_clientLinks || {}).forEach(link => {
+    if (!link || !link.canonicalEmail) return;
+    const canonKey = link.canonicalEmail.toLowerCase();
+    (link.linkedEmails || []).forEach(le => {
+      const key = (le||'').toLowerCase();
+      if (!key || key === canonKey) return;
+      const dupe = clientMap[key];
+      if (!dupe) return;
+      if (!clientMap[canonKey]) {
+        clientMap[canonKey] = { ...dupe, email: link.canonicalEmail };
+      } else {
+        const canon = clientMap[canonKey];
+        canon.bookings.push(...dupe.bookings);
+        Object.entries(dupe.vehicles).forEach(([vk, v]) => { if (!canon.vehicles[vk]) canon.vehicles[vk] = v; });
+        if (!canon.uid && dupe.uid) canon.uid = dupe.uid;
+        if (!canon.bairro && dupe.bairro) canon.bairro = dupe.bairro;
+        if (!canon.cep && dupe.cep) canon.cep = dupe.cep;
+      }
+      delete clientMap[key];
+      const canon = clientMap[canonKey];
+      canon.merged = true;
+      canon.linkedEmails = [...(canon.linkedEmails || []), dupe.email];
+    });
+  });
+}
+
 function _buildClientMap() {
   const bookings = getBookings();
   const clientMap = {};
@@ -4179,17 +4520,13 @@ function _buildClientMap() {
     const vKey = (b.plate || b.car || '').trim().toUpperCase();
     if(vKey && !clientMap[key].vehicles[vKey]) clientMap[key].vehicles[vKey] = { car: b.car || '', plate: b.plate || '' };
   });
-  // Enriquecer com dados do Firebase clientProfiles (uid, points, birthDate)
-  const profilesByEmail = {};
-  if (_clientProfilesRef) {
-    // Cache síncrono já carregado: usamos _clientNotes como proxy temporário
-    // Para dados completos, o admin pode recarregar — aqui usamos o que está no booking
-  }
   // Pega uid a partir dos bookings que já têm clientUid
   Object.values(clientMap).forEach(c => {
     const b = c.bookings.find(b => b.clientUid);
     if (b) c.uid = b.clientUid;
   });
+
+  _applyClientLinks(clientMap);
 
   return Object.values(clientMap).map(c => {
     const done = c.bookings.filter(b => ['confirmed','approved','completed'].includes(b.status));
@@ -4201,9 +4538,44 @@ function _buildClientMap() {
   });
 }
 
+// Sugestões de duplicidade entre clientes já agregados por _buildClientMap()
+// (e-mails distintos, sem par já vinculado ou ignorado). Nunca mescla — só sugere.
+function _detectClientDuplicates(clients) {
+  const dismissed = new Set(Object.values(_clientLinkDismissals || {})
+    .filter(Boolean)
+    .map(d => [d.emailA, d.emailB].map(e => (e||'').toLowerCase()).sort().join('|')));
+
+  const suggestions = [];
+  for (let i = 0; i < clients.length; i++) {
+    for (let j = i + 1; j < clients.length; j++) {
+      const a = clients[i], b = clients[j];
+      if (a.email.toLowerCase() === b.email.toLowerCase()) continue;
+      const pairKey = [a.email.toLowerCase(), b.email.toLowerCase()].sort().join('|');
+      if (dismissed.has(pairKey)) continue;
+
+      const phoneA = _normPhone(a.phone), phoneB = _normPhone(b.phone);
+      const nameA = _normName(a.name), nameB = _normName(b.name);
+      const emailA = _normEmailForMatch(a.email), emailB = _normEmailForMatch(b.email);
+
+      let match = null;
+      if (phoneA && phoneB && phoneA === phoneB) {
+        match = { level: 'alta', icon: '🔴', criterion: 'Mesmo telefone' };
+      } else if (nameA && nameB && nameA === nameB) {
+        match = { level: 'media', icon: '🟡', criterion: 'Mesmo nome' };
+      } else if (emailA && emailB && emailA === emailB) {
+        match = { level: 'media', icon: '🟡', criterion: 'E-mail equivalente' };
+      }
+      if (match) suggestions.push({ a, b, ...match });
+    }
+  }
+  suggestions.sort((x, y) => (x.level === 'alta' ? 0 : 1) - (y.level === 'alta' ? 0 : 1));
+  return suggestions;
+}
+
 function renderAdminClients(filter) {
   filter = filter || '';
-  let clients = _buildClientMap();
+  const allClients = _buildClientMap();
+  let clients = allClients;
   const q = filter.toLowerCase();
   if(q) clients = clients.filter(c =>
     c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || (c.phone||'').includes(q)
@@ -4234,7 +4606,10 @@ function renderAdminClients(filter) {
   const inactiveDays = 60;
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - inactiveDays);
   const cutoffStr = cutoff.toISOString().slice(0,10);
-  const inactive = _buildClientMap().filter(c => c.lastVisit && c.lastVisit < cutoffStr);
+  const inactive = allClients.filter(c => c.lastVisit && c.lastVisit < cutoffStr);
+
+  // Possíveis duplicidades (nome/telefone/e-mail semelhante entre e-mails diferentes)
+  const duplicates = _detectClientDuplicates(allClients);
 
   document.getElementById('adminContent').innerHTML = `
     <h2>👥 Clientes</h2>
@@ -4242,12 +4617,36 @@ function renderAdminClients(filter) {
       <input type="text" id="clientSearchInput" placeholder="Buscar por nome, e-mail ou telefone..." value="${filter.replace(/"/g,'&quot;')}" oninput="renderAdminClients(this.value)" />
       <span style="font-size:.8rem;color:var(--muted);white-space:nowrap">${clients.length} cliente${clients.length!==1?'s':''}</span>
     </div>
+    ${duplicates.length ? `
+    <details style="margin-bottom:1rem">
+      <summary style="cursor:pointer;font-family:Montserrat,sans-serif;font-size:.8rem;font-weight:700;color:var(--blue);padding:.6rem 0">
+        🔗 ${duplicates.length} possível${duplicates.length!==1?'is':''} duplicidade${duplicates.length!==1?'s':''}
+      </summary>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.5rem;margin-top:.4rem">
+        ${duplicates.map(d => `
+        <div class="reactivation-row" style="flex-wrap:wrap;align-items:flex-start">
+          <span style="flex:1;min-width:240px;line-height:1.5">
+            <strong>${esc(d.a.name)}</strong> <span style="color:var(--muted);font-size:.72rem">${esc(d.a.email)}</span>
+            &nbsp;↔&nbsp;
+            <strong>${esc(d.b.name)}</strong> <span style="color:var(--muted);font-size:.72rem">${esc(d.b.email)}</span>
+            <br><span style="font-size:.72rem;color:${d.level==='alta'?'var(--red)':'var(--orange)'}">${d.icon} ${d.criterion}</span>
+          </span>
+          <div style="display:flex;gap:.4rem">
+            <button class="btn-primary" style="font-size:.7rem;padding:.25rem .6rem" onclick="openMergeClientsModal('${encodeURIComponent(d.a.email)}','${encodeURIComponent(d.b.email)}')">🔗 Mesclar</button>
+            <button class="btn-ghost" style="font-size:.7rem;padding:.25rem .6rem" onclick="dismissDuplicateSuggestion('${encodeURIComponent(d.a.email)}','${encodeURIComponent(d.b.email)}')">Ignorar</button>
+          </div>
+        </div>`).join('')}
+      </div>
+    </details>` : ''}
     ${inactive.length ? `
     <details style="margin-bottom:1rem">
       <summary style="cursor:pointer;font-family:Montserrat,sans-serif;font-size:.8rem;font-weight:700;color:var(--orange);padding:.6rem 0">
         ⚠️ ${inactive.length} cliente${inactive.length!==1?'s':''} inativos há mais de ${inactiveDays} dias
       </summary>
       <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.5rem;margin-top:.4rem">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:.4rem">
+          <button class="btn-primary" style="font-size:.75rem;padding:.25rem .7rem" onclick="iaGerarReativacao()">🤖 Gerar mensagens com IA</button>
+        </div>
         ${inactive.map(c => `
         <div class="reactivation-row">
           <span>${c.name} <span style="color:var(--muted);font-size:.72rem">${c.email}</span></span>
@@ -4260,6 +4659,102 @@ function renderAdminClients(filter) {
       </div>
     </details>` : ''}
     <div class="clients-list">${rows}</div>`;
+}
+
+function dismissDuplicateSuggestion(encA, encB) {
+  const emailA = decodeURIComponent(encA), emailB = decodeURIComponent(encB);
+  const key = [_fbKeyFromEmail(emailA), _fbKeyFromEmail(emailB)].sort().join('__');
+  const payload = { emailA, emailB, dismissedAt: new Date().toISOString() };
+  _clientLinkDismissals[key] = payload;
+  if (_clientLinkDismissalsRef) _clientLinkDismissalsRef.child(key).set(payload).catch(e => console.warn('dismissDuplicateSuggestion:', e));
+  renderAdminClients();
+}
+
+function openMergeClientsModal(encA, encB) {
+  const emailA = decodeURIComponent(encA), emailB = decodeURIComponent(encB);
+  const all = _buildClientMap();
+  const a = all.find(c => c.email.toLowerCase() === emailA.toLowerCase());
+  const b = all.find(c => c.email.toLowerCase() === emailB.toLowerCase());
+  if (!a || !b) { alert('Cliente não encontrado.'); return; }
+
+  const aIsCanonical = a.completedCount > b.completedCount ||
+    (a.completedCount === b.completedCount && a.totalSpent >= b.totalSpent);
+
+  const card = (c, checked) => `
+    <label style="display:block;border:1px solid var(--border);border-radius:10px;padding:.7rem;cursor:pointer">
+      <input type="radio" name="mergeCanonical" value="${esc(c.email)}" ${checked ? 'checked' : ''} style="margin-right:.4rem"/>
+      <strong>${esc(c.name)}</strong><br>
+      <span style="font-size:.78rem;color:var(--muted)">📧 ${esc(c.email)}<br>📞 ${esc(c.phone || '—')}${c.bairro ? ' · 📍 ' + esc(c.bairro) : ''}</span><br>
+      <span style="font-size:.75rem">${c.completedCount} atend. · ${fmtMoney(c.totalSpent)}</span>
+    </label>`;
+
+  document.getElementById('mergeClientsModalBody').innerHTML = `
+    <p style="font-size:.82rem;color:var(--muted)">Escolha qual cadastro será o principal (canônico). O outro passa a ser exibido de forma unificada com ele — o histórico de agendamentos não é alterado.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin:.8rem 0">
+      ${card(a, aIsCanonical)}${card(b, !aIsCanonical)}
+    </div>
+    <div class="form-group"><label>Observação (opcional)</label>
+      <textarea id="mergeNote" class="notes-textarea" placeholder="Motivo da mesclagem..."></textarea>
+    </div>
+    <button class="btn-primary btn-full" style="margin-top:.8rem" onclick="confirmMergeClients('${encodeURIComponent(a.email)}','${encodeURIComponent(b.email)}')">✅ Confirmar mesclagem</button>
+  `;
+  document.getElementById('mergeClientsModal').style.display = 'flex';
+}
+
+async function confirmMergeClients(encA, encB) {
+  const emailA = decodeURIComponent(encA), emailB = decodeURIComponent(encB);
+  const chosen = document.querySelector('input[name="mergeCanonical"]:checked')?.value;
+  if (!chosen) { alert('Selecione o cadastro canônico.'); return; }
+  const canonicalEmail = chosen;
+  const other = chosen.toLowerCase() === emailA.toLowerCase() ? emailB : emailA;
+  const canonKeyLower = canonicalEmail.toLowerCase();
+  const otherKeyLower = other.toLowerCase();
+  const note = document.getElementById('mergeNote')?.value.trim() || '';
+
+  // Bloqueia ciclos: o registro escolhido como canônico não pode já ser um linkedEmail de outro grupo,
+  // e o outro registro não pode já ser canônico de um grupo diferente.
+  const otherIsCanonicalElsewhere = Object.values(_clientLinks || {})
+    .some(l => l && l.canonicalEmail && l.canonicalEmail.toLowerCase() === otherKeyLower);
+  if (otherIsCanonicalElsewhere) {
+    alert('Esse cadastro já é o principal de outro grupo mesclado. Escolha-o como canônico, ou desfaça a mesclagem existente primeiro.');
+    return;
+  }
+  const key = _fbKeyFromEmail(canonicalEmail);
+  const alreadyLinkedElsewhere = Object.entries(_clientLinks || {})
+    .some(([k, l]) => k !== key && l && (l.linkedEmails || []).some(e => (e || '').toLowerCase() === otherKeyLower));
+  if (alreadyLinkedElsewhere) {
+    alert('Esse e-mail já está vinculado a outro cadastro canônico.');
+    return;
+  }
+  const canonicalIsLinkedElsewhere = Object.entries(_clientLinks || {})
+    .some(([k, l]) => k !== key && l && (l.linkedEmails || []).some(e => (e || '').toLowerCase() === canonKeyLower));
+  if (canonicalIsLinkedElsewhere) {
+    alert('Esse cadastro já está vinculado a outro cadastro canônico. Desfaça essa mesclagem antes de criar uma nova.');
+    return;
+  }
+
+  const existing = _clientLinks[key] || { canonicalEmail, linkedEmails: [], mergedAt: new Date().toISOString(), mergedBy: 'admin', reason: 'manual' };
+  const linkedEmails = Array.from(new Set([...(existing.linkedEmails || []), other]));
+  const payload = { canonicalEmail, linkedEmails, mergedAt: existing.mergedAt || new Date().toISOString(), mergedBy: 'admin', reason: 'manual', note };
+
+  try {
+    if (_clientLinksRef) await _clientLinksRef.child(key).set(payload);
+    _clientLinks[key] = payload;
+    _abClientCache = null;
+    closeModal('mergeClientsModal');
+    renderAdminClients();
+  } catch (e) { alert('Erro ao mesclar: ' + e.message); }
+}
+
+function undoMergeClient(encEmail) {
+  const email = decodeURIComponent(encEmail);
+  const key = _fbKeyFromEmail(email);
+  if (!_clientLinks[key]) return;
+  if (!confirm('Desfazer a mesclagem? Os cadastros voltarão a aparecer separados.')) return;
+  delete _clientLinks[key];
+  if (_clientLinksRef) _clientLinksRef.child(key).remove().catch(e => console.warn('undoMergeClient:', e));
+  _abClientCache = null;
+  renderAdminClients();
 }
 
 // ============================================================
@@ -4720,7 +5215,7 @@ function openClientProfile(encodedEmail) {
     <div class="client-profile-header">
       <div class="client-profile-avatar">${initials}</div>
       <div>
-        <div class="client-profile-name">${c.name} ${vipBadge}</div>
+        <div class="client-profile-name">${c.name} ${vipBadge}${c.merged ? ` <span class="vip-badge" style="background:var(--blue-lt);color:var(--blue)" title="E-mails vinculados: ${esc((c.linkedEmails||[]).join(', '))}">🔗 Cadastro mesclado</span>` : ''}</div>
         <div class="client-profile-contact">📧 ${c.email} &nbsp;·&nbsp; 📞 ${c.phone||'—'}</div>
       </div>
     </div>
@@ -4735,6 +5230,7 @@ function openClientProfile(encodedEmail) {
           <div class="profile-field"><strong>Classificação</strong><span>${c.vip?'<span class="vip-badge">★ VIP</span>':c.completedCount>=1?'<span style="color:var(--green);font-size:.8rem">Recorrente</span>':'<span style="color:var(--muted);font-size:.8rem">Novo</span>'}</span></div>
           ${c.birthDate?`<div class="profile-field"><strong>Aniversário</strong><span>🎂 ${c.birthDate.slice(5).replace('-','/')}</span></div>`:''}
           ${c.points?`<div class="profile-field"><strong>Pontos</strong><span>⭐ ${c.points} pts</span></div>`:''}
+          ${c.merged?`<div class="profile-field"><strong>E-mails vinculados</strong><span style="font-size:.8rem">${esc((c.linkedEmails||[]).join(', '))} <button class="btn-ghost" style="font-size:.68rem;padding:.15rem .5rem;margin-left:.4rem" onclick="undoMergeClient('${encodeURIComponent(c.email)}')">↩ Desfazer mesclagem</button></span></div>`:''}
           ${c.uid?`<div style="display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap">
             <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminGenerateBirthdayCoupon('${c.uid}','${c.name}','${c.email}','${encodeURIComponent(c.phone||'')}')">🎁 Cupom Aniversário</button>
             <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminSendReactivation('${encodeURIComponent(c.phone)}','${encodeURIComponent(c.name)}')">💬 WhatsApp Reativação</button>
@@ -6586,7 +7082,15 @@ function updateWaLink() {
     _feedbackRef       = _fbDB.ref('feedback');
     _stockRef          = _fbDB.ref('stock');
     _stockRecipesRef   = _fbDB.ref('stockRecipes');
+    _clientLinksRef    = _fbDB.ref('clientLinks');
+    _clientLinkDismissalsRef = _fbDB.ref('clientLinkDismissals');
     _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
+    _clientLinksRef.once('value', snap => {
+      _clientLinks = snap.val() || {};
+      _abClientCache = null;
+      if (isAdmin() && currentAdminTab === 'clientes') renderAdminClients();
+    });
+    _clientLinkDismissalsRef.once('value', snap => { _clientLinkDismissals = snap.val() || {}; });
 
     // Avaliações aprovadas: escuta em tempo real → atualiza depoimentos públicos
     _feedbackRef.orderByChild('status').equalTo('approved').on('value', snap => {
@@ -6969,6 +7473,210 @@ function reloadGallerySection() {
 reloadGallerySection();
 
 // ============================================================
+// ONDA 1 — Funções de integração IA no frontend
+// ============================================================
+
+// --- 1.1 Relatório semanal ---
+async function iaTriggerRelatorio(btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Gerando...';
+  try {
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error('Sessão expirada — faça login novamente');
+    const token = await user.getIdToken();
+    const resp = await fetch('/.netlify/functions/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ agentId: 'relatorio' })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      alert('✅ Relatório gerado e enviado para o Telegram!\n\n' + (data.summary || ''));
+    } else {
+      alert('Erro: ' + (data.error || data.reason || 'desconhecido'));
+    }
+  } catch (err) {
+    alert('Erro: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+// --- 1.2 Reativação de inativos ---
+async function iaGerarReativacao() {
+  const inactiveDays = 60;
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - inactiveDays);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const inactive = _buildClientMap().filter(c => c.lastVisit && c.lastVisit < cutoffStr);
+
+  if (!inactive.length) { alert('Nenhum cliente inativo encontrado.'); return; }
+
+  const coupon = prompt(
+    `${inactive.length} cliente(s) inativos encontrado(s).\n\nCupom de desconto a mencionar nas mensagens (deixe vazio se não houver):`
+  );
+  if (coupon === null) return; // cancelou
+
+  const user = firebase.auth().currentUser;
+  if (!user) { alert('Sessão expirada — faça login novamente.'); return; }
+  const token = await user.getIdToken();
+
+  const clients = inactive.slice(0, 20).map(c => {
+    const lastBk = c.bookings
+      .filter(b => ['confirmed','approved','completed'].includes(b.status))
+      .sort((a, b) => (b.startDate||b.date||'').localeCompare(a.startDate||a.date||''))[0];
+    return {
+      email:       c.email,
+      name:        c.name,
+      phone:       c.phone,
+      lastService: lastBk?.service || lastBk?.services?.[0] || null,
+      lastDate:    lastBk?.startDate || lastBk?.date || null,
+      car:         lastBk?.car || Object.values(c.vehicles||{})[0]?.car || null,
+      vip:         c.vip,
+      points:      0
+    };
+  });
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `<div style="background:var(--card);border-radius:12px;padding:1.5rem 2rem;text-align:center;max-width:360px">
+    <div style="font-size:1.4rem;margin-bottom:.5rem">🤖</div>
+    <div style="font-weight:600">Gerando mensagens...</div>
+    <div style="opacity:.5;font-size:.82rem;margin-top:.4rem">Personalizando para ${clients.length} cliente(s)</div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  try {
+    const resp = await fetch('/.netlify/functions/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ agentId: 'reativacao', payload: { clients, coupon: coupon || null } })
+    });
+    const data = await resp.json();
+    overlay.remove();
+
+    if (!data.ok) {
+      alert('Erro: ' + (data.error || data.reason || 'desconhecido'));
+      return;
+    }
+    iaShowReativacaoReview(data.drafts || []);
+  } catch (err) {
+    overlay.remove();
+    alert('Erro: ' + err.message);
+  }
+}
+
+function iaShowReativacaoReview(drafts) {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow-y:auto';
+  modal.innerHTML = `
+    <div style="background:var(--card);border-radius:14px;padding:1.5rem;max-width:680px;width:100%;position:relative">
+      <button onclick="this.closest('[style*=fixed]').remove()"
+        style="position:absolute;top:.8rem;right:1rem;background:none;border:none;color:inherit;font-size:1.3rem;cursor:pointer;opacity:.5">×</button>
+      <h3 style="margin:0 0 .4rem">🤖 Textos gerados — revisão</h3>
+      <p style="font-size:.78rem;opacity:.45;margin:0 0 1.2rem">Revise, edite se quiser e copie ou envie cada mensagem individualmente.</p>
+      ${drafts.map((d, i) => `
+        <div style="border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:1rem;margin-bottom:1rem">
+          <div style="font-weight:600;margin-bottom:.5rem">${escHtml(d.name || '')} <span style="font-size:.75rem;opacity:.45">${escHtml(d.email || '')}</span></div>
+          <textarea id="ia-draft-${i}" rows="5"
+            style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:inherit;padding:.5rem;font-size:.82rem;resize:vertical;box-sizing:border-box">${escHtml(d.text || '')}</textarea>
+          <div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap">
+            <button class="btn-ghost" style="font-size:.73rem;padding:.2rem .55rem"
+              onclick="navigator.clipboard.writeText(document.getElementById('ia-draft-${i}').value).then(()=>{this.textContent='✓ Copiado!';setTimeout(()=>this.textContent='📋 Copiar',1500)})">📋 Copiar</button>
+            ${d.email ? `<button class="btn-ghost" style="font-size:.73rem;padding:.2rem .55rem"
+              onclick="iaEnviarReativacao('${escHtml(d.email)}','${escHtml(d.name||'')}',document.getElementById('ia-draft-${i}').value)">📧 Enviar e-mail</button>` : ''}
+          </div>
+        </div>`).join('')}
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+function iaEnviarReativacao(email, name, text) {
+  try {
+    sendEmail('template_update', {
+      to_email: email,
+      to_name:  name,
+      titulo:   `${name ? name.split(' ')[0] + ', sentimos' : 'Sentimos'} sua falta na SP Car Clean!`,
+      mensagem: text
+    });
+    alert(`E-mail enviado para ${name || email}.`);
+  } catch {
+    navigator.clipboard?.writeText(text).catch(() => {});
+    alert('Envio não disponível no momento. Texto copiado para área de transferência.');
+  }
+}
+
+// --- 1.3 Agente de agenda (waitlist) ---
+function iaDispatchAgenda(freedDate, cancelledService, cancelledCarSize) {
+  if (!freedDate) return;
+  firebase.database().ref('aiConfig/agenda').once('value').then(snap => {
+    if (!snap.val()?.enabled) return;
+    const user = firebase.auth().currentUser;
+    if (!user) return;
+    user.getIdToken().then(token => {
+      fetch('/.netlify/functions/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ agentId: 'agenda', payload: { freedDate, cancelledService: cancelledService||null, cancelledCarSize: cancelledCarSize||null } })
+      }).catch(() => {});
+    }).catch(() => {});
+  }).catch(() => {});
+}
+
+// --- 1.4 Agente de upsell ---
+async function iaUpsellSuggest(email, serviceId, lastBooking) {
+  // Remover card anterior se existir
+  document.getElementById('ia-upsell-card')?.remove();
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+
+  try {
+    const daysSince = lastBooking?.date
+      ? Math.floor((Date.now() - new Date(lastBooking.date).getTime()) / 86400000)
+      : null;
+
+    const resp = await fetch('/.netlify/functions/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agentId: 'upsell',
+        payload: {
+          email,
+          serviceId,
+          lastService: lastBooking?.service || lastBooking?.services?.[0] || null,
+          lastDate:    lastBooking?.startDate || lastBooking?.date || null,
+          daysSince
+        }
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+
+    const data = await resp.json();
+    if (!data.ok || !data.suggestion?.service) return;
+
+    // Mostrar card discreto antes do campo de cupom
+    const anchor = document.getElementById('fCouponCode');
+    if (!anchor) return;
+    const card = document.createElement('div');
+    card.id = 'ia-upsell-card';
+    card.style.cssText = 'background:rgba(6,182,212,.08);border:1px solid rgba(6,182,212,.25);border-radius:8px;padding:.55rem .9rem;margin:.4rem 0;font-size:.82rem;position:relative';
+    card.innerHTML = `
+      <button onclick="this.parentElement.remove()"
+        style="position:absolute;top:.25rem;right:.5rem;background:none;border:none;color:inherit;opacity:.35;cursor:pointer;font-size:.95rem;line-height:1">×</button>
+      <div style="font-weight:600;margin-bottom:.15rem;color:var(--accent)">💡 Você pode gostar também</div>
+      <div><strong>${escHtml(data.suggestion.service)}</strong></div>
+      ${data.suggestion.reason ? `<div style="opacity:.65;margin-top:.15rem">${escHtml(data.suggestion.reason)}</div>` : ''}`;
+    anchor.closest('.form-group')?.before(card);
+  } catch {
+    clearTimeout(timer);
+    // Falha silenciosa — não mostrar nada ao cliente
+  }
+}
+
+// ============================================================
 // CENTRAL DE IA
 // ============================================================
 
@@ -7069,6 +7777,7 @@ async function renderAdminIA() {
                   <div style="height:100%;width:${pct}%;background:${barClr};transition:width .3s"></div>
                 </div>
               </div>
+              ${id === 'relatorio' ? `<button class="btn-ghost" style="font-size:.75rem;padding:.2rem .5rem;width:100%;margin-top:.25rem;opacity:${enabled?'1':'.45'}" onclick="iaTriggerRelatorio(this)" ${!enabled?'disabled title="Agente desligado"':''}>▶ Gerar relatório agora</button>` : ''}
             </div>`;
         }).join('')}
       </div>

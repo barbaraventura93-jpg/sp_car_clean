@@ -53,6 +53,16 @@ exports.handler = async (event) => {
         : `💰 *Reembolso:* ❌ Não aplicável \\(fora do prazo de 1 dia útil\\)`) +
       `\n\n🔗 [Abrir portal admin](${portalUrl})`;
 
+  } else if (data.type === 'price-correction') {
+    const { id, name, oldPrice, newPrice, reason } = data;
+    text =
+      `💵 *Correção de Valor — SP Car Clean*\n\n` +
+      `📋 *Código:* ${id}\n` +
+      `👤 *Cliente:* ${name}\n` +
+      `💰 *Valor:* ${oldPrice} → ${newPrice}\n` +
+      `📝 *Motivo:* ${reason}\n\n` +
+      `🔗 [Abrir portal admin](${portalUrl})`;
+
   } else if (data.type === 'reschedule-rejected') {
     const { id, name, phone } = data;
     text =
