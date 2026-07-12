@@ -1129,9 +1129,10 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
         </div>
         <div class="form-group">
           <label>Data de fim * <span id="abEndDateHint" style="font-weight:400;color:var(--muted);font-size:.7rem"></span></label>
-          <input type="date" id="abEndDate"/>
+          <input type="date" id="abEndDate" onchange="abCheckRetroativo()"/>
         </div>
       </div>
+      <div id="abRetroativoAlert" style="display:none;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.3);border-radius:8px;padding:.65rem 1rem;margin-bottom:.8rem;font-size:.82rem;color:var(--accent)">⏱️ Registro retroativo — este serviço será salvo como concluído.</div>
       <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0"/>
       <!-- AB mode toggle -->
       <div id="abModeSwitcher" style="margin-bottom:1rem">
@@ -1191,13 +1192,23 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:.5rem;margin-top:.6rem">
-        <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.83rem;color:var(--muted)">
+        <label id="abSendEmailLabel" style="display:flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.83rem;color:var(--muted)">
           <input type="checkbox" id="abSendEmail" checked style="width:15px;height:15px;accent-color:var(--accent)"/>
           Enviar e-mail de confirmação ao cliente
         </label>
         <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.83rem;color:var(--muted)">
           <input type="checkbox" id="abSendWa" style="width:15px;height:15px;accent-color:var(--accent)"/>
           Abrir WhatsApp com resumo do agendamento
+        </label>
+      </div>
+      <div id="abRetroativoOptions" style="display:none;flex-direction:column;gap:.45rem;margin-top:.7rem;padding:.65rem 1rem;background:rgba(59,130,246,.05);border:1px solid rgba(59,130,246,.2);border-radius:8px">
+        <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.83rem;color:var(--muted)">
+          <input type="checkbox" id="abSendFeedback" checked style="width:15px;height:15px;accent-color:var(--accent)"/>
+          Enviar pesquisa de satisfação ao cliente
+        </label>
+        <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;font-size:.83rem;color:var(--muted)">
+          <input type="checkbox" id="abCreditPoints" checked style="width:15px;height:15px;accent-color:var(--accent)"/>
+          Creditar pontos de fidelidade
         </label>
       </div>
       <button class="btn-primary btn-full" style="margin-top:1.4rem" onclick="submitAdminBooking()">✅ Criar Agendamento</button>
@@ -1261,6 +1272,9 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       </div>
       <div class="admin-tab" onclick="switchAdminTab('config',this)" id="tab-config">
         <span class="admin-tab-icon">⚙️</span><span>&nbsp;Configurações</span>
+      </div>
+      <div class="admin-tab" onclick="switchAdminTab('ia',this)" id="tab-ia">
+        <span class="admin-tab-icon">🤖</span><span>&nbsp;Central de IA</span>
       </div>
     </div>
     <div class="admin-content" id="adminContent"></div>
@@ -2763,6 +2777,7 @@ function switchAdminTab(tab, el) {
   else if(tab==='avaliacoes') renderAdminFeedback();
   else if(tab==='giftcards') renderAdminGiftCards();
   else if(tab==='config') renderAdminConfig();
+  else if(tab==='ia') renderAdminIA();
 }
 
 function renderAdminCalendar() {
@@ -2879,7 +2894,7 @@ function openAdminBooking() {
   const dateEl = document.getElementById('abDate');
   if (dateEl) dateEl.value = today;
   const endDateEl = document.getElementById('abEndDate');
-  if (endDateEl) { endDateEl.value = today; endDateEl.min = today; }
+  if (endDateEl) endDateEl.value = today;
   const endHint = document.getElementById('abEndDateHint');
   if (endHint) endHint.textContent = '(mesmo dia)';
   // reset state
@@ -2909,9 +2924,23 @@ function openAdminBooking() {
   const warnEl = document.getElementById('abEmailWarning');
   if (warnEl) { warnEl.style.display = 'none'; warnEl.dataset.baseEmail = ''; }
   document.getElementById('abStatus').value = 'approved';
+  document.getElementById('abStatus').disabled = false;
   document.getElementById('abSendEmail').checked = true;
+  document.getElementById('abSendEmail').disabled = false;
+  const abSendEmailLabel = document.getElementById('abSendEmailLabel');
+  if (abSendEmailLabel) abSendEmailLabel.style.opacity = '';
   document.getElementById('abSendWa').checked = false;
+  const abRetroAlert = document.getElementById('abRetroativoAlert');
+  if (abRetroAlert) abRetroAlert.style.display = 'none';
+  const abRetroOpts = document.getElementById('abRetroativoOptions');
+  if (abRetroOpts) abRetroOpts.style.display = 'none';
+  const abSendFeedbackEl = document.getElementById('abSendFeedback');
+  if (abSendFeedbackEl) abSendFeedbackEl.checked = true;
+  const abCreditPointsEl = document.getElementById('abCreditPoints');
+  if (abCreditPointsEl) abCreditPointsEl.checked = true;
   document.getElementById('abPrice').value = '';
+  const _ni = document.getElementById('abNegociadoInfo');
+  if (_ni) _ni.style.display = 'none';
   document.getElementById('adminBookingModal').style.display = 'flex';
 }
 
@@ -2943,7 +2972,21 @@ function abUpdatePrice() {
   } else {
     if (priceEl) priceEl.value = total || '';
   }
+  abUpdateNegociadoInfo();
   abUpdateEndDate();
+}
+
+function abUpdateNegociadoInfo() {
+  const infoEl = document.getElementById('abNegociadoInfo');
+  if (!infoEl) return;
+  const size = document.getElementById('abSize')?.value || 'pq';
+  const combo = _abComboUsed ? _COMBOS[_abComboUsed] : null;
+  if (!combo?.internal) { infoEl.style.display = 'none'; return; }
+  const p = comboPrice(combo, size);
+  if (!p.custom) { infoEl.style.display = 'none'; return; }
+  const discPct = p.regular > 0 && p.savings > 0 ? Math.round(p.savings / p.regular * 100) : 0;
+  infoEl.style.display = 'block';
+  infoEl.innerHTML = `Tabela: <b>${fmtMoney(p.regular)}</b> · Negociado: <b style="color:var(--accent)">${fmtMoney(p.final)}</b>${discPct > 0 ? ` <span style="color:var(--green)">−${discPct}%</span>` : ''}`;
 }
 
 function abUpdateEndDate() {
@@ -2960,6 +3003,33 @@ function abUpdateEndDate() {
   const endD   = new Date(startD);
   endD.setDate(endD.getDate() + maxDays);
   endEl.value = endD.toISOString().split('T')[0];
+  abCheckRetroativo();
+}
+
+function abCheckRetroativo() {
+  const today = new Date().toISOString().split('T')[0];
+  const endDate = document.getElementById('abEndDate')?.value || '';
+  const isRetroativo = !!endDate && endDate < today;
+
+  const alertEl      = document.getElementById('abRetroativoAlert');
+  const optsEl       = document.getElementById('abRetroativoOptions');
+  const statusEl     = document.getElementById('abStatus');
+  const sendEmailEl  = document.getElementById('abSendEmail');
+  const sendEmailLbl = document.getElementById('abSendEmailLabel');
+
+  if (isRetroativo) {
+    if (alertEl)      alertEl.style.display = 'block';
+    if (optsEl)       optsEl.style.display  = 'flex';
+    if (statusEl)     { statusEl.value = 'completed'; statusEl.disabled = true; }
+    if (sendEmailEl)  { sendEmailEl.checked = false;  sendEmailEl.disabled = true; }
+    if (sendEmailLbl) sendEmailLbl.style.opacity = '.4';
+  } else {
+    if (alertEl)      alertEl.style.display = 'none';
+    if (optsEl)       optsEl.style.display  = 'none';
+    if (statusEl)     statusEl.disabled = false;
+    if (sendEmailEl)  sendEmailEl.disabled = false;
+    if (sendEmailLbl) sendEmailLbl.style.opacity = '';
+  }
 }
 
 function abApplyCombo(comboId) {
@@ -3447,6 +3517,11 @@ async function submitAdminBooking() {
   const sendWa     = document.getElementById('abSendWa')?.checked;
 
   const endDate = document.getElementById('abEndDate')?.value;
+  const _today = new Date().toISOString().split('T')[0];
+  const isRetroativo = !!endDate && endDate < _today;
+  const sendFeedback = isRetroativo && (document.getElementById('abSendFeedback')?.checked ?? true);
+  const creditPontos = !isRetroativo || (document.getElementById('abCreditPoints')?.checked ?? true);
+  const finalStatus  = isRetroativo ? 'completed' : status;
 
   if (!checkedSvcs.length) { alert('Selecione ao menos um serviço.'); return; }
   if (!date)    { alert('Informe a data de início do serviço.'); return; }
@@ -3470,7 +3545,7 @@ async function submitAdminBooking() {
 
   const b = {
     id,
-    status,
+    status: finalStatus,
     name, phone,
     ...(email ? { email } : {}),
     car: car || '', plate: plate || '', bairro: bairro || '',
@@ -3483,10 +3558,18 @@ async function submitAdminBooking() {
     submittedAt: now,
     approvedAt: now,
     createdByAdmin: true,
-    ...(status === 'confirmed' || status === 'completed' ? { confirmedAt: now } : {}),
-    ...(status === 'completed' ? { completedAt: now } : {}),
+    ...(finalStatus === 'confirmed' || finalStatus === 'completed' ? { confirmedAt: now } : {}),
+    ...(finalStatus === 'completed' ? { completedAt: now } : {}),
     ...(_abClientUid ? { clientUid: _abClientUid } : {}),
     ...(_abComboUsed ? { comboUsed: _abComboUsed } : {}),
+    ...(() => {
+      if (!_abComboUsed) return {};
+      const _sc = _COMBOS[_abComboUsed];
+      if (!_sc?.internal) return {};
+      const _sp = comboPrice(_sc, size);
+      return _sp.custom ? { precoTabelaSnapshot: _sp.regular, valorNegociadoAplicado: price } : {};
+    })(),
+    ...(isRetroativo ? { retroativo: true, registradoPor: 'admin', pagamento: 'externo', feedbackSolicitado: sendFeedback } : {}),
   };
 
   try {
@@ -4974,11 +5057,44 @@ function buildComboList(entries) {
     const pPq = comboPrice(combo, 'pq');
     const pGr = comboPrice(combo, 'gr');
     const isActive = combo.active !== false;
+    const isInternal = combo.internal === true;
     const tags = (combo.serviceIds || []).map(sid => {
       const s = SVCS[sid];
       return s ? `<span class="combo-svc-tag">${s.icon} ${s.name}</span>` : '';
     }).join('');
-    const isInternal = combo.internal === true;
+
+    const costPq = isInternal ? (combo.serviceIds || []).reduce((s, sid) => s + (SVCS[sid]?._cost_pq || 0), 0) : 0;
+    const costGr = isInternal ? (combo.serviceIds || []).reduce((s, sid) => s + (SVCS[sid]?._cost_gr || 0), 0) : 0;
+    const negMarginPq = isInternal && pPq.custom && costPq > 0 && (pPq.final - costPq) < 0;
+    const negMarginGr = isInternal && pGr.custom && costGr > 0 && (pGr.final - costGr) < 0;
+    const hasNegMargin = negMarginPq || negMarginGr;
+
+    function pricingCell(label, p, cost, negMargin) {
+      if (!p.regular) return `<div class="svc-pricing-cell"><b>${label}</b><span style="color:var(--muted);font-size:.72rem">Sem preço</span></div>`;
+      const discPct = p.regular > 0 && p.savings > 0 ? Math.round(p.savings / p.regular * 100) : 0;
+      const marginR = p.final - cost;
+      const marginPct = p.final > 0 ? Math.round(marginR / p.final * 100) : 0;
+      if (p.custom) {
+        return `<div class="svc-pricing-cell">
+          <b>${label}</b>
+          <div style="font-size:.72rem;color:var(--muted);text-decoration:line-through">${fmtMoney(p.regular)}</div>
+          <strong style="color:var(--accent)">${fmtMoney(p.final)}</strong>
+          ${discPct > 0 ? `<span style="font-size:.68rem;background:rgba(72,201,245,.15);color:var(--accent);border-radius:12px;padding:.1rem .35rem;margin-left:.25rem">−${discPct}%</span>` : ''}
+          ${cost > 0 ? `<div style="font-size:.7rem;margin-top:.2rem;color:${negMargin ? 'var(--orange)' : 'var(--muted)'}">Custo: ${fmtMoney(cost)} · Margem: ${negMargin ? '⚠️ ' : ''}${fmtMoney(marginR)} (${marginPct}%)</div>` : ''}
+        </div>`;
+      }
+      return `<div class="svc-pricing-cell">
+        <b>${label}</b>
+        ${p.savings ? `<div style="font-size:.72rem;color:var(--muted)">De ${fmtMoney(p.regular)}</div>` : ''}
+        <strong style="color:var(--accent)">${fmtMoney(p.final)}</strong>
+        ${p.savings > 0 ? `<div class="svc-pricing-margin">🎁 Economia: ${fmtMoney(p.savings)}</div>` : ''}
+      </div>`;
+    }
+
+    const subLabel = isInternal
+      ? (pPq.custom || pGr.custom ? '🔒 Interno — valor negociado' : '🔒 Interno — atalho de agendamento')
+      : 'Desconto: ' + (combo.discountPercent || 0) + '%';
+
     return `<div class="svc-admin-card${isActive ? '' : ' inactive-svc'}">
       <div class="svc-admin-header">
         <span class="svc-admin-icon">${combo.emoji || '🎁'}</span>
@@ -4987,33 +5103,19 @@ function buildComboList(entries) {
             <span style="font-size:.68rem;font-weight:600;padding:.1rem .45rem;border-radius:20px;margin-left:.4rem;vertical-align:middle;${isInternal ? 'background:rgba(150,150,255,.15);color:#a0a0ff' : 'background:rgba(72,201,245,.12);color:var(--accent)'}">
               ${isInternal ? '🔒 Interno' : '🌐 Público'}
             </span>
+            ${hasNegMargin ? `<span style="font-size:.68rem;font-weight:600;padding:.1rem .45rem;border-radius:20px;margin-left:.3rem;vertical-align:middle;background:rgba(255,160,0,.15);color:var(--orange)">⚠️ Margem negativa</span>` : ''}
           </div>
-          <div class="svc-admin-sub">${isInternal
-            ? (pPq.custom || pGr.custom
-                ? `🔒 Interno — preço final personalizado${pPq.savings > 0 ? ' · 🎁 pq: −' + fmtMoney(pPq.savings) : ''}${pGr.savings > 0 ? ' · gr: −' + fmtMoney(pGr.savings) : ''}`
-                : 'Atalho de agendamento admin')
-            : 'Desconto: ' + (combo.discountPercent || 0) + '%'}</div>
+          <div class="svc-admin-sub">${subLabel}</div>
         </div>
         <button class="btn-toggle-svc${isActive ? '' : ' off'}" onclick="toggleCombo('${id}')">
           ${isActive ? '✅ Ativo' : '⛔ Inativo'}
         </button>
       </div>
       <div class="combo-admin-svctags">${tags}</div>
+      ${combo.observacoes ? `<div style="font-size:.72rem;color:var(--muted);font-style:italic;margin:.25rem 0 .5rem;padding:.3rem .6rem;background:rgba(255,255,255,.03);border-left:3px solid var(--border);border-radius:0 4px 4px 0">📝 ${escHtml(combo.observacoes)}</div>` : ''}
       <div class="svc-pricing-grid">
-        <div class="svc-pricing-cell">
-          <b>🚗 Pequeno</b>
-          ${pPq.custom ? `<div style="font-size:.72rem;color:var(--muted)">Soma: ${fmtMoney(pPq.regular)}</div>` : (pPq.savings ? `De ${fmtMoney(pPq.regular)}` : '')}
-          ${pPq.custom || pPq.savings ? `por ` : ''}<strong style="color:var(--accent)">${fmtMoney(pPq.final)}</strong>
-          ${pPq.savings > 0 ? `<div class="svc-pricing-margin">🎁 Economia: ${fmtMoney(pPq.savings)}</div>` : ''}
-          ${!pPq.regular ? '<span style="color:var(--muted);font-size:.72rem">Sem preço configurado</span>' : ''}
-        </div>
-        <div class="svc-pricing-cell">
-          <b>🚙 Grande</b>
-          ${pGr.custom ? `<div style="font-size:.72rem;color:var(--muted)">Soma: ${fmtMoney(pGr.regular)}</div>` : (pGr.savings ? `De ${fmtMoney(pGr.regular)}` : '')}
-          ${pGr.custom || pGr.savings ? `por ` : ''}<strong style="color:var(--accent)">${fmtMoney(pGr.final)}</strong>
-          ${pGr.savings > 0 ? `<div class="svc-pricing-margin">🎁 Economia: ${fmtMoney(pGr.savings)}</div>` : ''}
-          ${!pGr.regular ? '<span style="color:var(--muted);font-size:.72rem">Sem preço configurado</span>' : ''}
-        </div>
+        ${pricingCell('🚗 Pequeno', pPq, costPq, negMarginPq)}
+        ${pricingCell('🚙 Grande', pGr, costGr, negMarginGr)}
       </div>
       <div class="svc-admin-actions">
         <button class="btn-edit-svc" onclick="openComboForm('${id}')">✏️ Editar</button>
@@ -5037,6 +5139,7 @@ function openComboForm(id) {
   const isInternal = combo?.internal === true;
   const fpPq = combo?.finalPricePq != null ? combo.finalPricePq : '';
   const fpGr = combo?.finalPriceGr != null ? combo.finalPriceGr : '';
+  const obsVal = escHtml(combo?.observacoes || '');
   wrap.innerHTML = `
     <div class="svc-form-panel">
       <h4>${id ? 'Editar Combo' : 'Novo Combo'}</h4>
@@ -5078,6 +5181,12 @@ function openComboForm(id) {
         </div>
         <div id="cfFinalPricePreview" style="display:none;background:rgba(42,159,214,.07);border:1px solid rgba(42,159,214,.2);border-radius:8px;padding:.6rem .9rem;font-size:.8rem;line-height:1.7"></div>
       </div>
+      <div id="cfObsGroup" style="display:none">
+        <div class="form-group" style="margin-top:.6rem">
+          <label>📝 Observações da negociação <span style="font-weight:400;color:var(--muted)">(opcional)</span></label>
+          <textarea id="cfObs" rows="2" placeholder="Ex: Acordo fechado em jun/2026 com a Loja Y">${obsVal}</textarea>
+        </div>
+      </div>
       <div style="display:flex;gap:.8rem;margin-top:1.2rem">
         <button class="btn-primary" onclick="saveCombo('${id || ''}')">💾 Salvar</button>
         <button class="btn-ghost" onclick="document.getElementById('comboFormWrap').innerHTML=''">Cancelar</button>
@@ -5096,6 +5205,8 @@ function toggleComboInternalUI() {
     fpGroup.style.display = internal ? '' : 'none';
     if (internal) updateComboFinalPricePreview();
   }
+  const obsGroup = document.getElementById('cfObsGroup');
+  if (obsGroup) obsGroup.style.display = internal ? '' : 'none';
 }
 
 function updateComboFinalPricePreview() {
@@ -5104,28 +5215,44 @@ function updateComboFinalPricePreview() {
   const checked = [...document.querySelectorAll('#comboFormWrap input[type=checkbox]:checked')];
   const subtotalPq = checked.reduce((s, cb) => s + (SVCS[cb.value]?.pq || 0), 0);
   const subtotalGr = checked.reduce((s, cb) => s + (SVCS[cb.value]?.gr || 0), 0);
+  const costPq = checked.reduce((s, cb) => s + (SVCS[cb.value]?._cost_pq || 0), 0);
+  const costGr = checked.reduce((s, cb) => s + (SVCS[cb.value]?._cost_gr || 0), 0);
   const rawPq = document.getElementById('cfFinalPricePq')?.value;
   const rawGr = document.getElementById('cfFinalPriceGr')?.value;
-  const finalPq = rawPq !== '' && rawPq != null ? parseFloat(rawPq) : null;
-  const finalGr = rawGr !== '' && rawGr != null ? parseFloat(rawGr) : null;
+  const finalPq = rawPq !== '' && rawPq != null && parseFloat(rawPq) > 0 ? parseFloat(rawPq) : null;
+  const finalGr = rawGr !== '' && rawGr != null && parseFloat(rawGr) > 0 ? parseFloat(rawGr) : null;
   let html = '';
-  function priceRow(label, subtotal, final) {
+  function priceRow(label, subtotal, final, cost) {
+    const marginAutoR = subtotal - cost;
     if (final == null) {
-      return `<div style="color:var(--muted)">${label} Soma automática: <b>${fmtMoney(subtotal)}</b></div>`;
+      let r = `<div style="color:var(--muted)">${label} Soma automática: <b>${fmtMoney(subtotal)}</b>`;
+      if (cost > 0) r += ` · Custo: ${fmtMoney(cost)} · Margem: ${fmtMoney(marginAutoR)}`;
+      return r + '</div>';
     }
     const diff = subtotal - final;
     const pct = subtotal > 0 ? Math.abs((diff / subtotal) * 100).toFixed(1) : 0;
+    const marginR = final - cost;
+    const marginPct = final > 0 ? Math.round(marginR / final * 100) : 0;
+    const negMargin = cost > 0 && marginR < 0;
+    let row = '';
     if (final > subtotal) {
-      return `<div>${label} ${fmtMoney(subtotal)} → <b style="color:var(--orange)">${fmtMoney(final)}</b> <span style="color:var(--orange)">⚠️ Acréscimo de ${fmtMoney(final - subtotal)}</span></div>`;
+      row = `<div>${label} Tabela: ${fmtMoney(subtotal)} → <b style="color:var(--orange)">${fmtMoney(final)}</b> <span style="color:var(--orange)">⚠️ Acréscimo de ${fmtMoney(final - subtotal)}</span>`;
+    } else if (diff > 0) {
+      row = `<div>${label} Tabela: ${fmtMoney(subtotal)} → <b style="color:var(--accent)">${fmtMoney(final)}</b> <span style="color:var(--green)">−${fmtMoney(diff)} (${pct}%)</span>`;
+    } else {
+      row = `<div>${label} <b style="color:var(--accent)">${fmtMoney(final)}</b> (sem desconto)`;
     }
-    if (diff > 0) {
-      return `<div>${label} ${fmtMoney(subtotal)} → <b style="color:var(--accent)">${fmtMoney(final)}</b> <span style="color:var(--green)">🎁 Desc. ${fmtMoney(diff)} (${pct}%)</span></div>`;
+    if (cost > 0) {
+      row += `<div style="font-size:.78em;margin-top:.1rem;color:${negMargin ? 'var(--orange)' : 'var(--muted)'}">`;
+      row += `Custo: ${fmtMoney(cost)} · Margem: ${negMargin ? '⚠️ ' : ''}${fmtMoney(marginR)} (${marginPct}%)`;
+      if (negMargin) row += ` — <b>Este valor está abaixo do custo de ${fmtMoney(cost)}</b>`;
+      row += '</div>';
     }
-    return `<div>${label} <b style="color:var(--accent)">${fmtMoney(final)}</b> (sem desconto)</div>`;
+    return row + '</div>';
   }
   if (checked.length) {
-    html += priceRow('🚗 Pequeno:', subtotalPq, finalPq);
-    html += priceRow('🚙 Grande:', subtotalGr, finalGr);
+    html += priceRow('🚗 Pequeno:', subtotalPq, finalPq, costPq);
+    html += priceRow('🚙 Grande:', subtotalGr, finalGr, costGr);
   } else {
     html = '<div style="color:var(--muted)">Selecione ao menos um serviço para ver o preview.</div>';
   }
@@ -5145,14 +5272,15 @@ async function saveCombo(id) {
   if (serviceIds.length < 2) { alert('Selecione pelo menos 2 serviços.'); return; }
   if (!_combosRef) { alert('Firebase não conectado.'); return; }
 
-  let finalPricePq = null, finalPriceGr = null;
+  let finalPricePq = null, finalPriceGr = null, observacoes = null;
   if (internal) {
     const rawPq = document.getElementById('cfFinalPricePq')?.value;
     const rawGr = document.getElementById('cfFinalPriceGr')?.value;
     if (rawPq !== '' && rawPq != null) finalPricePq = parseFloat(rawPq);
     if (rawGr !== '' && rawGr != null) finalPriceGr = parseFloat(rawGr);
-    if (finalPricePq != null && finalPricePq < 0) { alert('Valor final não pode ser negativo.'); return; }
-    if (finalPriceGr != null && finalPriceGr < 0) { alert('Valor final não pode ser negativo.'); return; }
+    if (finalPricePq != null && finalPricePq <= 0) finalPricePq = null;
+    if (finalPriceGr != null && finalPriceGr <= 0) finalPriceGr = null;
+    observacoes = document.getElementById('cfObs')?.value.trim() || null;
   }
 
   const key = id || slugify(name);
@@ -5163,7 +5291,9 @@ async function saveCombo(id) {
     serviceIds,
     ...(internal && finalPricePq != null ? { finalPricePq } : { finalPricePq: null }),
     ...(internal && finalPriceGr != null ? { finalPriceGr } : { finalPriceGr: null }),
+    ...(internal && observacoes ? { observacoes } : { observacoes: null }),
     createdAt: id ? (_COMBOS[id]?.createdAt || Date.now()) : Date.now(),
+    atualizadoEm: Date.now(),
   };
   try {
     await _combosRef.child(key).set(data);
@@ -6821,6 +6951,226 @@ function reloadGallerySection() {
 }
 
 reloadGallerySection();
+
+// ============================================================
+// CENTRAL DE IA
+// ============================================================
+
+const IA_DEFAULTS = {
+  ping:       { monthlyBudgetCalls: 10,  maxTokens: 256,  schedule: null,            name: 'Ping (Teste)',            desc: 'Valida a conectividade com a Claude API.' },
+  relatorio:  { monthlyBudgetCalls: 10,  maxTokens: 1024, schedule: 'weekly:mon:08', name: 'Relatório Semanal',        desc: 'Resumo executivo semanal enviado via Telegram às segundas.' },
+  reativacao: { monthlyBudgetCalls: 60,  maxTokens: 1024, schedule: null,            name: 'Reativação de Inativos',   desc: 'E-mails personalizados para clientes sem retorno há 90+ dias.' },
+  agenda:     { monthlyBudgetCalls: 30,  maxTokens: 512,  schedule: null,            name: 'Otimizador de Agenda',     desc: 'Ranqueia candidatos da waitlist para vagas liberadas.' },
+  upsell:     { monthlyBudgetCalls: 300, maxTokens: 256,  schedule: null,            name: 'Sugestão de Complemento',  desc: 'Sugere 1 complemento no agendamento com base no histórico.' },
+  concierge:  { monthlyBudgetCalls: 500, maxTokens: 600,  schedule: null,            name: 'Chat Concierge',           desc: 'Widget de chat público que responde dúvidas e recomenda serviços.' },
+  orcamento:  { monthlyBudgetCalls: 200, maxTokens: 1024, schedule: null,            name: 'Orçamento por Foto',       desc: 'Analisa fotos para recomendar serviço e faixa de preço.' },
+  checkin:    { monthlyBudgetCalls: 150, maxTokens: 1024, schedule: null,            name: 'Descrição de Check-in',    desc: 'Gera descrição de condições do veículo a partir das fotos.' },
+  satisfacao: { monthlyBudgetCalls: 60,  maxTokens: 1024, schedule: 'daily:08',      name: 'Análise de Satisfação',    desc: 'Classifica avaliações e alerta sobre notas baixas via Telegram.' },
+  insumos:    { monthlyBudgetCalls: 10,  maxTokens: 1024, schedule: 'weekly:mon:08', name: 'Previsão de Reposição',    desc: 'Cruza agenda e estoque para alertar sobre itens em falta.' },
+  conteudo:   { monthlyBudgetCalls: 60,  maxTokens: 1024, schedule: null,            name: 'Legendas para Galeria',    desc: 'Gera legenda de Instagram e descrição de galeria para o par de fotos.' }
+};
+
+async function renderAdminIA() {
+  const c = document.getElementById('adminContent');
+  c.innerHTML = `<h2>🤖 Central de IA</h2><div style="padding:2rem;opacity:.5;text-align:center">Carregando...</div>`;
+  try {
+    await iaEnsureConfigs();
+    const month = new Date().toISOString().slice(0, 7);
+    const [cfgSnap, usageSnap, logsSnap] = await Promise.all([
+      firebase.database().ref('aiConfig').once('value'),
+      firebase.database().ref(`aiUsage/${month}`).once('value'),
+      firebase.database().ref('aiLogs').orderByKey().limitToLast(20).once('value')
+    ]);
+    const configs = cfgSnap.val()   || {};
+    const usages  = usageSnap.val() || {};
+    const logsObj = logsSnap.val()  || {};
+    const logs = Object.values(logsObj).sort((a, b) => b.at.localeCompare(a.at));
+
+    c.innerHTML = `
+      <style>
+        .ia-toggle{position:relative;display:inline-block;width:38px;height:22px;flex-shrink:0;cursor:pointer}
+        .ia-toggle input{opacity:0;width:0;height:0}
+        .ia-toggle-slider{position:absolute;inset:0;background:rgba(255,255,255,.15);border-radius:22px;transition:.2s}
+        .ia-toggle-slider::before{content:'';position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
+        .ia-toggle input:checked+.ia-toggle-slider{background:#06b6d4}
+        .ia-toggle input:checked+.ia-toggle-slider::before{transform:translateX(16px)}
+        .ia-card{display:flex;flex-direction:column;gap:.75rem}
+        .ia-bar-wrap{height:4px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden}
+      </style>
+
+      <h2>🤖 Central de IA</h2>
+      <p style="opacity:.5;margin:-.5rem 0 1.5rem;font-size:.85rem">Agentes Claude · Todos nascem desligados — ligue individualmente abaixo</p>
+
+      <div class="admin-panel" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem">
+        <div style="flex:1;min-width:180px">
+          <strong>Testar Conexão</strong>
+          <div style="font-size:.78rem;opacity:.55;margin-top:.15rem">Chama o agente Ping e exibe a resposta da Claude API</div>
+        </div>
+        <button class="btn-primary" id="ia-ping-btn" onclick="iaPingTest()" style="flex-shrink:0">⚡ Testar Conexão</button>
+        <div id="ia-ping-result" style="font-size:.85rem;flex:2;min-width:160px"></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem;margin-bottom:2rem">
+        ${Object.entries(IA_DEFAULTS).map(([id, def]) => {
+          const cfg     = configs[id] || {};
+          const usage   = usages[id]  || {};
+          const enabled = cfg.enabled === true;
+          const reason  = cfg.disabledReason;
+          const calls   = usage.calls || 0;
+          const limit   = cfg.monthlyBudgetCalls || def.monthlyBudgetCalls;
+          const pct     = Math.min(100, Math.round(calls / limit * 100));
+          const barClr  = pct >= 100 ? '#f97316' : pct > 70 ? '#facc15' : '#4ade80';
+          const statusTxt = enabled ? '● Ativo' : reason === 'budget' ? '● Limite atingido' : '● Desligado';
+          const statusClr = enabled ? '#4ade80' : reason === 'budget' ? '#f97316' : '#94a3b8';
+          const schedTxt  = def.schedule
+            ? (def.schedule.startsWith('daily') ? 'Diário 08h' : 'Semanal seg 08h')
+            : 'Sob demanda';
+          return `
+            <div class="admin-panel ia-card">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem">
+                <div>
+                  <div style="font-weight:600">${escHtml(def.name)}</div>
+                  <div style="font-size:.76rem;opacity:.5;margin-top:.1rem">${escHtml(def.desc)}</div>
+                </div>
+                <label class="ia-toggle" title="${enabled ? 'Desligar' : 'Ligar'} ${escHtml(def.name)}">
+                  <input type="checkbox" ${enabled ? 'checked' : ''} onchange="iaToggle('${id}',this.checked)">
+                  <span class="ia-toggle-slider"></span>
+                </label>
+              </div>
+              <div style="display:flex;gap:.5rem;align-items:center;font-size:.76rem">
+                <span style="color:${statusClr};font-weight:600">${statusTxt}</span>
+                <span style="opacity:.35">·</span>
+                <span style="opacity:.5">${schedTxt}</span>
+              </div>
+              <div>
+                <div style="font-size:.73rem;opacity:.45;margin-bottom:.3rem">
+                  Chamadas este mês: ${calls} /
+                  <input type="number" value="${limit}" min="1" max="9999"
+                    style="width:56px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:4px;color:inherit;padding:1px 4px;font-size:.73rem"
+                    onblur="iaUpdateBudget('${id}',+this.value)">
+                </div>
+                <div class="ia-bar-wrap">
+                  <div style="height:100%;width:${pct}%;background:${barClr};transition:width .3s"></div>
+                </div>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+
+      <div class="admin-panel">
+        <h3 style="margin-top:0;margin-bottom:1rem">Últimas execuções</h3>
+        ${logs.length === 0
+          ? '<p style="opacity:.4;font-size:.85rem">Nenhuma execução registrada ainda.</p>'
+          : `<div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:.8rem;white-space:nowrap">
+                <thead>
+                  <tr style="opacity:.45;border-bottom:1px solid rgba(255,255,255,.1)">
+                    <th style="text-align:left;padding:.3rem .6rem">Agente</th>
+                    <th style="text-align:left;padding:.3rem .6rem">Gatilho</th>
+                    <th style="text-align:left;padding:.3rem .6rem;white-space:normal;min-width:160px">Resultado</th>
+                    <th style="text-align:left;padding:.3rem .6rem">Duração</th>
+                    <th style="text-align:left;padding:.3rem .6rem">Horário</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${logs.map(l => {
+                    const nm   = IA_DEFAULTS[l.agentId]?.name || l.agentId;
+                    const msg  = l.ok ? (l.summary||'').slice(0, 60) : (l.error||'').slice(0, 60);
+                    const icon = l.ok ? '<span style="color:#4ade80">✓</span>' : '<span style="color:#f87171">✗</span>';
+                    const ts   = l.at ? new Date(l.at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+                    return `<tr style="border-bottom:1px solid rgba(255,255,255,.05)">
+                      <td style="padding:.35rem .6rem;font-weight:500">${escHtml(nm)}</td>
+                      <td style="padding:.35rem .6rem;opacity:.55">${escHtml(l.trigger||'')}</td>
+                      <td style="padding:.35rem .6rem;white-space:normal">${icon} ${escHtml(msg)}</td>
+                      <td style="padding:.35rem .6rem;opacity:.45">${l.durationMs != null ? l.durationMs + 'ms' : '—'}</td>
+                      <td style="padding:.35rem .6rem;opacity:.45">${ts}</td>
+                    </tr>`;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>`}
+      </div>`;
+  } catch (err) {
+    document.getElementById('adminContent').innerHTML =
+      `<h2>🤖 Central de IA</h2><div class="admin-panel"><p style="color:#f87171">Erro ao carregar: ${escHtml(err.message)}</p></div>`;
+  }
+}
+
+async function iaEnsureConfigs() {
+  const snap = await firebase.database().ref('aiConfig').once('value');
+  const existing = snap.val() || {};
+  for (const [id, def] of Object.entries(IA_DEFAULTS)) {
+    if (!existing[id]) {
+      await firebase.database().ref(`aiConfig/${id}`).set({
+        enabled: false,
+        monthlyBudgetCalls: def.monthlyBudgetCalls,
+        maxTokens: def.maxTokens,
+        schedule: def.schedule || null,
+        disabledReason: null,
+        updatedAt: new Date().toISOString()
+      });
+    }
+  }
+}
+
+async function iaToggle(agentId, enabled) {
+  try {
+    await firebase.database().ref(`aiConfig/${agentId}`).update({
+      enabled,
+      disabledReason: enabled ? null : 'manual',
+      updatedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    alert('Erro ao salvar: ' + err.message);
+    renderAdminIA();
+  }
+}
+
+async function iaUpdateBudget(agentId, value) {
+  if (!value || value < 1) return;
+  try {
+    await firebase.database().ref(`aiConfig/${agentId}`).update({
+      monthlyBudgetCalls: value,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    alert('Erro ao salvar: ' + err.message);
+  }
+}
+
+async function iaPingTest() {
+  const btn = document.getElementById('ia-ping-btn');
+  const res = document.getElementById('ia-ping-result');
+  if (!btn || !res) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ Aguardando...';
+  res.textContent = '';
+  try {
+    const user = firebase.auth().currentUser;
+    if (!user) { res.style.color = '#f87171'; res.textContent = 'Faça login primeiro.'; return; }
+    const token = await user.getIdToken();
+    const resp  = await fetch('/.netlify/functions/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ agentId: 'ping' })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      res.style.color = '#4ade80';
+      res.textContent = '✓ ' + (data.summary || 'pong');
+    } else {
+      res.style.color = '#f87171';
+      res.textContent = '✗ ' + (data.error || data.reason || 'erro desconhecido');
+    }
+  } catch (err) {
+    res.style.color = '#f87171';
+    res.textContent = '✗ ' + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Testar Conexão';
+  }
+}
+
 </script>
 </body>
 </html>
