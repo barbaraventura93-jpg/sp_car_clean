@@ -3574,16 +3574,28 @@ async function submitAdminBooking() {
 
   try {
     await _bookingsRef.child(id).set(b);
-    if ((status === 'confirmed' || status === 'completed') && _abClientUid) {
+    if ((finalStatus === 'confirmed' || finalStatus === 'completed') && _abClientUid && creditPontos) {
       _awardPoints(b);
     }
-    if (sendEmail_ && email) {
+    if (isRetroativo) {
+      if (sendFeedback && email) {
+        const surveyLink = `${window.location.origin}/?avaliar=${id}`;
+        const svcNameFb  = checkedSvcs.length === 1 ? svc.icon + ' ' + svc.name : 'Pacote de serviços';
+        const firstNameFb = (name || 'Cliente').split(' ')[0];
+        sendEmail('template_update', {
+          to_email: email, to_name: name, booking_id: id,
+          titulo:   '⭐ Como foi sua experiência? — SP Car Clean',
+          mensagem: `Olá ${firstNameFb}! 🎉\n\nSeu ${svcNameFb} foi concluído com sucesso. Esperamos que o resultado tenha superado as expectativas!\n\nGostaríamos muito de saber sua opinião. Leva menos de 1 minuto:\n\n⭐ Avaliar agora → ${surveyLink}\n\nObrigado pela preferência! Até a próxima. 🚗✨\n\n— Equipe SP Car Clean`,
+        });
+        await _bookingsRef.child(id).update({ feedbackEnviadoEm: new Date().toISOString() });
+      }
+    } else if (sendEmail_ && email) {
       sendEmail('template_update', {
         to_email: email, to_name: name,
         booking_id: id,
         service: checkedSvcs.length === 1 ? svc.icon + ' ' + svc.name : '🔧 Pacote de serviços (' + checkedSvcs.length + ')',
         date: new Date(date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long' }),
-        status_label: status === 'confirmed' ? 'Confirmado' : 'Aprovado — aguardando confirmação',
+        status_label: finalStatus === 'confirmed' ? 'Confirmado' : 'Aprovado — aguardando confirmação',
         price: 'R$ ' + price.toFixed(2).replace('.',','),
         msg: (checkedSvcs.length > 1 ? 'Serviços incluídos:\n  • ' + checkedSvcs.map(id => SVCS[id].icon + ' ' + SVCS[id].name).join('\n  • ') + '\n\n' : '') + (obs || 'Agendamento registrado pela equipe SP Car Clean.'),
       });
@@ -3643,6 +3655,7 @@ function renderBookingsList(filter) {
         <div style="display:flex;align-items:center;gap:.6rem">
           <div class="booking-item-id">${b.id}</div>
           <span style="font-size:.7rem;font-weight:700;color:${statusColor[b.status]}">${statusMap[b.status]}</span>
+          ${b.retroativo ? `<span style="font-size:.63rem;font-weight:700;color:#6b7280;background:rgba(107,114,128,.12);border:1px solid rgba(107,114,128,.25);border-radius:4px;padding:.1rem .4rem">🕓 Retroativo</span>` : ''}
         </div>
         <div class="booking-item-name">${b.name} — ${b.car}</div>
         <div class="booking-item-detail">${bkLabel(b)} · 📅 ${b.status==='pending'?`<span style="color:var(--orange);font-weight:700">Solicitado: ${fmtDateShort(b.date)}</span>`:`Confirmado: ${fmtDateShort(b.startDate||b.date)}`} · ${fmtMoney(b.finalPrice||b.price)}</div>
@@ -3667,7 +3680,10 @@ function viewBooking(id) {
   document.getElementById('detailBody').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.6rem;margin-bottom:1.4rem">
       <div class="booking-id-badge" style="font-size:.95rem;padding:.5rem 1.2rem">${b.id}</div>
-      <span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span>
+      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span>
+        ${b.retroativo ? `<span style="font-size:.7rem;font-weight:700;color:#6b7280;background:rgba(107,114,128,.12);border:1px solid rgba(107,114,128,.25);border-radius:5px;padding:.2rem .6rem">🕓 Retroativo</span>` : ''}
+      </div>
     </div>
 
     <div style="background:var(--off);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
