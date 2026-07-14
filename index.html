@@ -1046,6 +1046,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <div class="form-row full" style="margin-top:1rem">
         <div class="form-group"><label>Observações gerais</label><textarea id="ciObs" rows="2" placeholder="Condição geral, acessórios, objetos deixados no interior..."></textarea></div>
       </div>
+      <button id="ia-checkin-btn" class="btn-ghost btn-full" style="margin-top:.5rem;margin-bottom:.3rem;font-size:.82rem" onclick="iaDescreveCheckin(this)">🤖 Descrever condições com IA</button>
       <button class="btn-primary btn-full" style="margin-top:.5rem" onclick="saveCheckin()">✅ Finalizar Check-in e Notificar Cliente</button>
     </div>
   </div>
@@ -1379,6 +1380,8 @@ let _stock         = {};   // insumos carregados do Firebase
 let _stockRecipes  = {};   // receitas (serviço → insumos consumidos)
 let _clientNotes = {};
 let _clientNotesRef = null;
+let _clientOverrides = {};           // clientOverrides/{fbKey} → correções manuais de phone/email/vehicles (camada sobre _buildClientMap)
+let _clientOverridesRef = null;
 let _clientLinks = {};              // clientLinks/{canonicalKey} → { canonicalEmail, linkedEmails, mergedAt, mergedBy, reason, note }
 let _clientLinksRef = null;
 let _clientLinkDismissals = {};     // pares de duplicidade marcados como "não é a mesma pessoa"
@@ -4529,13 +4532,27 @@ function _buildClientMap() {
 
   _applyClientLinks(clientMap);
 
-  return Object.values(clientMap).map(c => {
+  // Correções manuais (clientOverrides) — camada de exibição/contato por cima da
+  // agregação de bookings. Nunca altera _bookings; aplica por chave canônica pós-merge.
+  Object.entries(clientMap).forEach(([key, c]) => {
+    const ov = _clientOverrides[_fbKeyFromEmail(key)];
+    if (!ov) return;
+    if (ov.phone) c.phone = ov.phone;
+    if (ov.email) c.email = ov.email;
+    if (ov.vehicles) {
+      Object.entries(ov.vehicles).forEach(([vk, v]) => {
+        c.vehicles[vk] = { ...(c.vehicles[vk] || {}), ...v };
+      });
+    }
+  });
+
+  return Object.entries(clientMap).map(([key, c]) => {
     const done = c.bookings.filter(b => ['confirmed','approved','completed'].includes(b.status));
     const totalSpent = done.reduce((s,b) => s + paidValue(b), 0);
     const doneDates = done.map(b => b.startDate || b.date).filter(Boolean).sort();
     const lastVisit = doneDates[doneDates.length - 1] || null;
     const vip = totalSpent >= 1000 || done.length >= 3;
-    return { ...c, totalSpent, lastVisit, completedCount: done.length, vip };
+    return { ...c, key, totalSpent, lastVisit, completedCount: done.length, vip };
   });
 }
 
@@ -4589,7 +4606,7 @@ function renderAdminClients(filter) {
     const latestCar = Object.values(c.vehicles)[0];
     const carInfo = latestCar ? (latestCar.car + (latestCar.plate ? ' · ' + latestCar.plate : '')) : '';
     const bairroInfo = c.bairro ? ` · 📍 ${c.bairro}` : '';
-    return `<div class="client-row" onclick="openClientProfile('${encodeURIComponent(c.email)}')">
+    return `<div class="client-row" onclick="openClientProfile('${encodeURIComponent(c.key)}')">
       <div class="client-row-avatar">${initials}</div>
       <div class="client-row-info">
         <div class="client-row-name">${c.name} ${vipBadge}</div>
@@ -5142,11 +5159,14 @@ function adminSendReactivation(encPhone, encName) {
   window.open(`https://wa.me/${waPhone}?text=${msg}`, '_blank');
 }
 
-function openClientProfile(encodedEmail) {
-  const email = decodeURIComponent(encodedEmail);
+function openClientProfile(encodedKey) {
+  const key = decodeURIComponent(encodedKey);
   const all = _buildClientMap();
-  const c = all.find(x => x.email.toLowerCase() === email.toLowerCase());
+  const c = all.find(x => x.key === key);
   if(!c) return;
+  const email = c.email; // e-mail de exibição atual (pode estar sobrescrito por clientOverrides)
+  const encEmail = encodeURIComponent(email);
+  const encKey = encodeURIComponent(c.key);
 
   const initials = c.name.split(' ').filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase();
   const vipBadge = c.vip ? '<span class="vip-badge">★ VIP</span>' : '';
@@ -5156,11 +5176,12 @@ function openClientProfile(encodedEmail) {
   const savedVNotes = _clientNotes[vNoteKey] || {};
   const vehicleCards = Object.entries(c.vehicles).map(([vKey, v]) => {
     const vn = savedVNotes[vKey] || '';
+    const vKeyAttr = encodeURIComponent(vKey);
     return `<div class="vehicle-card" style="width:100%">
       <div style="display:flex;align-items:flex-start;gap:.6rem;flex-wrap:wrap">
         <div style="flex:1;min-width:140px">
-          <div class="vehicle-card-label">🚗 ${v.car || 'Veículo'}</div>
-          ${v.plate ? `<div class="vehicle-card-plate">${v.plate}</div>` : ''}
+          <div class="vehicle-card-label" id="vfDisplay-car-${vKeyAttr}">🚗 ${v.car || 'Veículo'} <button type="button" class="btn-ghost" style="font-size:.62rem;padding:.05rem .3rem" onclick="editVehicleField('${encKey}','${vKeyAttr}','car','${encodeURIComponent(v.car||'')}')" title="Editar veículo">✏️</button></div>
+          <div class="vehicle-card-plate" id="vfDisplay-plate-${vKeyAttr}">${v.plate || '—'} <button type="button" class="btn-ghost" style="font-size:.62rem;padding:.05rem .3rem" onclick="editVehicleField('${encKey}','${vKeyAttr}','plate','${encodeURIComponent(v.plate||'')}')" title="Editar placa">✏️</button></div>
         </div>
       </div>
       <textarea class="notes-textarea" style="margin-top:.6rem;min-height:60px;font-size:.76rem" placeholder="Observações do veículo: película, pintura sensível, amassados, cor especial..." data-vkey="${vKey}" onchange="saveVehicleNote('${email.replace(/[.#$[\]]/g,'_')}','${vKey}',this.value)">${vn}</textarea>
@@ -5225,13 +5246,13 @@ function openClientProfile(encodedEmail) {
         <div class="profile-section">
           <h3>Identificação</h3>
           <div class="profile-field"><strong>Nome</strong><span>${c.name}</span></div>
-          <div class="profile-field"><strong>Telefone</strong><span>${c.phone||'—'}</span></div>
-          <div class="profile-field"><strong>E-mail</strong><span>${c.email}</span></div>
+          <div class="profile-field"><strong>Telefone</strong><span id="cfDisplay-phone">${c.phone||'—'} <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.05rem .35rem;margin-left:.3rem" onclick="editClientField('${encKey}','phone','${encodeURIComponent(c.phone||'')}')" title="Editar telefone">✏️</button></span></div>
+          <div class="profile-field"><strong>E-mail</strong><span id="cfDisplay-email">${c.email} <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.05rem .35rem;margin-left:.3rem" onclick="editClientField('${encKey}','email','${encodeURIComponent(c.email)}')" title="Editar e-mail">✏️</button></span></div>
           ${c.bairro?`<div class="profile-field"><strong>Bairro</strong><span>📍 ${c.bairro}${c.cep?' · '+c.cep:''}</span></div>`:''}
           <div class="profile-field"><strong>Classificação</strong><span>${c.vip?'<span class="vip-badge">★ VIP</span>':c.completedCount>=1?'<span style="color:var(--green);font-size:.8rem">Recorrente</span>':'<span style="color:var(--muted);font-size:.8rem">Novo</span>'}</span></div>
           ${c.birthDate?`<div class="profile-field"><strong>Aniversário</strong><span>🎂 ${c.birthDate.slice(5).replace('-','/')}</span></div>`:''}
           ${c.points?`<div class="profile-field"><strong>Pontos</strong><span>⭐ ${c.points} pts</span></div>`:''}
-          ${c.merged?`<div class="profile-field"><strong>E-mails vinculados</strong><span style="font-size:.8rem">${esc((c.linkedEmails||[]).join(', '))} <button class="btn-ghost" style="font-size:.68rem;padding:.15rem .5rem;margin-left:.4rem" onclick="undoMergeClient('${encodeURIComponent(c.email)}')">↩ Desfazer mesclagem</button></span></div>`:''}
+          ${c.merged?`<div class="profile-field"><strong>E-mails vinculados</strong><span style="font-size:.8rem">${esc((c.linkedEmails||[]).join(', '))} <button class="btn-ghost" style="font-size:.68rem;padding:.15rem .5rem;margin-left:.4rem" onclick="undoMergeClient('${encKey}')">↩ Desfazer mesclagem</button></span></div>`:''}
           ${c.uid?`<div style="display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap">
             <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminGenerateBirthdayCoupon('${c.uid}','${c.name}','${c.email}','${encodeURIComponent(c.phone||'')}')">🎁 Cupom Aniversário</button>
             <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminSendReactivation('${encodeURIComponent(c.phone)}','${encodeURIComponent(c.name)}')">💬 WhatsApp Reativação</button>
@@ -5271,6 +5292,82 @@ function openClientProfile(encodedEmail) {
         </div>
       </div>
     </div>`;
+}
+
+// ── Correções manuais de contato (clientOverrides) — camada sobre _buildClientMap ──
+function editClientField(encKey, field, encCurrentVal) {
+  const el = document.getElementById(`cfDisplay-${field}`);
+  if (!el) return;
+  const currentVal = decodeURIComponent(encCurrentVal);
+  const warning = field === 'email'
+    ? `<div style="font-size:.68rem;color:var(--orange);margin-top:.3rem">⚠️ Alterar o e-mail corrige apenas a exibição/contato no CRM a partir de agora — o histórico de agendamentos antigos continua vinculado ao e-mail original.</div>`
+    : '';
+  el.innerHTML = `<span style="display:inline-flex;gap:.35rem;align-items:center">
+      <input id="cfInput-${field}" type="${field==='email'?'email':'text'}" value="${esc(currentVal)}" style="width:160px;padding:.25rem .5rem;font-size:.78rem;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:var(--off);color:inherit"/>
+      <button type="button" class="btn-primary" style="font-size:.65rem;padding:.2rem .5rem" onclick="saveClientFieldEdit('${encKey}','${field}')">Salvar</button>
+      <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.2rem .5rem" onclick="openClientProfile('${encKey}')">Cancelar</button>
+    </span>${warning}`;
+  document.getElementById(`cfInput-${field}`)?.focus();
+}
+
+function saveClientFieldEdit(encKey, field) {
+  const key = decodeURIComponent(encKey);
+  const input = document.getElementById(`cfInput-${field}`);
+  if (!input) return;
+  let val = input.value.trim();
+  if (!val) { alert('Informe um valor válido.'); return; }
+  if (field === 'phone') val = val.replace(/\D/g,'');
+  if (field === 'email') {
+    val = val.toLowerCase();
+    if (!val.includes('@')) { alert('Informe um e-mail válido.'); return; }
+  }
+
+  const fbKey = _fbKeyFromEmail(key);
+  const ov = { ..._clientOverrides[fbKey], [field]: val, updatedAt: new Date().toISOString(), updatedBy: (_authUser && _authUser.email) || 'admin' };
+  const apply = () => { _clientOverrides[fbKey] = ov; _abClientCache = null; openClientProfile(encKey); };
+  if (_clientOverridesRef) {
+    _clientOverridesRef.child(fbKey).set(ov).then(apply).catch(err => alert('Erro ao salvar: ' + err.message));
+  } else {
+    apply();
+  }
+}
+
+function editVehicleField(encKey, encVKey, field, encCurrentVal) {
+  const el = document.getElementById(`vfDisplay-${field}-${encVKey}`);
+  if (!el) return;
+  const currentVal = decodeURIComponent(encCurrentVal);
+  el.innerHTML = `<span style="display:inline-flex;gap:.35rem;align-items:center">
+      <input id="vfInput-${field}-${encVKey}" type="text" value="${esc(currentVal)}" style="width:140px;padding:.2rem .45rem;font-size:.76rem;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:var(--off);color:inherit"/>
+      <button type="button" class="btn-primary" style="font-size:.62rem;padding:.15rem .45rem" onclick="saveVehicleFieldEdit('${encKey}','${encVKey}','${field}')">Salvar</button>
+      <button type="button" class="btn-ghost" style="font-size:.62rem;padding:.15rem .45rem" onclick="openClientProfile('${encKey}')">Cancelar</button>
+    </span>`;
+  document.getElementById(`vfInput-${field}-${encVKey}`)?.focus();
+}
+
+function saveVehicleFieldEdit(encKey, encVKey, field) {
+  const key = decodeURIComponent(encKey);
+  const vKey = decodeURIComponent(encVKey);
+  const input = document.getElementById(`vfInput-${field}-${encVKey}`);
+  if (!input) return;
+  let val = input.value.trim();
+  if (!val) { alert('Informe um valor válido.'); return; }
+  if (field === 'plate') val = val.toUpperCase();
+
+  const fbKey = _fbKeyFromEmail(key);
+  const prevOv = _clientOverrides[fbKey] || {};
+  const prevVehicles = prevOv.vehicles || {};
+  const ov = {
+    ...prevOv,
+    vehicles: { ...prevVehicles, [vKey]: { ...(prevVehicles[vKey] || {}), [field]: val } },
+    updatedAt: new Date().toISOString(),
+    updatedBy: (_authUser && _authUser.email) || 'admin'
+  };
+  const apply = () => { _clientOverrides[fbKey] = ov; _abClientCache = null; openClientProfile(encKey); };
+  if (_clientOverridesRef) {
+    _clientOverridesRef.child(fbKey).set(ov).then(apply).catch(err => alert('Erro ao salvar: ' + err.message));
+  } else {
+    apply();
+  }
 }
 
 function saveClientNotes(noteKey) {
@@ -7085,6 +7182,7 @@ function updateWaLink() {
     _stockRecipesRef   = _fbDB.ref('stockRecipes');
     _clientLinksRef    = _fbDB.ref('clientLinks');
     _clientLinkDismissalsRef = _fbDB.ref('clientLinkDismissals');
+    _clientOverridesRef = _fbDB.ref('clientOverrides');
     _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
     _clientLinksRef.once('value', snap => {
       _clientLinks = snap.val() || {};
@@ -7092,6 +7190,11 @@ function updateWaLink() {
       if (isAdmin() && currentAdminTab === 'clientes') renderAdminClients();
     });
     _clientLinkDismissalsRef.once('value', snap => { _clientLinkDismissals = snap.val() || {}; });
+    _clientOverridesRef.once('value', snap => {
+      _clientOverrides = snap.val() || {};
+      _abClientCache = null;
+      if (isAdmin() && currentAdminTab === 'clientes') renderAdminClients();
+    });
 
     // Avaliações aprovadas: escuta em tempo real → atualiza depoimentos públicos
     _feedbackRef.orderByChild('status').equalTo('approved').on('value', snap => {
@@ -7897,6 +8000,242 @@ async function iaPingTest() {
   }
 }
 
+// ============================================================
+// ONDA 2 — Concierge, Orçamento, Check-in IA, Satisfação
+// ============================================================
+
+// --- 2.1 Descrição de check-in com IA ---
+async function iaDescreveCheckin(btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Analisando fotos...';
+
+  try {
+    const user = firebase.auth().currentUser;
+    if (!user) { alert('Faça login para usar esta função.'); return; }
+    const token = await user.getIdToken();
+
+    // Coletar URLs das fotos de avaria (armazenadas em _checkinPhotos pelo código de check-in)
+    const photoUrls = typeof _checkinPhotos !== 'undefined' ? { ..._checkinPhotos } : {};
+    if (!Object.keys(photoUrls).length) {
+      alert('Adicione pelo menos 1 foto de avaria antes de usar esta função.');
+      return;
+    }
+
+    // Informações do agendamento ativo (via _checkinBookingId global do modal de check-in)
+    const bId = typeof _checkinBookingId !== 'undefined' ? _checkinBookingId : null;
+    const b   = bId ? (getBookings().find(x => x.id === bId) || null) : null;
+    const bookingInfo = {
+      car:     b?.car     || null,
+      service: b?.service || b?.services?.[0] || null,
+      carSize: b?.carSize || null
+    };
+
+    const resp = await fetch('/.netlify/functions/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ agentId: 'checkin', payload: { photoUrls, bookingInfo } })
+    });
+    const data = await resp.json();
+    if (data.ok && data.text) {
+      const obs = document.getElementById('ciObs');
+      if (obs) { obs.value = data.text; obs.focus(); }
+    } else {
+      alert('Erro: ' + (data.error || data.reason || 'desconhecido'));
+    }
+  } catch (err) {
+    alert('Erro: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+// --- 2.2 Widget Concierge ---
+(function initConciergeWidget() {
+  firebase.database().ref('aiConfig/concierge').once('value').then(snap => {
+    if (!snap.val()?.enabled) return;
+    document.getElementById('concierge-fab').style.display = 'flex';
+  }).catch(() => {});
+})();
+
+let _conciergeHistory = [];
+let _conciergeOpen    = false;
+
+function toggleConciergeChat() {
+  const panel = document.getElementById('concierge-panel');
+  const fab   = document.getElementById('concierge-fab');
+  _conciergeOpen = !_conciergeOpen;
+  panel.style.display = _conciergeOpen ? 'flex' : 'none';
+  if (_conciergeOpen) {
+    document.getElementById('concierge-input').focus();
+    if (!_conciergeHistory.length) {
+      _conciergeAppend('assistant', 'Olá! Sou o assistente da SP Car Clean 🚗✨ Como posso te ajudar? Dúvidas sobre serviços, preços ou agendamento?');
+    }
+  }
+}
+
+function _conciergeAppend(role, text, serviceId) {
+  const msgs = document.getElementById('concierge-messages');
+  if (!msgs) return;
+  const isUser = role === 'user';
+  const wrap   = document.createElement('div');
+  wrap.style.cssText = `display:flex;justify-content:${isUser ? 'flex-end' : 'flex-start'};margin-bottom:.5rem`;
+  const bubble = document.createElement('div');
+  bubble.style.cssText = `max-width:80%;padding:.5rem .75rem;border-radius:${isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px'};font-size:.83rem;line-height:1.45;white-space:pre-wrap;word-break:break-word;${isUser ? 'background:var(--accent);color:#fff' : 'background:rgba(255,255,255,.08);color:inherit'}`;
+  bubble.textContent = text;
+  wrap.appendChild(bubble);
+  if (serviceId && SVCS[serviceId]) {
+    const btn = document.createElement('button');
+    btn.className = 'btn-primary';
+    btn.style.cssText = 'font-size:.75rem;padding:.25rem .65rem;margin-top:.4rem;display:block';
+    btn.textContent = `📅 Agendar ${SVCS[serviceId].name}`;
+    btn.onclick = () => { openBooking(serviceId); toggleConciergeChat(); };
+    wrap.appendChild(btn);
+  }
+  msgs.appendChild(wrap);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function conciergeSend() {
+  const input = document.getElementById('concierge-input');
+  const text  = (input?.value || '').trim();
+  if (!text) return;
+  input.value = '';
+  _conciergeAppend('user', text);
+  _conciergeHistory.push({ role: 'user', content: text });
+
+  const typing = document.createElement('div');
+  typing.id = 'ci-typing';
+  typing.style.cssText = 'font-size:.75rem;opacity:.4;padding:.3rem .5rem';
+  typing.textContent = '...';
+  document.getElementById('concierge-messages').appendChild(typing);
+
+  try {
+    const resp = await fetch('/.netlify/functions/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agentId: 'concierge',
+        payload: { messages: _conciergeHistory.slice(-10, -1), userMessage: text }
+      })
+    });
+    const data = await resp.json();
+    typing.remove();
+    const reply = data.ok ? (data.text || '...') : (data.error || 'Erro ao processar.');
+    _conciergeAppend('assistant', reply, data.suggestedServiceId || null);
+    if (data.ok) _conciergeHistory.push({ role: 'assistant', content: reply });
+  } catch {
+    typing.remove();
+    _conciergeAppend('assistant', 'Desculpe, tive um problema. Tente novamente ou entre em contato pelo WhatsApp.');
+  }
+}
+
+async function conciergeAttachPhoto(input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+
+  const ALLOWED = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!ALLOWED.includes(file.type)) { alert('Formato não suportado. Use JPG, PNG ou WEBP.'); return; }
+
+  // Comprimir via canvas antes de enviar
+  const base64 = await _conciergeCompressImage(file, 1280, 0.75);
+  if (!base64) { alert('Erro ao processar a imagem.'); return; }
+  input.value = '';
+
+  _conciergeAppend('user', '📷 [foto enviada para análise]');
+  _conciergeHistory.push({ role: 'user', content: '📷 [foto]' });
+
+  const typing = document.createElement('div');
+  typing.id = 'ci-typing';
+  typing.style.cssText = 'font-size:.75rem;opacity:.4;padding:.3rem .5rem';
+  typing.textContent = '🔍 Analisando foto...';
+  document.getElementById('concierge-messages').appendChild(typing);
+
+  try {
+    const resp = await fetch('/.netlify/functions/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agentId: 'orcamento',
+        payload: { imageBase64: base64.split(',')[1], imageType: file.type }
+      })
+    });
+    const data = await resp.json();
+    typing.remove();
+    const reply = data.ok ? (data.text || '...') : (data.error || 'Erro ao analisar a foto.');
+    _conciergeAppend('assistant', reply, data.suggestedServiceId || null);
+    if (data.ok) _conciergeHistory.push({ role: 'assistant', content: reply });
+  } catch {
+    typing.remove();
+    _conciergeAppend('assistant', 'Não consegui analisar a foto. Tente novamente.');
+  }
+}
+
+function _conciergeCompressImage(file, maxDim, quality) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.round(img.width  * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(null);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
 </script>
+
+<!-- ===================================================
+     WIDGET CONCIERGE (Onda 2)
+=================================================== -->
+<style>
+#concierge-fab{display:none;position:fixed;bottom:24px;right:24px;z-index:10000;align-items:center;justify-content:center}
+#concierge-fab button{width:52px;height:52px;border-radius:50%;background:var(--accent,#06b6d4);color:#fff;font-size:1.45rem;border:none;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.4);transition:transform .15s}
+#concierge-fab button:hover{transform:scale(1.08)}
+#concierge-panel{display:none;position:fixed;bottom:86px;right:24px;z-index:10000;width:340px;max-width:calc(100vw - 32px);flex-direction:column;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.45);background:var(--card,#1e1e2e);border:1px solid rgba(255,255,255,.1)}
+.concierge-hdr{display:flex;align-items:center;justify-content:space-between;padding:.65rem 1rem;background:var(--accent,#06b6d4);color:#fff;font-weight:600;font-size:.88rem}
+.concierge-hdr button{background:none;border:none;color:#fff;font-size:1.1rem;cursor:pointer;opacity:.75;line-height:1}
+.concierge-hdr button:hover{opacity:1}
+#concierge-messages{flex:1;overflow-y:auto;padding:.75rem;min-height:220px;max-height:320px}
+.concierge-input-row{display:flex;align-items:center;gap:.4rem;padding:.55rem .75rem;border-top:1px solid rgba(255,255,255,.07)}
+.concierge-input-row input[type=text]{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:inherit;padding:.38rem .6rem;font-size:.82rem;outline:none}
+.concierge-input-row input[type=text]:focus{border-color:var(--accent,#06b6d4)}
+.concierge-input-row button.ci-send{background:var(--accent,#06b6d4);color:#fff;border:none;border-radius:8px;padding:.38rem .65rem;cursor:pointer;font-size:.82rem}
+.concierge-input-row label.ci-attach{cursor:pointer;opacity:.55;font-size:1.05rem;line-height:1;transition:opacity .15s}
+.concierge-input-row label.ci-attach:hover{opacity:.9}
+</style>
+
+<div id="concierge-fab" aria-label="Chat com assistente">
+  <button onclick="toggleConciergeChat()" title="Fale com nosso assistente">💬</button>
+</div>
+
+<div id="concierge-panel" role="dialog" aria-label="Chat assistente SP Car Clean">
+  <div class="concierge-hdr">
+    <span>🚗 Assistente SP Car Clean</span>
+    <button onclick="toggleConciergeChat()" aria-label="Fechar chat">✕</button>
+  </div>
+  <div id="concierge-messages"></div>
+  <div class="concierge-input-row">
+    <label class="ci-attach" title="Enviar foto para orçamento">
+      📎
+      <input type="file" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="conciergeAttachPhoto(this)">
+    </label>
+    <input type="text" id="concierge-input" placeholder="Digite sua dúvida..." maxlength="500"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();conciergeSend()}">
+    <button class="ci-send" onclick="conciergeSend()">Enviar</button>
+  </div>
+</div>
+
 </body>
 </html>

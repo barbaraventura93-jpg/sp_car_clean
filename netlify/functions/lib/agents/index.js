@@ -11,4 +11,8 @@ module.exports = {
   reativacao: require('./reativacao'),
   agenda:     require('./agenda'),
   upsell:     require('./upsell'),
+  concierge:  require('./concierge'),
+  orcamento:  require('./orcamento'),
+  checkin:    require('./checkin'),
+  satisfacao: require('./satisfacao'),
 };
