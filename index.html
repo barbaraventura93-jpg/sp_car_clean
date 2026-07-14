@@ -6215,6 +6215,13 @@ function renderAdminGaleria() {
         </div>
       </div>
       <div class="ba-progress-bar" id="gaProgressBar" style="display:none"><div class="ba-progress-fill" id="gaProgressFill"></div></div>
+      <button class="btn-ghost" style="width:100%;margin-bottom:.5rem;font-size:.82rem" onclick="iaGerarLegenda(this)">🤖 Gerar legenda com IA</button>
+      <div id="gaInstagramWrap" style="display:none;margin-bottom:.75rem">
+        <label style="font-size:.76rem;opacity:.55;margin-bottom:.25rem;display:block">Legenda Instagram (gerada pela IA — copie e use nas redes)</label>
+        <textarea id="gaInstagram" rows="4" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:inherit;padding:.5rem;font-size:.82rem;resize:vertical;box-sizing:border-box"></textarea>
+        <button class="btn-ghost" style="font-size:.73rem;padding:.2rem .55rem;margin-top:.3rem"
+          onclick="navigator.clipboard.writeText(document.getElementById('gaInstagram').value).then(()=>{this.textContent='✓ Copiado!';setTimeout(()=>this.textContent='📋 Copiar Instagram',1500)})">📋 Copiar Instagram</button>
+      </div>
       <button class="btn-primary" onclick="saveGalleryItem()">Adicionar à Galeria</button>
     </div>
     <div class="admin-panel" style="max-width:600px">
@@ -7882,6 +7889,7 @@ async function renderAdminIA() {
                 </div>
               </div>
               ${id === 'relatorio' ? `<button class="btn-ghost" style="font-size:.75rem;padding:.2rem .5rem;width:100%;margin-top:.25rem;opacity:${enabled?'1':'.45'}" onclick="iaTriggerRelatorio(this)" ${!enabled?'disabled title="Agente desligado"':''}>▶ Gerar relatório agora</button>` : ''}
+              ${id === 'insumos' ? `<button class="btn-ghost" style="font-size:.75rem;padding:.2rem .5rem;width:100%;margin-top:.25rem;opacity:${enabled?'1':'.45'}" onclick="iaTriggerInsumos(this)" ${!enabled?'disabled title="Agente desligado"':''}>▶ Verificar reposição agora</button>` : ''}
             </div>`;
         }).join('')}
       </div>
@@ -7997,6 +8005,95 @@ async function iaPingTest() {
   } finally {
     btn.disabled = false;
     btn.textContent = '⚡ Testar Conexão';
+  }
+}
+
+// ============================================================
+// ONDA 3 — Insumos e Conteúdo
+// ============================================================
+
+// --- 3.1 Verificação de reposição de insumos ---
+async function iaTriggerInsumos(btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Analisando estoque...';
+  try {
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error('Sessão expirada — faça login novamente');
+    const token = await user.getIdToken();
+    const resp = await fetch('/.netlify/functions/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ agentId: 'insumos' })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      alert('✅ Análise de estoque concluída!\n\n' + (data.summary || '') + '\n\nResultado enviado para o Telegram.');
+    } else {
+      alert('Erro: ' + (data.error || data.reason || 'desconhecido'));
+    }
+  } catch (err) {
+    alert('Erro: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+  }
+}
+
+// --- 3.2 Geração de legenda para galeria ---
+async function iaGerarLegenda(btn) {
+  const fileBefore = document.getElementById('gaFileBefore')?.files?.[0];
+  const fileAfter  = document.getElementById('gaFileAfter')?.files?.[0];
+  if (!fileBefore || !fileAfter) {
+    alert('Selecione as fotos Antes e Depois antes de gerar a legenda.');
+    return;
+  }
+
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Gerando legenda...';
+
+  try {
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error('Sessão expirada — faça login novamente');
+    const token = await user.getIdToken();
+
+    const [beforeBase64, afterBase64] = await Promise.all([
+      _conciergeCompressImage(fileBefore, 1280, 0.75),
+      _conciergeCompressImage(fileAfter,  1280, 0.75)
+    ]);
+    if (!beforeBase64 || !afterBase64) throw new Error('Erro ao processar as imagens.');
+
+    const imageType = fileBefore.type === 'image/png' ? 'image/png' : 'image/jpeg';
+
+    const resp = await fetch('/.netlify/functions/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({
+        agentId: 'conteudo',
+        payload: {
+          beforeBase64: beforeBase64.split(',')[1],
+          afterBase64:  afterBase64.split(',')[1],
+          imageType
+        }
+      })
+    });
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || data.reason || 'Erro desconhecido');
+
+    if (data.caption) {
+      const capInput = document.getElementById('gaCaption');
+      if (capInput) capInput.value = data.caption;
+    }
+    if (data.instagram) {
+      document.getElementById('gaInstagram').value = data.instagram;
+      document.getElementById('gaInstagramWrap').style.display = 'block';
+    }
+  } catch (err) {
+    alert('Erro: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
   }
 }
 

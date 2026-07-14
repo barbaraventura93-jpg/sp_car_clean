@@ -15,4 +15,6 @@ module.exports = {
   orcamento:  require('./orcamento'),
   checkin:    require('./checkin'),
   satisfacao: require('./satisfacao'),
+  insumos:    require('./insumos'),
+  conteudo:   require('./conteudo'),
 };
