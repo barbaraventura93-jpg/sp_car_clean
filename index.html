@@ -8053,8 +8053,8 @@ async function iaDescreveCheckin(btn) {
 
 // --- 2.2 Widget Concierge ---
 (function initConciergeWidget() {
-  firebase.database().ref('aiConfig/concierge').once('value').then(snap => {
-    if (!snap.val()?.enabled) return;
+  firebase.database().ref('aiConfig/concierge/enabled').once('value').then(snap => {
+    if (!snap.val()) return;
     document.getElementById('concierge-fab').style.display = 'flex';
   }).catch(() => {});
 })();
