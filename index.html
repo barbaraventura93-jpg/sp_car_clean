@@ -466,6 +466,7 @@ footer p{font-size:.72rem;color:var(--muted)}
 #checkinModal{z-index:3500}
 #adminBookingModal{z-index:3000}
 #mergeClientsModal{z-index:3000}
+#stockProductModal{z-index:3000}
 .approve-form{display:flex;flex-direction:column;gap:1rem}
 /* AB client search */
 .ab-dropdown-item{padding:.6rem 1rem;cursor:pointer;border-bottom:1px solid var(--border);line-height:1.4;transition:background .12s}
@@ -2763,12 +2764,15 @@ async function _markCouponUsed(code) {
   _couponsRef.child(code).update({ used: true, usedAt: new Date().toISOString() }).catch(() => {});
 }
 
+let _clientOnboardingDismissed = false; // "sugerido e dispensável": reseta a cada abertura/login, nunca bloqueia o acesso
+
 function openClientAccount() {
   if (!isClient()) {
     document.getElementById('clientLoginModal').style.display = 'flex';
     setTimeout(() => document.getElementById('clEmail')?.focus(), 100);
     return;
   }
+  _clientOnboardingDismissed = false;
   // Always refresh profile from Firebase to avoid race condition on fresh login
   _clientProfilesRef.child(_authUser.uid).once('value', snap => {
     _clientProfile = snap.val() || { uid: _authUser.uid, email: _authUser.email };
@@ -2778,6 +2782,38 @@ function openClientAccount() {
     renderClientAccount();
     document.getElementById('clientAccountModal').style.display = 'flex';
   });
+}
+
+function _getMyBookings() {
+  if (!isClient()) return [];
+  const uid = _authUser.uid;
+  const email = _authUser.email.toLowerCase();
+  return _bookings.filter(b =>
+    (b.clientUid && b.clientUid === uid) ||
+    (!b.clientUid && b.email && b.email.toLowerCase() === email)
+  );
+}
+
+// Heurística simples: intervalo médio entre atendimentos concluídos + serviço mais frequente.
+// Menos de 2 atendimentos concluídos → sem dado suficiente, não sugere nada.
+function _computeClientSuggestion(myBookings) {
+  const done = myBookings.filter(b => b.status === 'completed');
+  if (done.length < 2) return null;
+  const dts = done.map(b => new Date((b.startDate||b.date)+'T12:00:00')).filter(d=>!isNaN(d)).sort((a,b)=>a-b);
+  if (dts.length < 2) return null;
+
+  let sum = 0;
+  for (let i=1;i<dts.length;i++) sum += (dts[i]-dts[i-1])/86400000;
+  const avgInterval = sum/(dts.length-1);
+  const daysSinceLast = (new Date() - dts[dts.length-1]) / 86400000;
+  if (daysSinceLast < avgInterval - 7) return null; // ainda não é hora de sugerir
+
+  const svcCount = {};
+  done.forEach(b => (b.services||[b.service]).filter(Boolean).forEach(id => svcCount[id] = (svcCount[id]||0)+1));
+  const topSvc = Object.entries(svcCount).sort((a,b)=>b[1]-a[1])[0]?.[0];
+  if (!topSvc || !SVCS[topSvc]) return null;
+
+  return { svcId: topSvc, daysSince: Math.round(daysSinceLast) };
 }
 
 function doClientLogin() {
@@ -2817,14 +2853,21 @@ function doClientPasswordReset() {
 
 function renderClientAccount() {
   if (!isClient()) return;
-  const uid   = _authUser.uid;
   const email = _authUser.email.toLowerCase();
   const now   = todayStr();
 
-  const myBookings = _bookings.filter(b =>
-    (b.clientUid && b.clientUid === uid) ||
-    (!b.clientUid && b.email && b.email.toLowerCase() === email)
-  );
+  const profile = _clientProfile || {};
+  const sub = document.getElementById('clientAccountSub');
+  if (sub) sub.textContent = 'Olá, ' + (profile.name?.split(' ')[0] || email);
+
+  // Primeiro acesso (ou cadastro incompleto): formulário de onboarding no lugar da tela padrão.
+  // Sugerido e dispensável — "Preencher depois" nunca bloqueia o acesso ao histórico.
+  if (!profile.onboardingCompletedAt && !_clientOnboardingDismissed) {
+    _renderClientOnboardingForm(false);
+    return;
+  }
+
+  const myBookings = _getMyBookings();
 
   const upcoming = myBookings
     .filter(b => { const d = b.startDate || b.date || ''; return d >= now && !['cancelled','rejected'].includes(b.status); })
@@ -2840,10 +2883,6 @@ function renderClientAccount() {
     const k = ((b.plate || b.car || '')).trim().toUpperCase();
     if (k) vehicles[k] = { car: b.car || '', plate: b.plate || '' };
   });
-
-  const profile = _clientProfile || {};
-  const sub = document.getElementById('clientAccountSub');
-  if (sub) sub.textContent = 'Olá, ' + (profile.name?.split(' ')[0] || email);
 
   const vCard = v => `<div class="client-booking-card">${v.car}${v.plate ? ' · <strong>' + v.plate + '</strong>' : ''}</div>`;
   const bCard = (b, actions) => {
@@ -2870,6 +2909,7 @@ function renderClientAccount() {
 
   const points = profile.points || 0;
   const pointsValue = fmtMoney(Math.floor(points * CFG.pointsToReal * 100) / 100);
+  const suggestion = _computeClientSuggestion(myBookings);
 
   document.getElementById('clientAccountBody').innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:.8rem">
@@ -2883,29 +2923,108 @@ function renderClientAccount() {
     </div>` : ''}
     <h4 class="client-section-title">📅 Próximos Agendamentos (${upcoming.length})</h4>
     ${upcoming.length ? upcoming.map(b => bCard(b, true)).join('') : '<p class="client-empty">Nenhum agendamento futuro.</p>'}
-    ${past.length ? `
-    <h4 class="client-section-title" style="margin-top:1.2rem">🕐 Histórico (${past.length})</h4>
-    ${past.map(b => bCard(b, false)).join('')}` : ''}
-    ${Object.keys(vehicles).length ? `
-    <h4 class="client-section-title" style="margin-top:1.2rem">🚗 Meus Veículos</h4>
-    ${Object.values(vehicles).map(vCard).join('')}` : ''}
-    <h4 class="client-section-title" style="margin-top:1.2rem">👤 Meu Perfil</h4>
+    ${suggestion ? `<div class="client-booking-card" style="border-color:var(--accent);margin-top:.8rem">
+      <div style="font-weight:700;margin-bottom:.3rem">💡 Sugestão de Agendamento</div>
+      <div style="font-size:.83rem;color:var(--muted);margin-bottom:.6rem">Já faz ${suggestion.daysSince} dias desde seu último ${SVCS[suggestion.svcId].icon} ${SVCS[suggestion.svcId].name}. Que tal agendar?</div>
+      <button class="btn-primary" style="font-size:.8rem;padding:.5rem 1rem" onclick="closeModal('clientAccountModal');openBooking('${suggestion.svcId}')">📅 Agendar agora</button>
+    </div>` : ''}
+    <button class="btn-ghost" style="margin-top:1.2rem;width:100%" onclick="_renderClientOnboardingForm(true)">📋 Dados Cadastrais</button>
+    <details style="margin-top:1.2rem">
+      <summary class="client-section-title" style="cursor:pointer;display:inline-block">Ver histórico completo</summary>
+      ${past.length ? past.map(b => bCard(b, false)).join('') : '<p class="client-empty">Sem atendimentos anteriores.</p>'}
+      ${Object.keys(vehicles).length ? `
+      <h4 class="client-section-title" style="margin-top:1.2rem">🚗 Meus Veículos</h4>
+      ${Object.values(vehicles).map(vCard).join('')}` : ''}
+    </details>`;
+}
+
+// ── Onboarding / Dados Cadastrais — formulário completo de cadastro do cliente ──
+function _renderClientOnboardingForm(isEditMode) {
+  const profile = _clientProfile || {};
+  const myBookings = _getMyBookings();
+  const lastBooking = [...myBookings].sort((a,b)=>(b.startDate||b.date||'').localeCompare(a.startDate||a.date||''))[0];
+  const addr = profile.address || {};
+  const veh  = profile.primaryVehicle || {};
+
+  const name   = profile.name  || lastBooking?.name  || '';
+  const phone  = profile.phone || lastBooking?.phone || '';
+  const bairro = addr.bairro   || lastBooking?.bairro || '';
+  const car    = veh.car       || lastBooking?.car    || '';
+  const plate  = veh.plate     || lastBooking?.plate  || '';
+
+  document.getElementById('clientAccountBody').innerHTML = `
+    ${!isEditMode ? `<div style="background:rgba(6,182,212,.08);border:1px solid var(--accent);border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.83rem;color:var(--text)">
+      👋 Bem-vindo(a)! Complete seu cadastro para agilizar seus próximos agendamentos.
+    </div>` : `<h4 class="client-section-title">📋 Dados Cadastrais</h4>`}
     <div class="client-booking-card">
       <div class="form-row">
-        <div class="form-group"><label>Data de nascimento</label>
-          <input type="date" id="clientBirthDate" value="${profile.birthDate || ''}"/>
-        </div>
+        <div class="form-group"><label>Nome completo *</label><input id="cobName" value="${esc(name)}"/></div>
+        <div class="form-group"><label>Telefone *</label><input id="cobPhone" value="${esc(phone)}" placeholder="(11) 99999-9999"/></div>
       </div>
-      <button class="btn-ghost" onclick="saveClientBirthDate()" style="font-size:.76rem;margin-top:.5rem">Salvar</button>
+      <div class="form-row"><div class="form-group"><label>E-mail</label><input value="${esc(_authUser.email)}" disabled style="opacity:.6"/></div></div>
+      <div class="form-row">
+        <div class="form-group"><label>Rua</label><input id="cobStreet" value="${esc(addr.street||'')}"/></div>
+        <div class="form-group"><label>Número</label><input id="cobNumber" value="${esc(addr.number||'')}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Bairro *</label><input id="cobBairro" value="${esc(bairro)}" onblur="handleBairroBlur('cobBairro','cobBairroWarn')"/><div id="cobBairroWarn" class="bairro-warn" style="display:none"></div></div>
+        <div class="form-group"><label>CEP</label><input id="cobCep" value="${esc(addr.cep||'')}" maxlength="9" oninput="fmtCep(this)"/></div>
+      </div>
+      <div class="form-row"><div class="form-group"><label>Data de aniversário</label><input type="date" id="cobBirthDate" value="${profile.birthDate || ''}"/></div></div>
+      <div class="form-row">
+        <div class="form-group"><label>Veículo (modelo)</label><input id="cobCar" value="${esc(car)}" placeholder="Ex: Honda Civic Prata 2020"/></div>
+        <div class="form-group"><label>Placa</label><input id="cobPlate" value="${esc(plate)}" placeholder="ABC1D23" oninput="this.value=this.value.toUpperCase()"/></div>
+      </div>
+      <div style="display:flex;gap:.6rem;margin-top:.8rem;flex-wrap:wrap">
+        <button class="btn-primary" onclick="saveClientOnboarding(${isEditMode})">💾 Salvar${isEditMode ? '' : ' e continuar'}</button>
+        ${!isEditMode
+          ? `<button class="btn-ghost" onclick="_dismissClientOnboarding()">Preencher depois</button>`
+          : `<button class="btn-ghost" onclick="renderClientAccount()">Cancelar</button>`}
+      </div>
     </div>`;
 }
 
-function saveClientBirthDate() {
-  const val = document.getElementById('clientBirthDate')?.value;
-  if (!val || !_authUser || !_clientProfilesRef) return;
-  _clientProfilesRef.child(_authUser.uid).update({ birthDate: val })
-    .then(() => { _clientProfile = { ..._clientProfile, birthDate: val }; alert('Data salva!'); })
-    .catch(e => alert('Erro: ' + e.message));
+function _dismissClientOnboarding() {
+  _clientOnboardingDismissed = true;
+  renderClientAccount();
+}
+
+async function saveClientOnboarding(isEditMode) {
+  const name   = document.getElementById('cobName')?.value.trim();
+  const phone  = document.getElementById('cobPhone')?.value.trim();
+  const street = document.getElementById('cobStreet')?.value.trim();
+  const number = document.getElementById('cobNumber')?.value.trim();
+  const bairro = document.getElementById('cobBairro')?.value.trim();
+  const cep    = document.getElementById('cobCep')?.value.trim();
+  const birthDate = document.getElementById('cobBirthDate')?.value;
+  const car    = document.getElementById('cobCar')?.value.trim();
+  const plate  = document.getElementById('cobPlate')?.value.trim().toUpperCase();
+
+  if (!name)   { alert('Informe seu nome.'); return; }
+  if (!phone)  { alert('Informe seu telefone.'); return; }
+  if (!bairro) { alert('Informe seu bairro.'); return; }
+
+  const payload = {
+    name, phone,
+    address: { street, number, bairro, cep, city: 'São Paulo' },
+    ...(birthDate ? { birthDate } : {}),
+    ...((car || plate) ? { primaryVehicle: { car, plate } } : {}),
+  };
+  if (!isEditMode) payload.onboardingCompletedAt = new Date().toISOString();
+
+  const apply = () => {
+    _clientProfile = { ..._clientProfile, ...payload };
+    _clientOnboardingDismissed = false;
+    renderClientAccount();
+  };
+  // Fail-open: se o Firebase falhar, nunca trava a tela — mantém os dados anteriores e avisa.
+  if (!_clientProfilesRef) { apply(); return; }
+  try {
+    await _clientProfilesRef.child(_authUser.uid).update(payload);
+    apply();
+  } catch (e) {
+    alert('Erro ao salvar: ' + e.message + '\n\nTente novamente — seus dados anteriores foram mantidos.');
+  }
 }
 
 function doAdminLogin() {
@@ -5416,9 +5535,10 @@ function renderAdminStats() {
     </div>`;
   }).join('') || '<p style="color:var(--muted);font-size:.85rem">Sem dados ainda.</p>';
 
-  // Return clients
+  // Clientes únicos = mesmo critério da aba Clientes (completedCount): só conta quem foi
+  // de fato atendido (confirmed/approved/completed), não qualquer solicitação pending/cancelled.
   const emailCount = {};
-  bookings.filter(b=>b.status!=='rejected').forEach(b=>{ emailCount[b.email]=(emailCount[b.email]||0)+1; });
+  bookings.filter(b=>['confirmed','approved','completed'].includes(b.status)).forEach(b=>{ emailCount[b.email]=(emailCount[b.email]||0)+1; });
   const returning = Object.values(emailCount).filter(c=>c>1).length;
   const unique = Object.keys(emailCount).length;
 
@@ -5484,14 +5604,15 @@ function _renderRevenueChart(year) {
     });
 
   const maxRev = Math.max(...monthly, 1);
+  const maxBarPx = 100; // altura máxima da barra em px, dentro dos 130px de .rev-chart-bars (o restante é o rótulo de valor acima)
 
   barsEl.innerHTML = monthly.map((val, i) => {
-    const pct = Math.round(val / maxRev * 100);
+    const px = val > 0 ? Math.max(Math.round(val / maxRev * maxBarPx), 4) : 0;
     const isCur = year === curYear && i === curMonth;
     const valStr = val >= 1000 ? `R$${(val/1000).toFixed(1)}k` : val > 0 ? `R$${val}` : '';
     return `<div class="rev-bar-col">
       <div class="rev-bar-val">${valStr}</div>
-      <div class="rev-bar-fill${isCur ? ' cur-month' : ''}" style="height:${Math.max(pct, val > 0 ? 4 : 0)}%"></div>
+      <div class="rev-bar-fill${isCur ? ' cur-month' : ''}" style="height:${px}px"></div>
     </div>`;
   }).join('');
 
@@ -5506,12 +5627,20 @@ function _renderRevenueChart(year) {
   }
 }
 
+// Chave de agrupamento geográfico: se o bairro digitado não foi validado mas tem uma
+// sugestão da lista local (ex: "Cangaiga" → "Cangaíba"), agrupa sob a sugestão — evita que
+// erros de digitação virem "zonas" fantasmas no ranking. Fail-open: sem sugestão, usa o texto digitado.
+function _geoBairroKey(b) {
+  if (b.bairroValidado === false && b.bairroSugestao) return b.bairroSugestao.trim();
+  return (b.bairro || '').trim();
+}
+
 function _renderGeoSection() {
   const bookings = getBookings();
   // Neighborhood count
   const bairroCount = {};
   bookings.filter(b => b.bairro && b.status !== 'rejected').forEach(b => {
-    const k = b.bairro.trim();
+    const k = _geoBairroKey(b);
     bairroCount[k] = (bairroCount[k]||0) + 1;
   });
 
@@ -6540,7 +6669,7 @@ function renderAdminEstoque() {
                   <td style="color:var(--muted)">R$ ${(p.qty * (p.costPerUnit || 0)).toFixed(2)}</td>
                   <td style="color:var(--muted)">${p.minQty || '—'}</td>
                   <td style="white-space:nowrap;text-align:right">
-                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="restockProduct('${p.id}','${esc(p.name).replace(/'/g,"\\'")  }','${p.unit}')">📥 Repor</button>
+                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="restockProduct('${p.id}','${esc(p.name).replace(/'/g,"\\'")  }')">📥 Repor</button>
                     <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="openProductForm('${p.id}')">✏️</button>
                     <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem;color:var(--red)" onclick="deleteProduct('${p.id}','${esc(p.name).replace(/'/g,"\\'")}')">🗑</button>
                   </td>
@@ -6619,6 +6748,14 @@ function openProductForm(id) {
           <input id="spMin" type="number" value="${p.minQty ?? 0}" min="0" step="1"/>
         </div>
       </div>
+      <div class="form-row">
+        <div class="form-group"><label>Unidade de compra usual (opcional)</label>
+          <input id="spPurchaseLabel" value="${esc(p.purchaseUnitLabel || '')}" placeholder="Ex: Galão 5L"/>
+        </div>
+        <div class="form-group"><label>Equivale a quantas unidades de uso?</label>
+          <input id="spPurchaseFactor" type="number" value="${p.purchaseConversionFactor ?? ''}" min="0" step="0.01" placeholder="Ex: 5000"/>
+        </div>
+      </div>
       <button class="btn-primary btn-full" style="margin-top:1.2rem"
         onclick="saveProduct(${id ? `'${id}'` : 'null'})">💾 Salvar</button>
     `;
@@ -6638,27 +6775,54 @@ async function saveProduct(id) {
   const qty  = parseFloat(document.getElementById('spQty')?.value)  || 0;
   const cost = parseFloat(document.getElementById('spCost')?.value) || 0;
   const min  = parseFloat(document.getElementById('spMin')?.value)  || 0;
+  const purchaseUnitLabel = document.getElementById('spPurchaseLabel')?.value.trim() || '';
+  const purchaseConversionFactor = parseFloat(document.getElementById('spPurchaseFactor')?.value) || 0;
   if (!name) { alert('Informe o nome do insumo.'); return; }
 
   const productId = id || name.toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
+  const payload = { name, unit, qty, costPerUnit: cost, minQty: min, updatedAt: new Date().toISOString() };
+  // Unidade de compra é opcional e só faz sentido reter quando os dois campos existem
+  // (fail-open: salva mesmo parcial, mas restockProduct só oferece a opção quando ambos existem).
+  if (purchaseUnitLabel)         payload.purchaseUnitLabel = purchaseUnitLabel;
+  if (purchaseConversionFactor > 0) payload.purchaseConversionFactor = purchaseConversionFactor;
+
   try {
-    await _stockRef.child(productId).set({ name, unit, qty, costPerUnit: cost, minQty: min, updatedAt: new Date().toISOString() });
+    await _stockRef.child(productId).set(payload);
     closeModal('stockProductModal');
     renderAdminEstoque();
   } catch(e) { alert('Erro ao salvar: ' + e.message); }
 }
 
-function restockProduct(id, name, unit) {
-  const input = prompt(`📥 Repor estoque\n${name}\n\nQuantidade a adicionar (${unit}):`, '');
-  if (input === null || input.trim() === '') return;
-  const add = parseFloat(input);
-  if (isNaN(add) || add <= 0) { alert('Quantidade inválida.'); return; }
+function restockProduct(id, name) {
   _stockRef.child(id).once('value', snap => {
-    const current = snap.val()?.qty || 0;
-    _stockRef.child(id).update({ qty: +(current + add).toFixed(4), updatedAt: new Date().toISOString() })
+    const p = snap.val() || {};
+    const unit = p.unit || 'un';
+    const hasConversion = !!(p.purchaseUnitLabel && p.purchaseConversionFactor > 0);
+
+    let addQty = null;
+    if (hasConversion) {
+      const useCompra = confirm(`📥 Repor estoque\n${name}\n\nOK = repor em "${p.purchaseUnitLabel}" (1 ${p.purchaseUnitLabel} = ${p.purchaseConversionFactor} ${unit})\nCancelar = repor direto em ${unit}`);
+      if (useCompra) {
+        const input = prompt(`Quantos "${p.purchaseUnitLabel}" você está repondo?`, '');
+        if (input === null || input.trim() === '') return;
+        const qtyCompra = parseFloat(input);
+        if (isNaN(qtyCompra) || qtyCompra <= 0) { alert('Quantidade inválida.'); return; }
+        addQty = qtyCompra * p.purchaseConversionFactor;
+      }
+    }
+    if (addQty === null) {
+      const input = prompt(`📥 Repor estoque\n${name}\n\nQuantidade a adicionar (${unit}):`, '');
+      if (input === null || input.trim() === '') return;
+      const add = parseFloat(input);
+      if (isNaN(add) || add <= 0) { alert('Quantidade inválida.'); return; }
+      addQty = add;
+    }
+
+    const current = p.qty || 0;
+    _stockRef.child(id).update({ qty: +(current + addQty).toFixed(4), updatedAt: new Date().toISOString() })
       .then(() => renderAdminEstoque())
       .catch(e => alert('Erro: ' + e.message));
   });
