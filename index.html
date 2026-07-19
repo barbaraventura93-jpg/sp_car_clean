@@ -7383,18 +7383,26 @@ function updateWaLink() {
     _clientLinksRef    = _fbDB.ref('clientLinks');
     _clientLinkDismissalsRef = _fbDB.ref('clientLinkDismissals');
     _clientOverridesRef = _fbDB.ref('clientOverrides');
-    _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; });
-    _clientLinksRef.once('value', snap => {
-      _clientLinks = snap.val() || {};
-      _abClientCache = null;
-      if (isAdmin() && currentAdminTab === 'clientes') renderAdminClients();
-    });
-    _clientLinkDismissalsRef.once('value', snap => { _clientLinkDismissals = snap.val() || {}; });
-    _clientOverridesRef.once('value', snap => {
-      _clientOverrides = snap.val() || {};
-      _abClientCache = null;
-      if (isAdmin() && currentAdminTab === 'clientes') renderAdminClients();
-    });
+    // clientNotes/clientLinks/clientLinkDismissals/clientOverrides são admin-only nas regras
+    // do RTDB. Ler aqui (antes de onAuthStateChanged restaurar a sessão) era negado em
+    // silêncio e as mesclagens/anotações "sumiam" a cada visita — por isso a carga fica em
+    // _loadAdminOnlyData(), chamada só depois que o login do admin é confirmado.
+    function _loadAdminOnlyData() {
+      _clientNotesRef.once('value', snap => { _clientNotes = snap.val() || {}; },
+        e => console.warn('Firebase clientNotes:', e));
+      _clientLinksRef.once('value', snap => {
+        _clientLinks = snap.val() || {};
+        _abClientCache = null;
+        if (isAdmin() && currentAdminTab === 'clientes') renderAdminClients();
+      }, e => console.warn('Firebase clientLinks:', e));
+      _clientLinkDismissalsRef.once('value', snap => { _clientLinkDismissals = snap.val() || {}; },
+        e => console.warn('Firebase clientLinkDismissals:', e));
+      _clientOverridesRef.once('value', snap => {
+        _clientOverrides = snap.val() || {};
+        _abClientCache = null;
+        if (isAdmin() && currentAdminTab === 'clientes') renderAdminClients();
+      }, e => console.warn('Firebase clientOverrides:', e));
+    }
 
     // Avaliações aprovadas: escuta em tempo real → atualiza depoimentos públicos
     _feedbackRef.orderByChild('status').equalTo('approved').on('value', snap => {
@@ -7415,6 +7423,7 @@ function updateWaLink() {
       }
       if (isAdmin()) {
         _clientProfile = null;
+        _loadAdminOnlyData();
         _updateClientNavUI();
         return;
       }
