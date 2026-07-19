@@ -5527,20 +5527,24 @@ function renderAdminStats() {
   bookings.filter(b=>b.status!=='rejected').forEach(b=>{
     (b.services||[b.service]).filter(Boolean).forEach(id=>{ svcCount[id]=(svcCount[id]||0)+1; });
   });
+  // Barras proporcionais ao serviço mais vendido (v/total distorcia: agendamentos com
+  // vários serviços somam mais de 1 e cancelados inflavam o denominador).
+  const maxSvc = Math.max(...Object.values(svcCount), 1);
   const svcBars = Object.entries(svcCount).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{
-    const pct = total > 0 ? Math.round(v/total*100) : 0;
+    const svc = SVCS[k] || { icon: '🔧', name: k }; // serviço excluído não pode quebrar a tela
+    const pct = Math.round(v/maxSvc*100);
     return `<div class="chart-bar-row">
-      <div class="chart-bar-label">${SVCS[k].icon} ${SVCS[k].name}</div>
+      <div class="chart-bar-label">${svc.icon} ${esc(svc.name)}</div>
       <div class="chart-bar-wrap"><div class="chart-bar-fill" style="width:${pct}%"><span class="chart-bar-val">${v}</span></div></div>
     </div>`;
   }).join('') || '<p style="color:var(--muted);font-size:.85rem">Sem dados ainda.</p>';
 
-  // Clientes únicos = mesmo critério da aba Clientes (completedCount): só conta quem foi
-  // de fato atendido (confirmed/approved/completed), não qualquer solicitação pending/cancelled.
-  const emailCount = {};
-  bookings.filter(b=>['confirmed','approved','completed'].includes(b.status)).forEach(b=>{ emailCount[b.email]=(emailCount[b.email]||0)+1; });
-  const returning = Object.values(emailCount).filter(c=>c>1).length;
-  const unique = Object.keys(emailCount).length;
+  // Clientes únicos = mesma fonte da aba Clientes (_buildClientMap): agrega por e-mail,
+  // aplica mesclagens (clientLinks) e só conta quem foi de fato atendido
+  // (confirmed/approved/completed) — assim os dois painéis nunca divergem.
+  const attendedClients = _buildClientMap().filter(c => c.completedCount > 0);
+  const returning = attendedClients.filter(c => c.completedCount > 1).length;
+  const unique = attendedClients.length;
 
   document.getElementById('adminContent').innerHTML = `
     <h2>📊 Estatísticas do Negócio</h2>
@@ -5627,12 +5631,37 @@ function _renderRevenueChart(year) {
   }
 }
 
+// Normalização síncrona pela lista local (mesmos critérios de validarBairro, sem Nominatim):
+// match exato sem acento/caixa retorna o nome canônico; erro de digitação até distância 2
+// (ex: "Cangaiga" → "Cangaíba") idem. Sem match, fail-open: devolve o texto original.
+// Cobre agendamentos antigos, gravados antes dos campos bairroValidado/bairroSugestao existirem.
+const _canonBairroCache = {};
+function _canonBairroLocal(texto) {
+  const key = _normBairro(texto);
+  if (!key) return texto;
+  if (_canonBairroCache[key]) return _canonBairroCache[key];
+  let canon = texto;
+  const exact = BAIRROS_SP.find(b => _normBairro(b) === key);
+  if (exact) canon = exact;
+  else {
+    let best = null, bestDist = Infinity;
+    for (const b of BAIRROS_SP) {
+      const d = _levenshtein(key, _normBairro(b));
+      if (d < bestDist) { bestDist = d; best = b; }
+    }
+    if (best && bestDist <= 2) canon = best;
+  }
+  _canonBairroCache[key] = canon;
+  return canon;
+}
+
 // Chave de agrupamento geográfico: se o bairro digitado não foi validado mas tem uma
 // sugestão da lista local (ex: "Cangaiga" → "Cangaíba"), agrupa sob a sugestão — evita que
-// erros de digitação virem "zonas" fantasmas no ranking. Fail-open: sem sugestão, usa o texto digitado.
+// erros de digitação virem "zonas" fantasmas no ranking. Registros legados (sem os campos
+// de validação) passam pela normalização local na hora de renderizar.
 function _geoBairroKey(b) {
   if (b.bairroValidado === false && b.bairroSugestao) return b.bairroSugestao.trim();
-  return (b.bairro || '').trim();
+  return _canonBairroLocal((b.bairro || '').trim());
 }
 
 function _renderGeoSection() {

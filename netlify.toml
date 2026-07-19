@@ -10,7 +10,14 @@
 [functions."ai-dispatcher"]
   schedule = "0 11 * * *"
 
+# HTML sempre revalida: após um deploy, ninguém fica preso a uma versão antiga do app.
 [[headers]]
   for = "/*"
   [headers.values]
-    Cache-Control = "public, max-age=3600"
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# Imagens/estáticos podem cachear (regra mais específica vence a de cima).
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
