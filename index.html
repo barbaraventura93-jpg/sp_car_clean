@@ -4,6 +4,50 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>SP Car Clean — Estética Automotiva Premium</title>
+<meta name="description" content="Higienização e estética automotiva premium em São Paulo: lavagem detalhada, polimento, higienização de estofados e couro, lavagem de motor e polimento de vidros. Agende online ou pelo WhatsApp (11) 92669-7474."/>
+<meta name="theme-color" content="#06090F"/>
+<link rel="canonical" href="https://www.spcarclean.com.br/"/>
+<link rel="icon" type="image/png" sizes="512x512" href="assets/favicon.png"/>
+<link rel="apple-touch-icon" href="assets/favicon.png"/>
+
+<!-- Open Graph / compartilhamento (WhatsApp, Instagram, Facebook) -->
+<meta property="og:type" content="website"/>
+<meta property="og:site_name" content="SP Car Clean"/>
+<meta property="og:title" content="SP Car Clean — Estética Automotiva Premium"/>
+<meta property="og:description" content="Higienização e estética automotiva premium em São Paulo. Agende online: lavagem detalhada, polimento, higienização de estofados e couro."/>
+<meta property="og:url" content="https://www.spcarclean.com.br/"/>
+<meta property="og:image" content="https://www.spcarclean.com.br/assets/logo.jpg"/>
+<meta property="og:image:width" content="1280"/>
+<meta property="og:image:height" content="1600"/>
+<meta property="og:locale" content="pt_BR"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:title" content="SP Car Clean — Estética Automotiva Premium"/>
+<meta name="twitter:description" content="Higienização e estética automotiva premium em São Paulo. Agende online."/>
+<meta name="twitter:image" content="https://www.spcarclean.com.br/assets/logo.jpg"/>
+
+<!-- Dados estruturados: negócio local (Google) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "AutoWash",
+  "name": "SP Car Clean",
+  "alternateName": "SP Car Clean Higienização Automotiva",
+  "description": "Higienização e estética automotiva premium: lavagem detalhada, polimento, higienização de estofados e couro, lavagem de motor e polimento de vidros, com agendamento online.",
+  "url": "https://www.spcarclean.com.br/",
+  "telephone": "+5511926697474",
+  "image": "https://www.spcarclean.com.br/assets/logo.jpg",
+  "logo": "https://www.spcarclean.com.br/assets/favicon.png",
+  "address": { "@type": "PostalAddress", "addressLocality": "São Paulo", "addressRegion": "SP", "addressCountry": "BR" },
+  "areaServed": { "@type": "City", "name": "São Paulo" },
+  "sameAs": ["https://www.instagram.com/spcarclean/"],
+  "priceRange": "$$",
+  "potentialAction": {
+    "@type": "ReserveAction",
+    "target": { "@type": "EntryPoint", "urlTemplate": "https://www.spcarclean.com.br/#servicos", "actionPlatform": "https://schema.org/DesktopWebPlatform" },
+    "result": { "@type": "Reservation", "name": "Agendamento de serviço de estética automotiva" }
+  }
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Open+Sans:wght@300;400;600&display=swap" rel="stylesheet"/>
 <style>
@@ -769,7 +813,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
     <div class="porque-vis">
       <div class="pv-pattern"></div>
       <div class="pv-content">
-        <img src="https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=800&q=85&auto=format&fit=crop" alt="Carro esportivo — SP Car Clean" class="pv-photo"/>
+        <img src="assets/portfolio/produtos.jpg.jpg" alt="Produtos e equipamentos profissionais de polimento usados pela SP Car Clean" class="pv-photo" loading="lazy"/>
         <div class="pv-badges">
           <div class="pv-badge"><div class="n">15%</div><div class="l">Mais valor na revenda</div></div>
           <div class="pv-badge"><div class="n">9+</div><div class="l">Serviços premium</div></div>
@@ -876,7 +920,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 <!-- ===== FOOTER ===== -->
 <footer>
   <a href="#" class="logo-wrap" style="text-decoration:none">
-    <img src="assets/logo.png" alt="SP Car Clean" class="logo-img"/>
+    <img src="assets/logo.png" alt="SP Car Clean" class="logo-img" loading="lazy"/>
     <div class="logo-text">
       <div class="name">SP <span>Car</span> Clean</div>
       <div class="tag">Centro Estético Automotivo</div>
@@ -4924,7 +4968,7 @@ function openCheckin(id) {
       <div class="ci-detail" id="ci-det-${item.key}" style="display:${isAv ? 'block' : 'none'}">
         <input class="ci-note" id="ci-note-${item.key}" placeholder="Descreva a avaria..." value="${(st.note||'').replace(/"/g,'&quot;')}"/>
         <div class="ci-photo-row">
-          ${st.photoUrl ? `<img class="checkin-photo-thumb" src="${st.photoUrl}" onclick="window.open('${st.photoUrl}','_blank')"/>` : ''}
+          ${st.photoUrl ? `<img class="checkin-photo-thumb" src="${st.photoUrl}" alt="Foto do check-in" loading="lazy" onclick="window.open('${st.photoUrl}','_blank')"/>` : ''}
           <label class="ci-photo-btn">📷 Foto<input type="file" accept="image/*" style="display:none" onchange="_ciUploadPhoto('${item.key}',this)"/></label>
           <span class="ci-photo-status" id="ci-ps-${item.key}">${st.photoUrl ? '✅' : ''}</span>
         </div>
@@ -6364,12 +6408,12 @@ function renderAdminGaleria() {
         <div class="form-group">
           <label>Foto ANTES</label>
           <input type="file" id="gaFileBefore" class="file-input" accept="image/*" onchange="gaPreview(this,'gaPrevBefore')"/>
-          <img id="gaPrevBefore" class="ba-admin-thumb" style="display:none;margin-top:.5rem;width:100%;height:80px"/>
+          <img id="gaPrevBefore" class="ba-admin-thumb" alt="Prévia da foto antes" style="display:none;margin-top:.5rem;width:100%;height:80px"/>
         </div>
         <div class="form-group">
           <label>Foto DEPOIS</label>
           <input type="file" id="gaFileAfter" class="file-input" accept="image/*" onchange="gaPreview(this,'gaPrevAfter')"/>
-          <img id="gaPrevAfter" class="ba-admin-thumb" style="display:none;margin-top:.5rem;width:100%;height:80px"/>
+          <img id="gaPrevAfter" class="ba-admin-thumb" alt="Prévia da foto depois" style="display:none;margin-top:.5rem;width:100%;height:80px"/>
         </div>
       </div>
       <div class="ba-progress-bar" id="gaProgressBar" style="display:none"><div class="ba-progress-fill" id="gaProgressFill"></div></div>
@@ -6413,8 +6457,8 @@ function loadGalleryAdminList() {
     const entries = Object.entries(val).sort(([,a],[,b]) => (b.createdAt||0) - (a.createdAt||0));
     listEl.innerHTML = entries.map(([id, d]) =>
       `<div class="ba-admin-row">
-        <img class="ba-admin-thumb" src="${d.beforeUrl}" alt="Antes" onerror="this.style.opacity='.3'">
-        <img class="ba-admin-thumb" src="${d.afterUrl}" alt="Depois" onerror="this.style.opacity='.3'">
+        <img class="ba-admin-thumb" src="${d.beforeUrl}" alt="Antes" loading="lazy" onerror="this.style.opacity='.3'">
+        <img class="ba-admin-thumb" src="${d.afterUrl}" alt="Depois" loading="lazy" onerror="this.style.opacity='.3'">
         <span class="ba-admin-caption">${String(d.caption||'').replace(/</g,'&lt;')}</span>
         <button class="ba-admin-del" onclick="deleteGalleryItem('${id}')">🗑️ Remover</button>
       </div>`
@@ -7716,6 +7760,7 @@ function buildGalleryCard(item) {
   beforeImg.className = 'ba-before';
   beforeImg.src = item.before;
   beforeImg.alt = 'Antes';
+  beforeImg.loading = 'lazy';
   if (item.beforeFilter) beforeImg.style.filter = item.beforeFilter;
 
   const afterWrap = document.createElement('div');
