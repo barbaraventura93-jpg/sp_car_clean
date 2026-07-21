@@ -10,6 +10,13 @@
 <link rel="icon" type="image/png" sizes="512x512" href="assets/favicon.png"/>
 <link rel="apple-touch-icon" href="assets/favicon.png"/>
 
+<!-- PWA — app instalável na tela inicial (admin e cliente) -->
+<link rel="manifest" href="manifest.webmanifest"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="SP Car Clean"/>
+
 <!-- Open Graph / compartilhamento (WhatsApp, Instagram, Facebook) -->
 <meta property="og:type" content="website"/>
 <meta property="og:site_name" content="SP Car Clean"/>
@@ -703,6 +710,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js"></script>
 </head>
 <body>
 
@@ -1294,6 +1302,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
     <div class="brand">SP <span>Car</span> Clean <span style="font-weight:400;font-size:.75rem;opacity:.5;margin-left:.5rem">Painel Admin</span></div>
     <div class="admin-nav-actions">
       <span style="font-size:.72rem;color:rgba(255,255,255,.4)" id="adminDate"></span>
+      <button class="pwa-install-btn admin-logout" onclick="pwaInstall()" style="display:none;background:#0a84ff;border-color:#0a84ff" title="Instalar o painel como app no celular">📲 Instalar app</button>
       <button class="admin-logout" onclick="doAdminLogout()">Sair</button>
     </div>
   </div>
@@ -7469,6 +7478,8 @@ function updateWaLink() {
         _clientProfile = null;
         _loadAdminOnlyData();
         _updateClientNavUI();
+        // Registra este dispositivo para receber push de novos agendamentos.
+        if (window.pwaRegisterAdminPush) window.pwaRegisterAdminPush();
         return;
       }
       // Cliente logado — carrega perfil
@@ -8580,6 +8591,110 @@ function _conciergeCompressImage(file, maxDim, quality) {
     <button class="ci-send" onclick="conciergeSend()">Enviar</button>
   </div>
 </div>
+
+<!-- ===== PWA: app instalável + notificações push do admin ===== -->
+<script>
+(function initPWA() {
+  const VAPID_KEY = '%%FIREBASE_VAPID_KEY%%';
+  let _deferredInstall = null;
+
+  // ── 1. Service worker de cache offline ──
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(err =>
+        console.warn('PWA: falha ao registrar service worker', err));
+    });
+  }
+
+  // ── 2. Botão "Instalar app" (Android/desktop via beforeinstallprompt) ──
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    _deferredInstall = e;
+    document.querySelectorAll('.pwa-install-btn').forEach(b => { b.style.display = 'inline-flex'; });
+  });
+  window.addEventListener('appinstalled', () => {
+    _deferredInstall = null;
+    document.querySelectorAll('.pwa-install-btn').forEach(b => { b.style.display = 'none'; });
+  });
+
+  window.pwaInstall = async function () {
+    if (!_deferredInstall) {
+      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      alert(isIOS
+        ? 'Para instalar no iPhone/iPad: toque em Compartilhar (⬆️) e depois em "Adicionar à Tela de Início".'
+        : 'Abra o menu do navegador e escolha "Instalar app" / "Adicionar à tela inicial".');
+      return;
+    }
+    _deferredInstall.prompt();
+    try { await _deferredInstall.userChoice; } catch (_) {}
+    _deferredInstall = null;
+    document.querySelectorAll('.pwa-install-btn').forEach(b => { b.style.display = 'none'; });
+  };
+
+  const _isStandalone = () =>
+    window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+  // ── 3. Notificações push do admin (Firebase Cloud Messaging) ──
+  // Só registra token quando: SDK presente, VAPID configurada, SW suportado e usuário é o admin.
+  let _pushRegistered = false;
+
+  async function registerAdminPush() {
+    if (_pushRegistered) return;
+    if (!VAPID_KEY || VAPID_KEY.indexOf('%%') === 0) return;      // VAPID não configurada
+    if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
+    if (typeof firebase === 'undefined' || !firebase.messaging) return;
+    if (Notification.permission === 'denied') return;
+
+    try {
+      const perm = Notification.permission === 'granted'
+        ? 'granted'
+        : await Notification.requestPermission();
+      if (perm !== 'granted') return;
+
+      // Escopo próprio para não conflitar com o service worker de cache (/sw.js em '/').
+      const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+        scope: '/firebase-cloud-messaging-push-scope'
+      });
+      const messaging = firebase.messaging();
+      const token = await messaging.getToken({
+        vapidKey: VAPID_KEY,
+        serviceWorkerRegistration: swReg
+      });
+      if (!token) return;
+
+      // Salva o token do dispositivo admin. Chave = token (não contém caracteres proibidos no RTDB).
+      firebase.database().ref('adminPushTokens/' + token).set({
+        createdAt: new Date().toISOString(),
+        ua: (navigator.userAgent || '').slice(0, 180)
+      }).catch(() => {});
+      _pushRegistered = true;
+
+      // Push com o app aberto → mostra uma notificação local também.
+      messaging.onMessage((payload) => {
+        const d = (payload && (payload.data || payload.notification)) || {};
+        const title = d.title || '🔔 SP Car Clean';
+        const body  = d.body  || 'Nova atividade no painel.';
+        try {
+          new Notification(title, { body, icon: '/assets/favicon.png' });
+        } catch (_) {
+          if (window.toast) window.toast(title + ' — ' + body);
+        }
+      });
+    } catch (err) {
+      console.warn('PWA: push do admin indisponível', err);
+    }
+  }
+  // Exposto para o app chamar quando confirmar que o usuário logado é o admin.
+  window.pwaRegisterAdminPush = registerAdminPush;
+
+  // Mostra o botão instalar já embutido no painel (caso o app não esteja instalado).
+  window.addEventListener('load', () => {
+    if (_isStandalone()) {
+      document.querySelectorAll('.pwa-install-btn').forEach(b => { b.style.display = 'none'; });
+    }
+  });
+})();
+</script>
 
 </body>
 </html>

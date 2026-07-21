@@ -1,0 +1,50 @@
+{
+  "name": "SP Car Clean — Gestão",
+  "short_name": "SP Car Clean",
+  "description": "Estética automotiva premium — agendamento online e painel de gestão SP Car Clean.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "/?utm_source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#06090F",
+  "theme_color": "#06090F",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "assets/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Painel Admin",
+      "short_name": "Admin",
+      "description": "Abrir o painel de gestão",
+      "url": "/?admin",
+      "icons": [{ "src": "assets/favicon.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Agendar serviço",
+      "short_name": "Agendar",
+      "description": "Iniciar um novo agendamento",
+      "url": "/?agendar",
+      "icons": [{ "src": "assets/favicon.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}
