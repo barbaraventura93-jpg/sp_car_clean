@@ -231,6 +231,8 @@ const CFG = {
 | `TELEGRAM_CHAT_ID` | ID do chat para receber as notificações |
 | `INFINITEPAY_HANDLE` | InfiniteTag (usuário InfinitePay) para geração de links de pagamento |
 | `INFINITEPAY_FEE_RATE` | Taxa a embutir no preço (padrão: `0.0315` = 3,15% crédito à vista) |
+| `FIREBASE_VAPID_KEY` | Chave pública Web Push (certificado do Firebase Cloud Messaging) — injetada no build; habilita o registro de push no celular do admin |
+| `FCM_SERVICE_ACCOUNT` | JSON (ou base64 do JSON) da service account do Firebase — usado **apenas server-side** pela função `notify-booking` para enviar os pushes. **Secreto: nunca commitar** |
 
 ### Firebase Realtime Database — regras de segurança
 
@@ -277,6 +279,42 @@ service firebase.storage {
 }
 ```
 
+### App instalável (PWA) e notificações push
+
+O site é um **PWA**: admin e cliente podem instalá-lo na tela inicial do celular
+("Adicionar à tela de início" no iPhone, "Instalar app" no Android/desktop) e abri-lo
+em tela cheia, como um app nativo — sem loja de aplicativos.
+
+Arquivos que compõem o PWA:
+
+| Arquivo | Papel |
+|---|---|
+| `manifest.webmanifest` | Nome, ícones, cor de tema, `display: standalone` e atalhos (Admin / Agendar) |
+| `sw.js` | Service worker de cache offline (network-first no HTML, stale-while-revalidate nos assets) |
+| `firebase-messaging-sw.js` | Service worker do Firebase Cloud Messaging — recebe push com o app fechado |
+
+**Notificações push do admin** (novo agendamento, reagendamento, cancelamento, etc.)
+chegam direto no celular, além do Telegram. Para habilitar:
+
+1. No **Firebase Console → Cloud Messaging**, gere um **par de chaves Web Push** e copie
+   a chave pública para a env `FIREBASE_VAPID_KEY` (Netlify). Sem ela, o app funciona
+   normalmente, apenas sem push.
+2. Baixe uma **service account** (Configurações do projeto → Contas de serviço → Gerar
+   nova chave privada) e cole o JSON na env `FCM_SERVICE_ACCOUNT` (aceita JSON puro ou
+   base64). Essa chave é **secreta** — só é lida server-side pela função `notify-booking`.
+3. Adicione a regra do Realtime Database abaixo. O admin registra o token do dispositivo
+   ao fazer login; a função lê os tokens via REST (Database Secret) e envia o push.
+
+```json
+"adminPushTokens": {
+  ".read":  "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+  ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'"
+}
+```
+
+O admin ativa o push tocando em **📲 Instalar app** e aceitando as notificações no
+primeiro login pelo celular.
+
 ### Build
 
 ```bash
@@ -297,6 +335,9 @@ O build injeta a `FIREBASE_API_KEY` no HTML e copia os assets para `dist/`. O de
 sp-car-clean/
 ├── index.html                   # Aplicação completa (site público + painel admin)
 ├── build.js                     # Script de build — injeta variáveis de ambiente
+├── manifest.webmanifest         # Manifesto do PWA (app instalável)
+├── sw.js                        # Service worker de cache offline
+├── firebase-messaging-sw.js     # Service worker de push (Firebase Cloud Messaging)
 ├── package.json
 ├── netlify.toml                 # Config Netlify (build, publish, functions, cron)
 ├── assets/
@@ -304,9 +345,12 @@ sp-car-clean/
 │   └── portfolio/               # Imagens e vídeos do carrossel hero
 └── netlify/
     └── functions/
+        ├── notify-booking.js        # Notifica o admin (Telegram + push FCM)
         ├── create-payment.js        # Gera link de pagamento InfinitePay
         ├── infinitepay-webhook.js   # Confirma pagamento e atualiza Firebase
-        └── birthday-check.js        # Cron diário: detecta aniversariantes, cria cupom e envia e-mail
+        ├── birthday-check.js        # Cron diário: detecta aniversariantes, cria cupom e envia e-mail
+        └── lib/
+            └── fcm.js               # Helper de envio de push (OAuth2 + FCM HTTP v1)
 ```
 
 ---
@@ -350,6 +394,8 @@ sp-car-clean/
 | Agendamento manual pelo admin (presencial / WhatsApp / telefone) | ✅ |
 | Múltiplos serviços por agendamento manual com total calculado automaticamente | ✅ |
 | Registro histórico com data retroativa e status "Concluído" direto | ✅ |
+| App instalável na tela inicial (PWA) — admin e cliente | ✅ |
+| Notificações push no celular do admin (Firebase Cloud Messaging) | ✅ |
 
 ---
 
