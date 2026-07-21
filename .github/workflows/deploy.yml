@@ -11,10 +11,23 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Roda o mesmo build do Netlify: injeta as chaves e copia os arquivos do PWA
+      # (manifest, service workers) para dist/. Sem isto o Firebase Hosting recebia um
+      # index.html com placeholders %%...%% e sem o PWA.
       - name: Build project
-        run: mkdir -p dist && cp index.html dist/ && cp -r assets dist/
+        run: node build.js
+        env:
+          FIREBASE_API_KEY:    ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_VAPID_KEY:  ${{ secrets.FIREBASE_VAPID_KEY }}
+          EMAILJS_SERVICE_ID:  ${{ secrets.EMAILJS_SERVICE_ID }}
+          EMAILJS_PUBLIC_KEY:  ${{ secrets.EMAILJS_PUBLIC_KEY }}
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
