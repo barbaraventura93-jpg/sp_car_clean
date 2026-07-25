@@ -282,9 +282,11 @@ const CFG = {
     "coupons":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
     "waitlist":       { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": true },
     "clientProfiles": {
+      ".read":  "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'",
       "$uid": {
-        ".read": "auth != null && (auth.uid == $uid || auth.token.email == 'ADMIN_EMAIL')",
-        ".write": "auth != null && (auth.uid == $uid || auth.token.email == 'ADMIN_EMAIL')"
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
       }
     }
   }
