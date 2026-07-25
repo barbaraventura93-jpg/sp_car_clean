@@ -288,10 +288,33 @@ const CFG = {
         ".read": "auth != null && auth.uid == $uid",
         ".write": "auth != null && auth.uid == $uid"
       }
-    }
+    },
+    "feedback": {
+      ".read":  true,
+      ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      ".indexOn": ["status"],
+      "$id": { ".write": "newData.exists()" }
+    },
+    "giftcards": {
+      ".read":  "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      "$code": {
+        ".read":  true,
+        ".write": "newData.exists()"
+      }
+    },
+    "stock":           { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "stockRecipes":    { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "adminPushTokens": { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" }
   }
 }
 ```
+
+> As coleções `feedback` (envio de avaliação pelo cliente por código + vitrine pública
+> de depoimentos aprovados), `giftcards` (compra/uso por código, gestão admin),
+> `stock`/`stockRecipes` (estoque, admin) e `adminPushTokens` (push do painel) fazem
+> parte do conjunto — **o Console nega qualquer caminho sem regra**, então o bloco
+> acima deve ser aplicado sempre completo, nunca por partes.
 
 ### Firebase Storage — regras de segurança
 
