@@ -1417,7 +1417,8 @@ let _checkinPhotos    = {};
 
 let _bookings = [];
 let _blocked  = [];
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef, _stockRef, _stockRecipesRef;
+let _dayLoad  = {};   // lotação pública por dia { 'YYYY-MM-DD': nº de vagas ocupadas } — sem dados pessoais
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef, _stockRef, _stockRecipesRef, _dayLoadRef, _bookingIndexRef;
 const _COMBOS = {};
 let _authUser = null;
 let _clientProfile = null;
@@ -1619,6 +1620,51 @@ function updateBooking(b) {
   if (_bookingsRef) _bookingsRef.child(b.id).update(b).catch(e => console.error('Firebase updateBooking:', e));
 }
 
+// ── Lotação pública por dia ─────────────────────────────────────────────
+// Só o admin (que enxerga todos os agendamentos) grava o nó público `dayLoad`.
+// Como somente transições feitas pelo admin (aprovar/confirmar/rejeitar/remarcar/
+// excluir) alteram a disponibilidade, recalcular aqui mantém o nó sempre coerente.
+function _recomputeDayLoad() {
+  if (!isAdmin() || !_dayLoadRef) return;
+  const load = {};
+  _bookings.forEach(b => {
+    if (b.status !== 'confirmed' && b.status !== 'approved') return;
+    const s = b.startDate || b.date;
+    if (!s) return;
+    const e = b.endDate || b.pickup || s;
+    let d = s, guard = 0;
+    while (d <= e && guard++ < 400) { load[d] = (load[d] || 0) + 1; d = addDays(d, 1); }
+  });
+  _dayLoadRef.set(load).catch(e => console.warn('Firebase dayLoad set:', e));
+}
+
+// ── Carga dos agendamentos do próprio cliente logado ────────────────────
+// A leitura da coleção /bookings é restrita ao admin. O cliente lê os próprios
+// registros pelo índice bookingIndex/$uid → cada bookings/$id (permitido pela regra
+// por-id: clientUid == auth.uid). Popula _bookings só com o que é dele.
+function _loadMyBookings(uid, cb) {
+  if (!uid || !_bookingIndexRef || !_bookingsRef) { if (cb) cb(); return; }
+  _bookingIndexRef.child(uid).once('value', idxSnap => {
+    const ids = Object.keys(idxSnap.val() || {});
+    if (!ids.length) { _bookings = []; if (cb) cb(); return; }
+    Promise.all(ids.map(id =>
+      _bookingsRef.child(id).once('value').then(s => s.val()).catch(() => null)
+    )).then(list => {
+      _bookings = list.filter(Boolean);
+      if (cb) cb();
+    });
+  }, e => { console.warn('Firebase bookingIndex:', e); if (cb) cb(); });
+}
+
+// Re-renderiza o calendário público de agendamento se estiver visível
+// (ex.: quando a lotação `dayLoad` chega/atualiza).
+function _refreshBookCalendarIfVisible() {
+  const el = document.getElementById('bookingCal');
+  if (!el || el.offsetParent === null) return;
+  if (typeof calState === 'undefined' || !calState) return;
+  renderCalendar({ containerId: 'bookingCal', month: calState.month, year: calState.year, mode: 'book', selectedDate: (typeof booking !== 'undefined' ? booking.date : null) });
+}
+
 function setBlocked(arr) {
   _blocked = arr;
   if(!_fbDB) return;
@@ -1765,21 +1811,23 @@ function renderCalendar(opts) {
   function getDateStatus(ds) {
     if(ds < today) return 'past';
     if(blocked.includes(ds)) return 'blocked';
-    // confirmed bookings block by startDate→endDate range
-    const confirmedSlots = bookings.filter(b => {
-      if(b.status !== 'confirmed') return false;
+    // Contagem ao vivo a partir dos agendamentos em memória: completa para o admin;
+    // para público/cliente contém só o que a regra deixou carregar (nada/os próprios).
+    const liveCount = bookings.filter(b => {
+      if(b.status !== 'confirmed' && b.status !== 'approved') return false;
       const s = b.startDate || b.date;
       const e = b.endDate || b.pickup;
       return ds >= s && ds <= e;
     }).length;
-    // approved bookings pre-reserve by startDate→endDate range
-    const approvedSlots = bookings.filter(b => {
-      if(b.status !== 'approved') return false;
-      const s = b.startDate || b.date;
-      const e = b.endDate || b.pickup;
-      return ds >= s && ds <= e;
-    }).length;
-    const total = confirmedSlots + approvedSlots;
+    let total;
+    if (mode === 'admin') {
+      total = liveCount;
+    } else {
+      // Público/cliente: nó público de lotação (sem dados pessoais). O max() com a
+      // contagem local cobre a janela de transição de regras (dayLoad ainda vazio,
+      // coleção ainda legível) — nunca mostra livre um dia que se sabe ocupado.
+      total = Math.max(_dayLoad[ds] || 0, liveCount);
+    }
     if(total >= CFG.maxPerDay) return 'full';
     if(total > 0) return 'partial';
     return 'available';
@@ -2208,6 +2256,10 @@ async function submitBooking() {
   _bookings.push(b);
   if (_bookingsRef) {
     _bookingsRef.child(id).set(b).catch(e => console.error('Firebase booking:', e));
+    // Índice do cliente logado → permite ver "Meus agendamentos" sem leitura pública
+    if (clientUid && _bookingIndexRef) {
+      _bookingIndexRef.child(clientUid).child(id).set(true).catch(e => console.warn('Firebase bookingIndex:', e));
+    }
   }
 
   // Atualizar perfil do cliente com dados mais recentes
@@ -2248,7 +2300,25 @@ function openStatusCheck() {
 
 function checkStatus() {
   const code = document.getElementById('statusInput').value.trim().toUpperCase();
-  const b = getBookings().find(x => x.id === code);
+  const res  = document.getElementById('statusResult');
+  if (!code) return;
+  // A coleção /bookings não é mais legível publicamente; consulta pontual por
+  // código (regra .read do nó por-id permite ler UM agendamento por vez, sem listar).
+  if (_bookingsRef) {
+    res.innerHTML = `<p style="color:var(--muted);font-size:.85rem;padding:.5rem">Consultando...</p>`;
+    _bookingsRef.child(code).once('value')
+      .then(snap => {
+        const bk = snap.val();
+        if (bk) { const i = _bookings.findIndex(x => x.id === bk.id); if (i >= 0) _bookings[i] = bk; else _bookings.push(bk); }
+        _renderStatusResult(bk);
+      })
+      .catch(() => _renderStatusResult(null));
+  } else {
+    _renderStatusResult(getBookings().find(x => x.id === code));
+  }
+}
+
+function _renderStatusResult(b) {
   const res = document.getElementById('statusResult');
   if(!b) {
     res.innerHTML = `<div style="background:var(--red-lt);border:1px solid #f5c6c3;border-radius:8px;padding:1rem;font-size:.85rem;color:var(--red)">Código não encontrado. Verifique e tente novamente.</div>`;
@@ -2826,15 +2896,12 @@ function openClientAccount() {
     return;
   }
   _clientOnboardingDismissed = false;
-  // Always refresh profile from Firebase to avoid race condition on fresh login
+  // Always refresh profile + agendamentos from Firebase to avoid race condition on fresh login
+  const _show = () => { renderClientAccount(); document.getElementById('clientAccountModal').style.display = 'flex'; };
   _clientProfilesRef.child(_authUser.uid).once('value', snap => {
     _clientProfile = snap.val() || { uid: _authUser.uid, email: _authUser.email };
-    renderClientAccount();
-    document.getElementById('clientAccountModal').style.display = 'flex';
-  }).catch(() => {
-    renderClientAccount();
-    document.getElementById('clientAccountModal').style.display = 'flex';
-  });
+    _loadMyBookings(_authUser.uid, _show);
+  }).catch(() => { _loadMyBookings(_authUser.uid, _show); });
 }
 
 function _getMyBookings() {
@@ -3939,6 +4006,10 @@ async function submitAdminBooking() {
 
   try {
     await _bookingsRef.child(id).set(b);
+    // Indexa para o cliente ver em "Minha Conta" (leitura da coleção é admin-only)
+    if (_abClientUid && _bookingIndexRef) {
+      _bookingIndexRef.child(_abClientUid).child(id).set(true).catch(e => console.warn('Firebase bookingIndex:', e));
+    }
     if ((finalStatus === 'confirmed' || finalStatus === 'completed') && _abClientUid && creditPontos) {
       _awardPoints(b);
     }
@@ -7141,14 +7212,20 @@ async function migrateBookingsToUid() {
       (p.linkedEmails || []).forEach(e => { emailToUid[e.toLowerCase()] = p.uid; });
     });
     const updates = {};
+    const idxUpdates = {};  // bookingIndex/$uid/$id → true (para "Meus agendamentos")
     _bookings.forEach(b => {
-      if (b.clientUid) return;
-      const uid = b.email ? emailToUid[b.email.toLowerCase()] : null;
-      if (uid) updates[b.id + '/clientUid'] = uid;
+      // uid já existente ou inferido pelo e-mail
+      const uid = b.clientUid || (b.email ? emailToUid[b.email.toLowerCase()] : null);
+      if (!uid) return;
+      if (!b.clientUid) updates[b.id + '/clientUid'] = uid;   // carimba só quem ainda não tem
+      idxUpdates[uid + '/' + b.id] = true;                    // (re)indexa todos os vinculados
     });
-    if (!Object.keys(updates).length) { alert('Nenhum agendamento encontrado para vincular.'); return; }
-    await _bookingsRef.update(updates);
-    alert(`✅ ${Object.keys(updates).length} agendamento(s) vinculado(s) com sucesso.`);
+    if (!Object.keys(updates).length && !Object.keys(idxUpdates).length) {
+      alert('Nenhum agendamento encontrado para vincular.'); return;
+    }
+    if (Object.keys(updates).length)    await _bookingsRef.update(updates);
+    if (Object.keys(idxUpdates).length && _bookingIndexRef) await _bookingIndexRef.update(idxUpdates);
+    alert(`✅ ${Object.keys(updates).length} agendamento(s) vinculado(s) e ${Object.keys(idxUpdates).length} indexado(s) com sucesso.`);
   } catch(e) { alert('Erro na migração: ' + e.message); }
 }
 
@@ -7419,6 +7496,8 @@ function updateWaLink() {
     firebase.initializeApp(firebaseConfig);
     _fbDB        = firebase.database();
     _bookingsRef = _fbDB.ref('bookings');
+    _dayLoadRef  = _fbDB.ref('dayLoad');       // nó público só com a lotação por dia
+    _bookingIndexRef = _fbDB.ref('bookingIndex'); // índice bookingIndex/$uid/$id → cliente lê os próprios
     _blockedRef  = _fbDB.ref('blocked');
     _cfgRef      = _fbDB.ref('config');
     _galleryRef  = _fbDB.ref('gallery');
@@ -7457,6 +7536,43 @@ function updateWaLink() {
       }, e => console.warn('Firebase clientOverrides:', e));
     }
 
+    // ── Agendamentos: escuta em tempo real (somente admin) ──
+    // A coleção /bookings é admin-only nas regras. O listener precisa ser registrado
+    // DEPOIS do login do admin: um listener negado por permissão é cancelado em
+    // definitivo pelo SDK e não religa sozinho quando a sessão é restaurada — mesma
+    // race condition que já escondia as mesclagens de clientes. Por isso o attach fica
+    // no ramo isAdmin() do onAuthStateChanged, com religação a cada novo login.
+    let _bookingsListenerOn = false;
+    let _bookingsRetryCount = 0;
+    function _attachAdminBookingsListener() {
+      if (_bookingsListenerOn) return;
+      _bookingsListenerOn = true;
+      _bookingsRef.on('value', snap => {
+        const data = snap.val();
+        _bookings = data ? Object.values(data) : [];
+        // Mantém a lotação pública (dayLoad) sincronizada a cada mudança
+        _recomputeDayLoad();
+        // Atualiza painel admin se estiver aberto
+        if(isAdmin() && document.getElementById('adminPanel').style.display !== 'none') {
+          if(currentAdminTab === 'agendamentos')  renderAdminBookings();
+          else if(currentAdminTab === 'calendario')  renderAdminCalendar();
+          else if(currentAdminTab === 'estatisticas') renderAdminStats();
+        }
+      }, e => {
+        _bookingsListenerOn = false;
+        // Se a negação chegou depois de o admin autenticar (race do token), religa —
+        // com limite de tentativas para não entrar em loop se as regras estiverem erradas.
+        if (isAdmin() && _bookingsRetryCount++ < 3) {
+          console.error('Firebase bookings (religando):', e);
+          setTimeout(_attachAdminBookingsListener, 1200);
+        }
+      });
+    }
+    // Tenta uma vez já no carregamento: com as regras antigas (transição) a coleção
+    // ainda é legível e o calendário público segue contando ao vivo; com as novas,
+    // a negação é silenciosa e o attach definitivo acontece no login do admin.
+    _attachAdminBookingsListener();
+
     // Avaliações aprovadas: escuta em tempo real → atualiza depoimentos públicos
     _feedbackRef.orderByChild('status').equalTo('approved').on('value', snap => {
       const data = snap.val();
@@ -7469,6 +7585,14 @@ function updateWaLink() {
       _authUser = user;
       if (!user) {
         _clientProfile = null;
+        _bookings = [];   // some da memória ao sair (a coleção não é mais lida publicamente)
+        // Recicla o listener: derruba o do admin (se ativo) e tenta religar sem auth —
+        // sob as regras novas a negação é silenciosa; sob as antigas (janela de
+        // transição) mantém a contagem ao vivo do calendário público funcionando.
+        _bookingsRef.off('value');
+        _bookingsListenerOn = false;
+        _bookingsRetryCount = 0;
+        _attachAdminBookingsListener();
         if (document.getElementById('adminPanel').style.display !== 'none')
           document.getElementById('adminPanel').style.display = 'none';
         _updateClientNavUI();
@@ -7476,30 +7600,31 @@ function updateWaLink() {
       }
       if (isAdmin()) {
         _clientProfile = null;
+        _bookingsRetryCount = 0;
+        _attachAdminBookingsListener();
         _loadAdminOnlyData();
         _updateClientNavUI();
         // Registra este dispositivo para receber push de novos agendamentos.
         if (window.pwaRegisterAdminPush) window.pwaRegisterAdminPush();
         return;
       }
-      // Cliente logado — carrega perfil
+      // Cliente logado — carrega perfil e os próprios agendamentos (via índice)
       _clientProfilesRef.child(user.uid).once('value', snap => {
         _clientProfile = snap.val() || { uid: user.uid, email: user.email };
         _updateClientNavUI();
       });
+      _loadMyBookings(user.uid, () => {
+        // Se a tela "Minha conta" já estiver aberta, re-renderiza com os dados
+        const m = document.getElementById('clientAccountModal');
+        if (isClient() && m && m.style.display !== 'none') renderClientAccount();
+      });
     });
 
-    // ── Agendamentos: escuta em tempo real ──
-    _bookingsRef.on('value', snap => {
-      const data = snap.val();
-      _bookings = data ? Object.values(data) : [];
-      // Atualiza painel admin se estiver aberto
-      if(isAdmin() && document.getElementById('adminPanel').style.display !== 'none') {
-        if(currentAdminTab === 'agendamentos')  renderAdminBookings();
-        else if(currentAdminTab === 'calendario')  renderAdminCalendar();
-        else if(currentAdminTab === 'estatisticas') renderAdminStats();
-      }
-    }, e => console.error('Firebase bookings:', e));
+    // ── Lotação por dia (pública): alimenta o calendário de agendamento ──
+    _dayLoadRef.on('value', snap => {
+      _dayLoad = snap.val() || {};
+      _refreshBookCalendarIfVisible();
+    }, e => console.warn('Firebase dayLoad:', e));
 
     // ── Datas bloqueadas: escuta em tempo real ──
     _blockedRef.on('value', snap => {
@@ -7571,8 +7696,10 @@ function clearAllData() {
   Promise.all([
     _bookingsRef ? _bookingsRef.remove() : Promise.resolve(),
     _blockedRef  ? _blockedRef.remove()  : Promise.resolve(),
+    _dayLoadRef  ? _dayLoadRef.remove()  : Promise.resolve(),
+    _bookingIndexRef ? _bookingIndexRef.remove() : Promise.resolve(),
   ]).then(() => {
-    _bookings = []; _blocked = [];
+    _bookings = []; _blocked = []; _dayLoad = {};
     alert('Dados limpos com sucesso.');
     doAdminLogout();
   }).catch(e => { console.error(e); alert('Erro ao limpar dados: ' + e.message); });

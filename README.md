@@ -236,10 +236,40 @@ const CFG = {
 
 ### Firebase Realtime Database — regras de segurança
 
+> **Privacidade dos agendamentos.** A coleção `bookings` **não** é mais legível
+> publicamente (isso expunha nome, telefone, e-mail e bairro de todos os clientes).
+> A disponibilidade do calendário vem do nó público `dayLoad` (só a lotação por dia,
+> sem dado pessoal), mantido automaticamente pelo painel admin. A consulta por código
+> de reserva continua funcionando: cada agendamento é legível individualmente por quem
+> tem o código exato (`bookings/$id .read: true`), mas a coleção inteira não pode ser
+> listada nem apagada por visitantes. O cliente logado vê o próprio histórico pelo
+> índice `bookingIndex/$uid`.
+>
+> ⚠️ **Ordem de ativação:** (1) publique o site (com as regras antigas o calendário
+> segue contando ao vivo, por fallback); (2) aplique as regras novas no Console;
+> (3) **faça login como admin imediatamente** — é esse login que grava o `dayLoad`
+> inicial. Entre os passos 2 e 3 o calendário público mostra os dias como disponíveis,
+> então execute-os em sequência. Depois, no painel admin, rode **"Vincular
+> agendamentos"** (Configurações) para indexar o histórico dos clientes logados.
+
 ```json
 {
   "rules": {
-    "bookings":       { ".read": true, ".write": true },
+    "bookings": {
+      ".read":  "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      "$id": {
+        ".read":  true,
+        ".write": "newData.exists()"
+      }
+    },
+    "dayLoad":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "bookingIndex": {
+      "$uid": {
+        ".read":  "auth != null && (auth.uid == $uid || auth.token.email == 'ADMIN_EMAIL')",
+        ".write": "auth != null && (auth.uid == $uid || auth.token.email == 'ADMIN_EMAIL')"
+      }
+    },
     "blocked":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
     "config":         { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
     "services":       { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
