@@ -1466,7 +1466,7 @@ let _checkinPhotos    = {};
 let _bookings = [];
 let _blocked  = [];
 let _dayLoad  = {};   // lotação pública por dia { 'YYYY-MM-DD': nº de vagas ocupadas } — sem dados pessoais
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef, _stockRef, _stockRecipesRef, _dayLoadRef, _bookingIndexRef;
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef, _stockRef, _stockRecipesRef, _dayLoadRef, _bookingIndexRef, _portfolioRef;
 const _COMBOS = {};
 let _authUser = null;
 let _clientProfile = null;
@@ -6526,9 +6526,33 @@ async function seedFaqsToServices() {
 
 function renderAdminGaleria() {
   document.getElementById('adminContent').innerHTML = `
-    <h2>📸 Galeria Antes/Depois</h2>
+    <h2>📸 Galeria do Site</h2>
+
     <div class="admin-panel" style="max-width:600px">
-      <h3>Nova comparação</h3>
+      <h3>🎠 Nossas Obras — carrossel do topo</h3>
+      <p style="font-size:.78rem;color:var(--muted);margin-bottom:.9rem;line-height:1.5">
+        Fotos avulsas do resultado (sem par de "antes") ou vídeos curtos. Aparecem no carrossel
+        <strong>"Nossas Obras"</strong> no topo do site, da mais recente para a mais antiga.
+      </p>
+      <div class="form-row full"><div class="form-group">
+        <label>Legenda (ex: Polimento — Civic Preto)</label>
+        <input id="poCaption" placeholder="Descreva o serviço e o veículo"/>
+      </div></div>
+      <div class="form-row full"><div class="form-group">
+        <label>Foto ou vídeo (MP4)</label>
+        <input type="file" id="poFile" class="file-input" accept="image/*,video/mp4,video/webm" onchange="poPreview(this)"/>
+        <img id="poPrev" class="ba-admin-thumb" alt="Prévia" style="display:none;margin-top:.5rem;width:100%;height:80px"/>
+      </div></div>
+      <div class="ba-progress-bar" id="poProgressBar" style="display:none"><div class="ba-progress-fill" id="poProgressFill"></div></div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn-primary" onclick="savePortfolioItem()">Adicionar ao Carrossel</button>
+        <button class="btn-ghost" onclick="importHeroDefaults()">🌱 Importar fotos atuais do site</button>
+      </div>
+      <div id="poList" style="margin-top:1rem"><p style="color:var(--muted);font-size:.82rem">Carregando...</p></div>
+    </div>
+
+    <div class="admin-panel" style="max-width:600px">
+      <h3>🔁 Antes/Depois — seção "Resultados Reais"</h3>
       <div class="form-row full"><div class="form-group">
         <label>Legenda (ex: Polimento Completo — Civic Preto)</label>
         <input id="gaCaption" placeholder="Descreva o serviço e o veículo"/>
@@ -6560,6 +6584,114 @@ function renderAdminGaleria() {
       <div id="gaList"><p style="color:var(--muted);font-size:.82rem">Carregando...</p></div>
     </div>`;
   loadGalleryAdminList();
+  loadPortfolioAdminList();
+}
+
+// ── Nossas Obras (carrossel do hero) — CRUD do admin sobre /portfolio ──
+function poPreview(input) {
+  const img = document.getElementById('poPrev');
+  const f = input.files && input.files[0];
+  if (!f || (f.type || '').startsWith('video')) { if (img) img.style.display = 'none'; return; }
+  const r = new FileReader();
+  r.onload = e => { img.src = e.target.result; img.style.display = 'block'; };
+  r.readAsDataURL(f);
+}
+
+function loadPortfolioAdminList() {
+  const listEl = document.getElementById('poList');
+  if (!listEl) return;
+  if (!_portfolioRef) { listEl.innerHTML = '<p style="color:var(--muted);font-size:.82rem">Firebase não conectado.</p>'; return; }
+  _portfolioRef.once('value', snap => {
+    const val = snap.val();
+    if (!val) {
+      listEl.innerHTML = `<p style="color:var(--muted);font-size:.82rem">
+        Nenhuma mídia gerenciada ainda — o site está exibindo a lista padrão (fixa).
+        Clique em <strong>Importar fotos atuais do site</strong> para trazê-la para cá e poder editar.</p>`;
+      return;
+    }
+    const entries = Object.entries(val).sort(([,a],[,b]) => (b.createdAt||0) - (a.createdAt||0));
+    listEl.innerHTML = entries.map(([id, d]) => `
+      <div class="ba-admin-row">
+        ${d.type === 'video'
+          ? `<div class="ba-admin-thumb" style="display:flex;align-items:center;justify-content:center;font-size:1.3rem">🎬</div>`
+          : `<img class="ba-admin-thumb" src="${d.url}" alt="" loading="lazy" onerror="this.style.opacity='.3'">`}
+        <span class="ba-admin-caption">${String(d.caption||'').replace(/</g,'&lt;')}</span>
+        <button class="ba-admin-del" onclick="deletePortfolioItem('${id}')">🗑️ Remover</button>
+      </div>`).join('');
+  }, () => { listEl.innerHTML = '<p style="color:var(--red);font-size:.82rem">Erro ao carregar o carrossel.</p>'; });
+}
+
+async function savePortfolioItem() {
+  const caption = (document.getElementById('poCaption')?.value || '').trim();
+  const file    = document.getElementById('poFile')?.files?.[0];
+  if (!file)    { alert('Selecione a foto ou o vídeo.'); return; }
+  if (!caption) { alert('Informe a legenda.'); return; }
+  const isVideo = (file.type || '').startsWith('video');
+  const maxMB = isVideo ? 30 : 5;
+  if (file.size > maxMB * 1024 * 1024) { alert(`Arquivo muito grande. Máximo ${maxMB} MB.`); return; }
+  if (!_storage || !_portfolioRef) { alert('Firebase não conectado. Tente novamente.'); return; }
+
+  const bar  = document.getElementById('poProgressBar');
+  const fill = document.getElementById('poProgressFill');
+  if (bar) bar.style.display = 'block';
+  const setP = p => { if (fill) fill.style.width = p + '%'; };
+
+  try {
+    const ts = Date.now();
+    // Caminho de 1 nível dentro de gallery/ — coberto pela regra existente do Storage
+    const ref = _storage.ref('gallery').child(ts + '_portfolio_' + file.name);
+    setP(10);
+    await ref.put(file);
+    setP(75);
+    const url = await ref.getDownloadURL();
+    setP(90);
+    await _portfolioRef.push({ url, caption, type: isVideo ? 'video' : 'image', createdAt: ts });
+    setP(100);
+
+    document.getElementById('poCaption').value = '';
+    document.getElementById('poFile').value = '';
+    const prev = document.getElementById('poPrev');
+    if (prev) prev.style.display = 'none';
+    setTimeout(() => { if (bar) bar.style.display = 'none'; setP(0); }, 700);
+    loadPortfolioAdminList(); // o site atualiza sozinho via listener de /portfolio
+  } catch (err) {
+    alert('Erro no upload: ' + (err.message || err));
+    if (bar) bar.style.display = 'none';
+    setP(0);
+  }
+}
+
+function deletePortfolioItem(id) {
+  if (!confirm('Remover esta mídia do carrossel "Nossas Obras"?')) return;
+  if (!_portfolioRef) return;
+  _portfolioRef.child(id).remove()
+    .then(loadPortfolioAdminList)
+    .catch(err => alert('Erro ao remover: ' + err.message));
+}
+
+// Importa a lista estática atual para /portfolio (sem duplicar), preservando a ordem:
+// createdAt decrescente a partir de agora — novos uploads (Date.now() futuro) entram na frente.
+async function importHeroDefaults() {
+  if (!_portfolioRef) { alert('Firebase não conectado.'); return; }
+  if (!confirm('Importar as fotos atuais do site para o carrossel gerenciável?\n\nItens já importados (mesmo arquivo) não serão duplicados.')) return;
+  try {
+    const snap = await _portfolioRef.once('value');
+    const existing = Object.values(snap.val() || {}).map(p => p.url);
+    const base = Date.now();
+    const upd = {};
+    HERO_FALLBACK.forEach((m, i) => {
+      if (existing.includes(m.src)) return;
+      upd[_portfolioRef.push().key] = {
+        url: m.src, caption: m.alt || '',
+        type: m.type === 'video' ? 'video' : 'image',
+        createdAt: base - i,
+      };
+    });
+    if (!Object.keys(upd).length) { alert('Nada novo para importar — tudo já está na lista.'); return; }
+    await _portfolioRef.update(upd);
+    alert('✅ ' + Object.keys(upd).length + ' mídia(s) importada(s). Agora você pode remover ou acrescentar pelo painel.');
+    loadPortfolioAdminList();
+  } catch (err) { alert('Erro ao importar: ' + (err.message || err)); }
 }
 
 function gaPreview(input, id) {
@@ -7433,22 +7565,26 @@ function updateWaLink() {
 // ============================================================
 // FIREBASE INIT
 // ============================================================
-// Hero Carousel — adicione/remova arquivos da pasta e o array abaixo.
+// Hero Carousel — "Nossas Obras".
+// Fonte primária: nó /portfolio do Firebase, gerenciado no painel admin (aba Galeria) —
+// fotos avulsas do resultado, sem par de "antes". Fallback: lista estática abaixo
+// (arquivos de assets/portfolio), usada enquanto o nó estiver vazio ou sem resposta.
 // Slides com arquivos ausentes são removidos automaticamente via onerror.
-(function initHeroCarousel() {
-  const media = [
-    {src:'assets/portfolio/fusca.mp4',                       type:'video', alt:'SP Car Clean'},
-    {src:'assets/portfolio/branco.jpg.jpg',                  alt:'Carro branco'},
-    {src:'assets/portfolio/estofado.jpg.jpg',                alt:'Higienização de estofado'},
-    {src:'assets/portfolio/moto.jpg.jpg',                    alt:'Moto'},
-    {src:'assets/portfolio/antes-e-depois-estofado.jpg.jpg', alt:'Antes e depois estofado'},
-    {src:'assets/portfolio/detalhes.jpg.jpg',                alt:'Detalhes'},
-    {src:'assets/portfolio/revitalização.jpg.jpg',           alt:'Revitalização'},
-    {src:'assets/portfolio/revitalização-plastico.jpg.jpg',  alt:'Revitalização plástico'},
-    {src:'assets/portfolio/produtos.jpg.jpg',                alt:'Produtos'},
-    {src:'assets/portfolio/estepe.jpg.jpg',                  alt:'Estepe'},
-  ];
+const HERO_FALLBACK = [
+  {src:'assets/portfolio/fusca.mp4',                       type:'video', alt:'SP Car Clean'},
+  {src:'assets/portfolio/branco.jpg.jpg',                  alt:'Carro branco'},
+  {src:'assets/portfolio/estofado.jpg.jpg',                alt:'Higienização de estofado'},
+  {src:'assets/portfolio/moto.jpg.jpg',                    alt:'Moto'},
+  {src:'assets/portfolio/antes-e-depois-estofado.jpg.jpg', alt:'Antes e depois estofado'},
+  {src:'assets/portfolio/detalhes.jpg.jpg',                alt:'Detalhes'},
+  {src:'assets/portfolio/revitalização.jpg.jpg',           alt:'Revitalização'},
+  {src:'assets/portfolio/revitalização-plastico.jpg.jpg',  alt:'Revitalização plástico'},
+  {src:'assets/portfolio/produtos.jpg.jpg',                alt:'Produtos'},
+  {src:'assets/portfolio/estepe.jpg.jpg',                  alt:'Estepe'},
+];
 
+let _heroTimer = null;
+function _buildHeroCarousel(media) {
   const track = document.getElementById('heroTrack');
   const dotsEl = document.getElementById('heroDots');
   const counterEl = document.getElementById('heroCounter');
@@ -7456,7 +7592,12 @@ function updateWaLink() {
   const nextBtn = document.getElementById('heroNext');
   if (!track) return;
 
-  let current = 0, timer, startX = 0;
+  // Reconstruível: quando o admin altera /portfolio, o carrossel é remontado do zero
+  clearInterval(_heroTimer);
+  track.innerHTML = '';
+  track.style.transform = 'translateX(0)';
+
+  let current = 0, startX = 0;
   let slides = []; // slides ativos (sem os que falharam)
 
   function syncDots() {
@@ -7480,7 +7621,7 @@ function updateWaLink() {
     goTo(current);
   }
 
-  media.forEach(item => {
+  (media && media.length ? media : HERO_FALLBACK).forEach(item => {
     const slide = document.createElement('div');
     slide.className = 'hero-carousel-slide';
     if (item.type === 'video') {
@@ -7517,21 +7658,25 @@ function updateWaLink() {
     const currVid = slides[current]?.querySelector('video');
     if (currVid) currVid.play().catch(() => {});
 
-    clearInterval(timer);
-    timer = setInterval(() => goTo(current + 1), currVid ? 9000 : 4500);
+    clearInterval(_heroTimer);
+    _heroTimer = setInterval(() => goTo(current + 1), currVid ? 9000 : 4500);
   }
 
-  prevBtn.addEventListener('click', () => goTo(current - 1));
-  nextBtn.addEventListener('click', () => goTo(current + 1));
+  // Propriedades on* (e não addEventListener): religar é seguro quando o carrossel
+  // é reconstruído após uma mudança no /portfolio — sem listeners duplicados.
+  prevBtn.onclick = () => goTo(current - 1);
+  nextBtn.onclick = () => goTo(current + 1);
 
-  track.parentElement.addEventListener('touchstart', e => { startX = e.touches[0].clientX; }, {passive:true});
-  track.parentElement.addEventListener('touchend', e => {
+  const wrap = track.parentElement;
+  wrap.ontouchstart = e => { startX = e.touches[0].clientX; };
+  wrap.ontouchend = e => {
     const dx = e.changedTouches[0].clientX - startX;
     if (Math.abs(dx) > 40) goTo(dx < 0 ? current + 1 : current - 1);
-  }, {passive:true});
+  };
 
   goTo(0);
-})();
+}
+_buildHeroCarousel(HERO_FALLBACK);
 
 (function initFirebase() {
   const firebaseConfig = {
@@ -7549,6 +7694,7 @@ function updateWaLink() {
     _bookingsRef = _fbDB.ref('bookings');
     _dayLoadRef  = _fbDB.ref('dayLoad');       // nó público só com a lotação por dia
     _bookingIndexRef = _fbDB.ref('bookingIndex'); // índice bookingIndex/$uid/$id → cliente lê os próprios
+    _portfolioRef = _fbDB.ref('portfolio');    // carrossel "Nossas Obras" gerenciado pelo admin
     _blockedRef  = _fbDB.ref('blocked');
     _cfgRef      = _fbDB.ref('config');
     _galleryRef  = _fbDB.ref('gallery');
@@ -7676,6 +7822,17 @@ function updateWaLink() {
       _dayLoad = snap.val() || {};
       _refreshBookCalendarIfVisible();
     }, e => console.warn('Firebase dayLoad:', e));
+
+    // ── Nossas Obras (carrossel do hero): fotos gerenciadas pelo admin em /portfolio ──
+    // Nó vazio → mantém o fallback estático; com itens → remonta o carrossel ao vivo.
+    _portfolioRef.on('value', snap => {
+      const val = snap.val();
+      if (!val) return;
+      const media = Object.values(val)
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+        .map(p => ({ src: p.url, type: p.type === 'video' ? 'video' : undefined, alt: p.caption || 'SP Car Clean' }));
+      if (media.length) _buildHeroCarousel(media);
+    }, e => console.warn('Firebase portfolio:', e));
 
     // ── Datas bloqueadas: escuta em tempo real ──
     _blockedRef.on('value', snap => {

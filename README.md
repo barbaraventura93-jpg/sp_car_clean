@@ -264,6 +264,7 @@ const CFG = {
       }
     },
     "dayLoad":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "portfolio":      { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
     "bookingIndex": {
       "$uid": {
         ".read":  "auth != null && (auth.uid == $uid || auth.token.email == 'ADMIN_EMAIL')",
