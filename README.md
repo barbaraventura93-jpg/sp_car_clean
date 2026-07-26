@@ -373,25 +373,28 @@ primeiro login pelo celular.
 
 #### O app do admin abre direto na tela de senha
 
-No celular do administrador, abrir o app instalado cai **direto na tela de senha do
-painel**, em tela cheia — sem passar pelo site. O aparelho é reconhecido assim:
+Abrir o app instalado cai **direto na tela de senha do painel**, em tela cheia — sem
+passar pelo site, **já na primeira abertura**. O app é o painel de gestão: o botão
+**📲 Instalar app** só aparece dentro do painel.
 
-1. O admin instala o app e faz **um login pelo site** (rodapé → *Área Restrita*).
-   Esse login marca o aparelho (`localStorage` → `spcc.adminDevice`).
-2. Das próximas vezes, abrir o app mostra a tela de senha antes de qualquer conteúdo
-   do site. Se a sessão do Firebase ainda estiver válida, ele exibe *"Verificando
-   sessão…"* por um instante e entra no painel **sem pedir a senha**.
+1. Abriu o app → tela de senha. Se a sessão do Firebase ainda estiver válida, exibe
+   *"Verificando sessão…"* por um instante e entra no painel **sem pedir a senha**.
+2. Um login de admin marca o aparelho como sendo da gestão
+   (`localStorage` → `spcc.adminDevice`).
 3. Sair do painel dentro do app volta para a tela de senha, não para o site.
 
-Detalhes:
+Quem instalou o app sem ser da gestão tem o link **Ver o site** na própria tela de
+senha. Num aparelho que **nunca** fez login de admin, esse link também marca
+`spcc.appSiteOnly` — dali em diante o app abre no site, como um visitante. Num
+aparelho da gestão o link é só uma saída pontual: o app continua abrindo no painel.
 
-- O aparelho **só** é marcado após um login de admin bem-sucedido nele — quem instala
-  o app como cliente continua abrindo o site normalmente.
-- O link **Ver o site** na tela de senha dá acesso ao site sem desmarcar o aparelho.
-- Para desligar de vez num aparelho: **Painel → Configurações → Segurança → 📱 Este
-  aparelho**, desmarcando *"Abrir direto na tela de senha"*.
+Outros detalhes:
+
+- Para ligar/desligar num aparelho: **Painel → Configurações → Segurança → 📱 Este
+  aparelho**, na opção *"Abrir direto na tela de senha"*.
 - O atalho **Painel Admin** do app (`/?admin`) abre a mesma tela em qualquer aparelho,
-  sem marcá-lo.
+  sem marcá-lo. No navegador comum, `/?admin` abre o modal de senha sobre o site.
+- Nada disso depende de rede: os marcadores ficam em `localStorage`, por aparelho.
 
 ### Build
 

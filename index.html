@@ -2681,10 +2681,15 @@ function submitReschedule() {
 // ============================================================
 // ADMIN LOGIN
 // ============================================================
-// "Modo app": num aparelho já reconhecido como do administrador, abrir o app
-// instalado (PWA) cai direto na tela de senha do painel, sem passar pelo site.
-// O aparelho só é marcado após um login de admin bem-sucedido nele.
-const ADMIN_DEVICE_KEY = 'spcc.adminDevice';
+// "Modo app": abrir o app instalado (PWA) cai direto na tela de senha do painel,
+// sem passar pelo site — já na primeira vez. O app é o painel de gestão: o botão
+// "📲 Instalar app" só existe dentro do painel.
+// Dois marcadores em localStorage, por aparelho:
+//   spcc.adminDevice → houve login de admin aqui (aparelho da gestão)
+//   spcc.appSiteOnly → alguém pediu "Ver o site" num aparelho ainda não da gestão;
+//                      dali em diante o app abre no site, como um visitante
+const ADMIN_DEVICE_KEY  = 'spcc.adminDevice';
+const APP_SITE_ONLY_KEY = 'spcc.appSiteOnly';
 let _adminGateOpen    = false;   // tela de senha em modo app está na frente do site
 let _adminGatePending = false;   // aguardando o Firebase restaurar (ou não) a sessão
 
@@ -2694,12 +2699,17 @@ function isStandaloneApp() {
         || window.navigator.standalone === true;
   } catch (_) { return false; }
 }
-function isAdminDevice() {
-  try { return localStorage.getItem(ADMIN_DEVICE_KEY) === '1'; } catch (_) { return false; }
+function _lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+function _lsSet(k, on) {
+  try { on ? localStorage.setItem(k, '1') : localStorage.removeItem(k); } catch (_) {}
 }
-function setAdminDevice(on) {
-  try { on ? localStorage.setItem(ADMIN_DEVICE_KEY, '1') : localStorage.removeItem(ADMIN_DEVICE_KEY); } catch (_) {}
-}
+function isAdminDevice()  { return _lsGet(ADMIN_DEVICE_KEY)  === '1'; }
+function setAdminDevice(on) { _lsSet(ADMIN_DEVICE_KEY, on); }
+function isAppSiteOnly()  { return _lsGet(APP_SITE_ONLY_KEY) === '1'; }
+function setAppSiteOnly(on) { _lsSet(APP_SITE_ONLY_KEY, on); }
+// O app abre na tela de senha? Sim por padrão; não se pediram para ver o site
+// num aparelho que nunca fez login de admin.
+function appOpensOnAdminGate() { return isAdminDevice() || !isAppSiteOnly(); }
 
 function openAdminLogin() {
   // Sessão do admin ainda válida → não pede senha de novo, vai direto ao painel.
@@ -2733,8 +2743,14 @@ function closeAdminGate() {
   document.body.classList.remove('admin-gate-on');
   _adminGateOpen = _adminGatePending = false;
 }
-// "Ver o site" — sai da tela de senha sem desmarcar o aparelho.
-function exitAdminGate() { closeAdminGate(); closeModal('adminLoginModal'); }
+// "Ver o site" — sai da tela de senha. Num aparelho que já fez login de admin é só
+// uma saída pontual (o app continua abrindo no painel); num aparelho qualquer, passa
+// a abrir o app no site, para quem instalou sem ser da gestão.
+function exitAdminGate() {
+  if (!isAdminDevice()) setAppSiteOnly(true);
+  closeAdminGate();
+  closeModal('adminLoginModal');
+}
 // ============================================================
 // CONTA DO CLIENTE
 // ============================================================
@@ -3350,8 +3366,8 @@ function doAdminLogin() {
 function doAdminLogout() {
   firebase.auth().signOut();
   document.getElementById('adminPanel').style.display = 'none';
-  // No app do admin, sair volta para a tela de senha — não para o site.
-  if (isStandaloneApp() && isAdminDevice()) openAdminGate(false);
+  // No app, sair volta para a tela de senha — não para o site.
+  if (isStandaloneApp() && appOpensOnAdminGate()) openAdminGate(false);
 }
 function openAdminPanel() {
   document.getElementById('adminPanel').style.display = 'flex';
@@ -7422,7 +7438,7 @@ function renderAdminConfig() {
         Com a opção ligada, abrir o app instalado neste aparelho vai direto para a tela de senha do painel, sem passar pelo site.
       </p>
       <label style="display:flex;align-items:center;gap:.6rem;font-size:.82rem;color:var(--text);cursor:pointer">
-        <input type="checkbox" id="cfgAdminDevice" ${isAdminDevice() ? 'checked' : ''} onchange="toggleAdminDevice(this.checked)" style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer"/>
+        <input type="checkbox" id="cfgAdminDevice" ${appOpensOnAdminGate() ? 'checked' : ''} onchange="toggleAdminDevice(this.checked)" style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer"/>
         Abrir direto na tela de senha
       </label>
       <div id="cfgAdminDeviceMsg" style="font-size:.74rem;color:var(--green);margin-top:.5rem;display:none"></div>
@@ -7559,6 +7575,7 @@ function saveConfig() {
 // Liga/desliga a abertura direta na tela de senha ao iniciar o app neste aparelho.
 function toggleAdminDevice(on) {
   setAdminDevice(on);
+  setAppSiteOnly(!on);
   const msg = document.getElementById('cfgAdminDeviceMsg');
   if (!msg) return;
   msg.textContent = on
@@ -8166,13 +8183,14 @@ updateWaLink();
 _updateClientNavUI();
 
 // Entrada do admin:
+//  • app instalado (PWA) → tela de senha em tela cheia, já na primeira abertura
 //  • ?admin na URL (atalho "Painel Admin" do app ou link direto)
-//  • app instalado abrindo num aparelho já usado pelo admin → tela de senha em tela cheia
+//  • navegador comum sem ?admin → site normal
 (function() {
   const wantsAdmin = window.location.search.includes('admin');
   const inApp      = isStandaloneApp();
   if (wantsAdmin && !inApp) { openAdminLogin(); return; }
-  if (wantsAdmin || (inApp && isAdminDevice())) openAdminGate(true);
+  if (wantsAdmin || (inApp && appOpensOnAdminGate())) openAdminGate(true);
 })();
 
 // Gift card activation redirect: ?gift=ok&codigo=GIFT-XXXXXX
