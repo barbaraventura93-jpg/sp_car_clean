@@ -4183,7 +4183,7 @@ function filterBookings(f, btn) {
 function renderBookingsList(filter) {
   let bookings = getBookings();
   if(filter !== 'all') bookings = bookings.filter(b=>b.status===filter);
-  bookings.sort((a,b)=>b.submittedAt.localeCompare(a.submittedAt));
+  bookings.sort((a,b)=>(b.submittedAt||'').localeCompare(a.submittedAt||''));
   const el = document.getElementById('bookingsList');
   if(!bookings.length) { el.innerHTML = `<p style="color:var(--muted);font-size:.9rem">Nenhum agendamento encontrado.</p>`; return; }
   const statusMap = {pending:'⏳ Pendente',approved:'✅ Aprovado',rejected:'❌ Rejeitado',confirmed:'🔒 Confirmado',cancelled:'🚫 Cancelado',completed:'🏁 Concluído'};
