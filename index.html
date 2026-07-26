@@ -383,6 +383,29 @@ footer p{font-size:.72rem;color:var(--muted)}
 .modal-hdr .sub{font-size:.75rem;color:var(--muted);margin-top:1px}
 .modal-close{background:rgba(255,255,255,.06);border:1px solid var(--border);font-size:1rem;color:var(--muted);cursor:pointer;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:all .2s}
 .modal-close:hover{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.3);color:var(--red)}
+
+/* ====== MODO APP — tela de senha do admin ao abrir o app instalado ====== */
+.admin-login-box{max-width:420px}
+body.admin-gate-on{overflow:hidden}
+.modal-overlay.admin-gate{background:radial-gradient(120% 70% at 50% 0%,#0C1219 0%,var(--bg) 65%);backdrop-filter:none;-webkit-backdrop-filter:none;padding:0;z-index:11000}
+/* Nada do site pode aparecer por cima da tela de senha (botões flutuantes) */
+body.admin-gate-on #waFloat,body.admin-gate-on #concierge-fab,body.admin-gate-on #concierge-panel{display:none!important}
+.admin-gate .modal-box{max-width:none;width:100%;height:100%;max-height:none;background:transparent;border:none;border-radius:0;box-shadow:none;justify-content:center;overflow:visible}
+.admin-gate .modal-hdr,.admin-gate .modal-close{display:none}
+.admin-gate .modal-body{width:100%;max-width:360px;margin:0 auto;display:flex;flex-direction:column;justify-content:center;padding:max(1.5rem,env(safe-area-inset-top)) 1.5rem max(1.5rem,env(safe-area-inset-bottom))}
+.admin-gate-brand{display:none;flex-direction:column;align-items:center;text-align:center;margin-bottom:2rem}
+.admin-gate .admin-gate-brand{display:flex}
+.admin-gate-brand img{width:84px;height:84px;object-fit:cover;border-radius:22px;margin-bottom:1.1rem;border:1px solid var(--border);box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 0 6px rgba(42,159,214,.06)}
+.admin-gate-brand h3{font-family:'Montserrat',sans-serif;font-size:1.02rem;font-weight:800;color:var(--white)}
+.admin-gate-brand .sub{font-size:.76rem;color:var(--muted);margin-top:.25rem}
+.admin-gate-foot{display:none;text-align:center;margin-top:1.5rem}
+.admin-gate .admin-gate-foot{display:block}
+.admin-gate-foot a{font-size:.76rem;color:var(--muted);cursor:pointer;border-bottom:1px dashed rgba(255,255,255,.14);padding-bottom:2px;transition:color .2s}
+.admin-gate-foot a:hover{color:var(--accent)}
+#adminGateChecking{display:none;align-items:center;justify-content:center;gap:.5rem;font-size:.78rem;color:var(--muted);margin-bottom:1rem}
+#adminGateChecking.on{display:flex}
+.admin-gate-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.14);border-top-color:var(--accent);border-radius:50%;animation:agSpin .7s linear infinite}
+@keyframes agSpin{to{transform:rotate(360deg)}}
 .modal-body{padding:1.8rem;flex:1}
 .modal-footer{padding:1.2rem 1.8rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:1rem;background:rgba(255,255,255,.02);border-radius:0 0 18px 18px}
 
@@ -1109,15 +1132,22 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
      ADMIN LOGIN MODAL
 =================================================== -->
 <div id="adminLoginModal" class="modal-overlay" style="display:none">
-  <div class="modal-box" style="max-width:420px">
+  <div class="modal-box admin-login-box">
     <div class="modal-hdr">
       <div><h3>🔐 Acesso Administrativo</h3><div class="sub">SP Car Clean — Painel de Gestão</div></div>
       <button class="modal-close" onclick="closeModal('adminLoginModal')">✕</button>
     </div>
     <div class="modal-body">
+      <div class="admin-gate-brand">
+        <img src="assets/favicon.png" alt="SP Car Clean"/>
+        <h3>🔐 Acesso Administrativo</h3>
+        <div class="sub">SP Car Clean — Painel de Gestão</div>
+      </div>
+      <div id="adminGateChecking"><span class="admin-gate-spin"></span> Verificando sessão…</div>
       <div class="form-row full"><div class="form-group"><label>Senha</label><input id="adminPass" type="password" placeholder="Digite a senha" onkeydown="if(event.key==='Enter')doAdminLogin()"/></div></div>
       <div id="loginError" style="color:var(--red);font-size:.82rem;margin-bottom:.8rem;display:none">Senha incorreta. Tente novamente.</div>
       <button class="btn-primary" onclick="doAdminLogin()" style="width:100%;justify-content:center">Entrar no Painel</button>
+      <div class="admin-gate-foot"><a onclick="exitAdminGate()">Ver o site</a></div>
     </div>
   </div>
 </div>
@@ -2651,10 +2681,60 @@ function submitReschedule() {
 // ============================================================
 // ADMIN LOGIN
 // ============================================================
+// "Modo app": num aparelho já reconhecido como do administrador, abrir o app
+// instalado (PWA) cai direto na tela de senha do painel, sem passar pelo site.
+// O aparelho só é marcado após um login de admin bem-sucedido nele.
+const ADMIN_DEVICE_KEY = 'spcc.adminDevice';
+let _adminGateOpen    = false;   // tela de senha em modo app está na frente do site
+let _adminGatePending = false;   // aguardando o Firebase restaurar (ou não) a sessão
+
+function isStandaloneApp() {
+  try {
+    return ['standalone','fullscreen','minimal-ui'].some(m => window.matchMedia('(display-mode: ' + m + ')').matches)
+        || window.navigator.standalone === true;
+  } catch (_) { return false; }
+}
+function isAdminDevice() {
+  try { return localStorage.getItem(ADMIN_DEVICE_KEY) === '1'; } catch (_) { return false; }
+}
+function setAdminDevice(on) {
+  try { on ? localStorage.setItem(ADMIN_DEVICE_KEY, '1') : localStorage.removeItem(ADMIN_DEVICE_KEY); } catch (_) {}
+}
+
 function openAdminLogin() {
+  // Sessão do admin ainda válida → não pede senha de novo, vai direto ao painel.
+  if (isAdmin()) { closeModal('adminLoginModal'); openAdminPanel(); return; }
   document.getElementById('adminLoginModal').style.display = 'flex';
   setTimeout(()=>document.getElementById('adminPass').focus(), 100);
 }
+
+// Tela de senha em tela cheia (modo app), sem o site atrás.
+// checkSession: espera o onAuthStateChanged para, se a sessão persistir, pular a senha.
+function openAdminGate(checkSession) {
+  const modal = document.getElementById('adminLoginModal');
+  modal.classList.add('admin-gate');
+  document.body.classList.add('admin-gate-on');
+  modal.style.display = 'flex';
+  _adminGateOpen    = true;
+  _adminGatePending = !!checkSession;
+  document.getElementById('adminGateChecking').classList.toggle('on', _adminGatePending);
+  if (_adminGatePending) setTimeout(() => { if (_adminGatePending) adminGateReady(); }, 4000);
+  else adminGateReady();
+}
+// Firebase respondeu (ou deu tempo): sem sessão de admin, libera o campo de senha.
+function adminGateReady() {
+  _adminGatePending = false;
+  document.getElementById('adminGateChecking').classList.remove('on');
+  if (_adminGateOpen) setTimeout(()=>document.getElementById('adminPass').focus(), 100);
+}
+function closeAdminGate() {
+  document.getElementById('adminLoginModal').classList.remove('admin-gate');
+  document.getElementById('adminGateChecking').classList.remove('on');
+  document.body.classList.remove('admin-gate-on');
+  _adminGateOpen = _adminGatePending = false;
+}
+// "Ver o site" — sai da tela de senha sem desmarcar o aparelho.
+function exitAdminGate() { closeAdminGate(); closeModal('adminLoginModal'); }
 // ============================================================
 // CONTA DO CLIENTE
 // ============================================================
@@ -3256,6 +3336,8 @@ function doAdminLogin() {
   errEl.style.display = 'none';
   firebase.auth().signInWithEmailAndPassword(CFG.adminEmail, pw)
     .then(() => {
+      setAdminDevice(true);   // a partir daqui, o app deste aparelho abre direto na senha
+      closeAdminGate();
       closeModal('adminLoginModal');
       openAdminPanel();
     })
@@ -3268,6 +3350,8 @@ function doAdminLogin() {
 function doAdminLogout() {
   firebase.auth().signOut();
   document.getElementById('adminPanel').style.display = 'none';
+  // No app do admin, sair volta para a tela de senha — não para o site.
+  if (isStandaloneApp() && isAdminDevice()) openAdminGate(false);
 }
 function openAdminPanel() {
   document.getElementById('adminPanel').style.display = 'flex';
@@ -7332,6 +7416,16 @@ function renderAdminConfig() {
       <div class="form-row full"><div class="form-group"><label>Nova senha de administrador</label><input id="cfgNewPw" type="password" placeholder="Mínimo 8 caracteres"/></div></div>
       <div class="form-row full"><div class="form-group"><label>Confirmar senha</label><input id="cfgConfPw" type="password" placeholder="Repita a nova senha"/></div></div>
       <button class="btn-primary" onclick="changePw()">Alterar Senha</button>
+      <hr style="border:none;border-top:1px solid var(--border);margin:1.2rem 0"/>
+      <h4 style="font-family:Montserrat,sans-serif;font-size:.78rem;font-weight:700;color:var(--text);margin-bottom:.5rem">📱 Este aparelho</h4>
+      <p style="font-size:.76rem;color:var(--muted);line-height:1.5;margin-bottom:.7rem">
+        Com a opção ligada, abrir o app instalado neste aparelho vai direto para a tela de senha do painel, sem passar pelo site.
+      </p>
+      <label style="display:flex;align-items:center;gap:.6rem;font-size:.82rem;color:var(--text);cursor:pointer">
+        <input type="checkbox" id="cfgAdminDevice" ${isAdminDevice() ? 'checked' : ''} onchange="toggleAdminDevice(this.checked)" style="width:16px;height:16px;accent-color:var(--blue);cursor:pointer"/>
+        Abrir direto na tela de senha
+      </label>
+      <div id="cfgAdminDeviceMsg" style="font-size:.74rem;color:var(--green);margin-top:.5rem;display:none"></div>
     </div>
     <div class="admin-panel" style="max-width:520px">
       <h3>⭐ Fidelidade & Cupons</h3>
@@ -7461,6 +7555,16 @@ function saveConfig() {
     maxPerDay: CFG.maxPerDay
   }).then(() => alert('Configurações salvas!')).catch(() => alert('Erro ao salvar. Verifique a conexão.'));
   else alert('Configurações salvas localmente!');
+}
+// Liga/desliga a abertura direta na tela de senha ao iniciar o app neste aparelho.
+function toggleAdminDevice(on) {
+  setAdminDevice(on);
+  const msg = document.getElementById('cfgAdminDeviceMsg');
+  if (!msg) return;
+  msg.textContent = on
+    ? '✓ Este aparelho abrirá o app direto na tela de senha do painel.'
+    : '✓ Este aparelho abrirá o app no site, como um visitante comum.';
+  msg.style.display = 'block';
 }
 function changePw() {
   const np   = document.getElementById('cfgNewPw').value;
@@ -7901,6 +8005,8 @@ _buildHeroCarousel(HERO_FALLBACK);
 
     firebase.auth().onAuthStateChanged(user => {
       _authUser = user;
+      // Tela de senha do app: sem sessão de admin restaurada, libera o campo.
+      if (_adminGatePending && !isAdmin()) adminGateReady();
       if (!user) {
         _clientProfile = null;
         _bookings = [];   // some da memória ao sair (a coleção não é mais lida publicamente)
@@ -7917,6 +8023,9 @@ _buildHeroCarousel(HERO_FALLBACK);
         return;
       }
       if (isAdmin()) {
+        setAdminDevice(true);
+        // App aberto na tela de senha com sessão ainda válida → entra direto no painel.
+        if (_adminGateOpen) { closeAdminGate(); closeModal('adminLoginModal'); openAdminPanel(); }
         _clientProfile = null;
         _bookingsRetryCount = 0;
         _attachAdminBookingsListener();
@@ -8056,8 +8165,15 @@ renderServices();
 updateWaLink();
 _updateClientNavUI();
 
-// Auto-open admin if ?admin in URL
-if(window.location.search.includes('admin')) openAdminLogin();
+// Entrada do admin:
+//  • ?admin na URL (atalho "Painel Admin" do app ou link direto)
+//  • app instalado abrindo num aparelho já usado pelo admin → tela de senha em tela cheia
+(function() {
+  const wantsAdmin = window.location.search.includes('admin');
+  const inApp      = isStandaloneApp();
+  if (wantsAdmin && !inApp) { openAdminLogin(); return; }
+  if (wantsAdmin || (inApp && isAdminDevice())) openAdminGate(true);
+})();
 
 // Gift card activation redirect: ?gift=ok&codigo=GIFT-XXXXXX
 (function() {

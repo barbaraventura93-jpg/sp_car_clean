@@ -371,6 +371,28 @@ chegam direto no celular, além do Telegram. Para habilitar:
 O admin ativa o push tocando em **📲 Instalar app** e aceitando as notificações no
 primeiro login pelo celular.
 
+#### O app do admin abre direto na tela de senha
+
+No celular do administrador, abrir o app instalado cai **direto na tela de senha do
+painel**, em tela cheia — sem passar pelo site. O aparelho é reconhecido assim:
+
+1. O admin instala o app e faz **um login pelo site** (rodapé → *Área Restrita*).
+   Esse login marca o aparelho (`localStorage` → `spcc.adminDevice`).
+2. Das próximas vezes, abrir o app mostra a tela de senha antes de qualquer conteúdo
+   do site. Se a sessão do Firebase ainda estiver válida, ele exibe *"Verificando
+   sessão…"* por um instante e entra no painel **sem pedir a senha**.
+3. Sair do painel dentro do app volta para a tela de senha, não para o site.
+
+Detalhes:
+
+- O aparelho **só** é marcado após um login de admin bem-sucedido nele — quem instala
+  o app como cliente continua abrindo o site normalmente.
+- O link **Ver o site** na tela de senha dá acesso ao site sem desmarcar o aparelho.
+- Para desligar de vez num aparelho: **Painel → Configurações → Segurança → 📱 Este
+  aparelho**, desmarcando *"Abrir direto na tela de senha"*.
+- O atalho **Painel Admin** do app (`/?admin`) abre a mesma tela em qualquer aparelho,
+  sem marcá-lo.
+
 ### Build
 
 ```bash
@@ -452,6 +474,7 @@ sp-car-clean/
 | Registro histórico com data retroativa e status "Concluído" direto | ✅ |
 | App instalável na tela inicial (PWA) — admin e cliente | ✅ |
 | Notificações push no celular do admin (Firebase Cloud Messaging) | ✅ |
+| App do admin abrindo direto na tela de senha do painel (sem passar pelo site) | ✅ |
 
 ---
 
