@@ -1,9 +1,15 @@
 name: Deploy to Firebase
 
+# DESATIVADO (2026-07-25). O host de produção é o Netlify (spcarclean.com.br),
+# onde as variáveis de ambiente já estão configuradas e o deploy funciona. Este
+# workflow do Firebase Hosting nunca chegou a rodar desde que o passo `build.js`
+# passou a exigir secrets DO GITHUB (FIREBASE_API_KEY, FIREBASE_VAPID_KEY,
+# EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY, FIREBASE_SERVICE_ACCOUNT) — que existem
+# só no Netlify, não no cofre do GitHub Actions. Para religar: cadastre esses
+# secrets em Settings → Secrets and variables → Actions e troque o gatilho abaixo
+# de volta para `push: { branches: [main] }`.
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   deploy:
