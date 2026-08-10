@@ -108,14 +108,15 @@ exports.handler = async (event) => {
 
   } else {
     // novo agendamento (comportamento original)
-    const { id, name, phone, car, plate, service, carSize, date, price, obs } = data;
+    const { id, name, phone, car, plate, service, carSize, vehicleType, date, price, obs } = data;
+    const porteLabel = vehicleType === 'moto' ? 'Moto' : (carSize === 'pq' ? 'Pequeno' : 'Grande');
     text =
       `🔔 *Nova Solicitação — SP Car Clean*\n\n` +
       `📋 *Código:* ${id}\n` +
       `👤 *Cliente:* ${name}\n` +
       `📱 *WhatsApp:* ${phone}\n` +
-      `🚗 *Veículo:* ${car}${plate ? ' | ' + plate : ''}\n` +
-      `🔧 *Serviço:* ${service} \\(${carSize === 'pq' ? 'Pequeno' : 'Grande'}\\)\n` +
+      `${vehicleType === 'moto' ? '🏍️' : '🚗'} *Veículo:* ${car}${plate ? ' | ' + plate : ''}\n` +
+      `🔧 *Serviço:* ${service} \\(${porteLabel}\\)\n` +
       `📅 *Data solicitada:* ${date}\n` +
       `💰 *Valor estimado:* ${price}` +
       (obs ? `\n📝 *Obs:* ${obs}` : '') +
