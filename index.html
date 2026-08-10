@@ -829,6 +829,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
     <div class="size-toggle">
       <button class="active" onclick="setSize('pq',this)">🚗 Carro Pequeno</button>
       <button onclick="setSize('gr',this)">🚙 Carro Grande</button>
+      <button onclick="setSize('moto',this)">🏍️ Moto</button>
     </div>
   </div>
   <div class="categories" id="catWrap"></div>
@@ -7819,6 +7820,7 @@ function exportData() {
 // LANDING PAGE RENDERS
 // ============================================================
 let currentSizeGlobal = 'pq';
+let currentVehicleGlobal = 'carro'; // 'carro' (usa pq/gr) ou 'moto' (aba própria)
 const CATS_DATA = [
   { label:'Estética Interna', keys:['higienizacao-tecido','higienizacao-couro'] },
   { label:'Estética Externa', keys:['lavagem-detalhada','polimento-geral','polimento-preto','polimento-cristal'] },
@@ -7852,9 +7854,14 @@ function veiculoResumo(b) {
 }
 
 function setSize(size, btn) {
-  currentSizeGlobal = size;
   document.querySelectorAll('#servicos .size-toggle button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
+  if (size === 'moto') {
+    currentVehicleGlobal = 'moto';
+  } else {
+    currentVehicleGlobal = 'carro';
+    currentSizeGlobal = size;
+  }
   renderServices();
 }
 
@@ -7959,24 +7966,28 @@ function getMotoServices() {
 }
 
 function renderServices() {
-  let html = getDisplayCats().map(cat => `
-    <div>
-      <div class="cat-label">${cat.label}</div>
-      <div class="svcs-grid">
-        ${cat.keys.map(id => _svcCardHtml(id, SVCS[id] ? (SVCS[id][currentSizeGlobal] || SVCS[id].pq) : 0)).join('')}
-      </div>
-    </div>`).join('');
+  let html;
 
-  // Bloco separado de motos — preço único, independente do porte (Pequeno/Grande)
-  const motos = getMotoServices();
-  if (motos.length) {
-    html += `
-    <div>
-      <div class="cat-label">🏍️ Motos</div>
-      <div class="svcs-grid">
-        ${motos.map(id => _svcCardHtml(id, SVCS[id].pq)).join('')}
-      </div>
-    </div>`;
+  if (currentVehicleGlobal === 'moto') {
+    // Aba Moto — preço único, independente do porte (Pequeno/Grande)
+    const motos = getMotoServices();
+    html = motos.length
+      ? `<div>
+          <div class="cat-label">🏍️ Motos</div>
+          <div class="svcs-grid">
+            ${motos.map(id => _svcCardHtml(id, SVCS[id].pq)).join('')}
+          </div>
+        </div>`
+      : `<p style="grid-column:1/-1;color:var(--muted);font-size:.9rem;text-align:center;padding:2rem">Nenhum serviço de moto disponível no momento.</p>`;
+  } else {
+    // Abas Carro Pequeno / Carro Grande — só serviços de carro
+    html = getDisplayCats().map(cat => `
+      <div>
+        <div class="cat-label">${cat.label}</div>
+        <div class="svcs-grid">
+          ${cat.keys.map(id => _svcCardHtml(id, SVCS[id] ? (SVCS[id][currentSizeGlobal] || SVCS[id].pq) : 0)).join('')}
+        </div>
+      </div>`).join('');
   }
 
   document.getElementById('catWrap').innerHTML = html;
