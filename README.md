@@ -306,7 +306,14 @@ const CFG = {
     },
     "stock":           { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
     "stockRecipes":    { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "adminPushTokens": { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" }
+    "adminPushTokens": { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "aiConfig": {
+      ".read":  "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      "concierge": { "enabled": { ".read": true } }
+    },
+    "aiUsage":         { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "aiLogs":          { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" }
   }
 }
 ```
@@ -316,6 +323,12 @@ const CFG = {
 > `stock`/`stockRecipes` (estoque, admin) e `adminPushTokens` (push do painel) fazem
 > parte do conjunto — **o Console nega qualquer caminho sem regra**, então o bloco
 > acima deve ser aplicado sempre completo, nunca por partes.
+>
+> As coleções `aiConfig`, `aiUsage` e `aiLogs` alimentam a **Central de IA** do painel
+> admin (config dos agentes, consumo mensal e logs). Sem elas o painel quebra com
+> `permission_denied at /aiConfig`. A exceção `aiConfig/concierge/enabled` fica com
+> leitura pública porque o **widget concierge** do site consulta esse caminho sem login.
+> As funções Netlify escrevem esses nós via Admin SDK (ignoram estas regras).
 
 ### Firebase Storage — regras de segurança
 
