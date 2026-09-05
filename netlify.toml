@@ -4,6 +4,13 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# O build.js injeta chaves PÚBLICAS de cliente no HTML (Firebase Web e EmailJS
+# são feitas para ficar expostas no front). O secrets scanning do Netlify (ativo
+# também no plano gratuito) marcaria isso como falso-positivo e quebraria o deploy.
+# Isentamos apenas essas chaves públicas — segredos de verdade continuam protegidos.
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "FIREBASE_API_KEY,FIREBASE_VAPID_KEY,EMAILJS_SERVICE_ID,EMAILJS_PUBLIC_KEY"
+
 [functions."birthday-check"]
   schedule = "0 12 * * *"
 
