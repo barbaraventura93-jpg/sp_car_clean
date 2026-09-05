@@ -164,9 +164,47 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
   - Círculos de raio 5 km / 10 km / 15 km a partir do centro de São Paulo
   - Ranking de bairros com barra de participação percentual
 
+### Central de IA (Admin + Site)
+Camada de agentes de IA (Claude / Anthropic) orquestrada pela Netlify Function `ai.js`
+(gatilho HTTP) e pela Scheduled Function `ai-dispatcher.js` (gatilho cron diário). Cada
+agente tem **orçamento mensal de chamadas** e limite de tokens configuráveis, e
+auto-desliga ao estourar o teto (avisa via Telegram).
+
+- **Central de IA** no painel admin: liga/desliga agentes, define agenda (diária/semanal),
+  acompanha consumo mensal (`aiUsage`) e logs (`aiLogs`)
+- **Agentes admin** (exigem token do Firebase Auth do administrador): Relatório Semanal,
+  Reativação de Inativos, Otimizador de Agenda, Análise de Satisfação, Descrição de
+  Check-in, Legendas para Galeria, Ping (teste de conectividade)
+- **Agentes públicos** (rate-limit por IP): **Chat Concierge** (widget de dúvidas e
+  recomendação de serviços no site), **Orçamento por Foto** e **Sugestão de Complemento**
+  (upsell no agendamento)
+- O widget concierge do site consulta apenas `aiConfig/concierge/enabled` (leitura pública);
+  todo o processamento de IA acontece server-side — a `ANTHROPIC_API_KEY` nunca chega ao navegador
+
+### Gift Cards (Site + Admin)
+- Compra de **vale-presente** pelo site com pagamento via InfinitePay
+  (`create-gift-payment.js` gera o link; o webhook `infinitepay-webhook.js` ativa o cartão)
+- Cada gift card tem **código único**, valor de face e saldo; ao ativar, o comprador recebe
+  e-mail automático (EmailJS) com o código e instruções
+- Aplicação do gift card no fluxo de agendamento; gestão (emissão/consulta) no painel admin
+- Dados em `/giftcards` no Firebase (ativação pública por código, gestão restrita ao admin)
+
+### Avaliações e Depoimentos (Cliente + Site + Admin)
+- Após a conclusão, o cliente avalia o atendimento por **código de reserva** (survey)
+- Avaliações ficam em `/feedback`; o admin **aprova** as que viram **depoimentos públicos**
+  na vitrine do site
+- Alertas de nota baixa via agente de IA **Análise de Satisfação** (Telegram)
+
+### Controle de Estoque e Insumos (Admin)
+- Cadastro de **itens de estoque** (`/stock`) e **receitas de consumo por serviço**
+  (`/stockRecipes`) — quanto de cada insumo cada serviço consome
+- Agente de IA **Previsão de Reposição** cruza a agenda com o estoque e alerta sobre itens
+  prestes a acabar
+
 ### Configurações do sistema (admin)
 - WhatsApp, endereço/local de entrega, horários de entrada e saída, máximo de agendamentos por dia
 - Troca de senha administrativa
+- Segurança do aparelho (abrir direto na tela de senha) e registro de push
 - Limpeza total de dados
 
 ---
@@ -182,6 +220,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 | Hosting | Netlify |
 | Domínio | www.spcarclean.com.br (Registro.br + Netlify DNS) |
 | Pagamento | InfinitePay (PIX + cartão) via Netlify Function |
+| Inteligência Artificial | Claude API (Anthropic) via Netlify Functions (`ai` + `ai-dispatcher`) |
 | Notificações | Netlify Functions + EmailJS + Telegram Bot API |
 | E-mail automático de aniversário | Netlify Scheduled Function (cron diário) + EmailJS REST API |
 | Mapa | Leaflet.js + OpenStreetMap + Nominatim (geocoding) |
@@ -222,17 +261,26 @@ const CFG = {
 |---|---|
 | `FIREBASE_API_KEY` | Chave de API do Firebase (obrigatória — injetada no build) |
 | `FIREBASE_DATABASE_URL` | URL do Realtime Database, ex: `https://projeto-default-rtdb.firebaseio.com` |
-| `FIREBASE_DATABASE_SECRET` | Token legado do Firebase (webhook InfinitePay + cron de aniversário) |
+| `FIREBASE_DATABASE_SECRET` | Token legado do Firebase (webhook InfinitePay + cron de aniversário). **Secreto** |
+| `ADMIN_EMAIL` | E-mail do administrador — usado server-side pela função `ai` para validar o token do painel (padrão: `spcarclean0@gmail.com`) |
 | `EMAILJS_SERVICE_ID` | ID do serviço no EmailJS |
 | `EMAILJS_PUBLIC_KEY` | Chave pública do EmailJS |
-| `EMAILJS_PRIVATE_KEY` | Chave privada do EmailJS (para envio server-side) |
+| `EMAILJS_PRIVATE_KEY` | Chave privada do EmailJS (para envio server-side). **Secreto** |
 | `EMAILJS_BIRTHDAY_TEMPLATE` | ID do template de e-mail de aniversário no EmailJS |
-| `TELEGRAM_BOT_TOKEN` | Token do bot de notificações via Telegram |
+| `EMAILJS_GIFT_TEMPLATE` | ID do template de e-mail de ativação de gift card (opcional; usa `template_update` como fallback) |
+| `TELEGRAM_BOT_TOKEN` | Token do bot de notificações via Telegram. **Secreto** |
 | `TELEGRAM_CHAT_ID` | ID do chat para receber as notificações |
 | `INFINITEPAY_HANDLE` | InfiniteTag (usuário InfinitePay) para geração de links de pagamento |
 | `INFINITEPAY_FEE_RATE` | Taxa a embutir no preço (padrão: `0.0315` = 3,15% crédito à vista) |
+| `ANTHROPIC_API_KEY` | Chave da API Claude (Anthropic) — usada server-side pelos agentes da Central de IA. **Secreto** |
 | `FIREBASE_VAPID_KEY` | Chave pública Web Push (certificado do Firebase Cloud Messaging) — injetada no build; habilita o registro de push no celular do admin |
 | `FCM_SERVICE_ACCOUNT` | JSON (ou base64 do JSON) da service account do Firebase — usado **apenas server-side** pela função `notify-booking` para enviar os pushes. **Secreto: nunca commitar** |
+
+> As variáveis marcadas **Secreto** nunca podem aparecer no front-end nem ser
+> commitadas — só existem como variáveis de ambiente do Netlify e são lidas
+> exclusivamente dentro das Netlify Functions. Apenas as chaves realmente públicas
+> (`FIREBASE_API_KEY`, `FIREBASE_VAPID_KEY`, `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`)
+> são injetadas no HTML — por isso constam no `SECRETS_SCAN_OMIT_KEYS` do `netlify.toml`.
 
 ### Firebase Realtime Database — regras de segurança
 
@@ -437,14 +485,23 @@ sp-car-clean/
 ├── assets/
 │   ├── logo.png                 # Logo oficial (PNG com fundo transparente)
 │   └── portfolio/               # Imagens e vídeos do carrossel hero
+├── firestore.rules              # ⚠️ Regras Firestore legadas (ver Backlog — arquitetura atual usa RTDB)
+├── functions/                   # ⚠️ Cloud Functions Firestore legadas (syncClient) — ver Backlog
+│   ├── index.js
+│   └── lib/syncClient.js
 └── netlify/
     └── functions/
         ├── notify-booking.js        # Notifica o admin (Telegram + push FCM)
-        ├── create-payment.js        # Gera link de pagamento InfinitePay
-        ├── infinitepay-webhook.js   # Confirma pagamento e atualiza Firebase
+        ├── create-payment.js        # Gera link de pagamento InfinitePay (agendamento)
+        ├── create-gift-payment.js   # Gera link de pagamento InfinitePay (gift card)
+        ├── infinitepay-webhook.js   # Confirma pagamento/ativa gift card e atualiza Firebase
         ├── birthday-check.js        # Cron diário: detecta aniversariantes, cria cupom e envia e-mail
+        ├── ai.js                    # Orquestrador HTTP dos agentes de IA (admin + públicos)
+        ├── ai-dispatcher.js         # Cron diário: dispara agentes de IA agendados
         └── lib/
-            └── fcm.js               # Helper de envio de push (OAuth2 + FCM HTTP v1)
+            ├── fcm.js               # Helper de envio de push (OAuth2 + FCM HTTP v1)
+            ├── agents/              # Agentes de IA (concierge, relatorio, upsell, orcamento, …)
+            └── core/                # Núcleo dos agentes (claude, firebase, telegram, email, config, logger)
 ```
 
 ---
@@ -491,6 +548,44 @@ sp-car-clean/
 | App instalável na tela inicial (PWA) — admin e cliente | ✅ |
 | Notificações push no celular do admin (Firebase Cloud Messaging) | ✅ |
 | App do admin abrindo direto na tela de senha do painel (sem passar pelo site) | ✅ |
+| Central de IA com agentes (concierge, relatório, reativação, upsell, etc.) | ✅ |
+| Chat Concierge público no site | ✅ |
+| Orçamento por foto (IA) | ✅ |
+| Gift cards (compra online + ativação por webhook) | ✅ |
+| Avaliações do cliente + depoimentos aprovados na vitrine | ✅ |
+| Controle de estoque/insumos com previsão de reposição (IA) | ✅ |
+
+---
+
+## Backlog de melhorias
+
+Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual é
+**segurança do backend**, já que o app move pagamentos e dados pessoais de clientes.
+
+### 🔴 Segurança — prioridade alta
+
+| # | Item | Onde | Risco | Recomendação |
+|---|---|---|---|---|
+| 1 | **Webhook de pagamento sem verificação de assinatura** | `netlify/functions/infinitepay-webhook.js` | Qualquer POST com `order_nsu` + `status:paid` confirma um agendamento ou **ativa um gift card sem pagamento real** (fraude). O endpoint é público e os códigos de reserva são exibidos ao cliente. | Validar a assinatura/HMAC do InfinitePay a cada chamada; **e/ou** consultar a API do InfinitePay pelo `transaction_nsu` antes de confirmar; conferir `paid_amount` contra o valor esperado do pedido. |
+| 2 | **Regra RTDB permite sobrescrever qualquer agendamento** | Regras `bookings/$id .write: "newData.exists()"` | `newData.exists()` vale para criação **e** atualização — quem souber um código pode alterar status, preço ou PII de um agendamento existente, sem login. | Restringir a escrita pública apenas à criação (`!data.exists() && newData.exists()`); mudanças de status só via Admin SDK/admin. Validar schema dos campos gravados. |
+| 3 | **Códigos de reserva curtos + leitura pública** | `bookings/$id .read: true`, código tipo `SPC-X7K2M` | Enumeração/brute force de códigos expõe nome, telefone, e-mail e bairro dos clientes. | Aumentar a entropia do código, aplicar rate-limit na consulta, ou exigir e-mail + código para leitura. |
+| 4 | **Regras de RTDB e Storage não versionadas** | Só existem coladas neste README (aplicação manual no Console) | Divergência silenciosa entre o que está documentado e o que está no Console; sem histórico nem revisão. | Versionar em `database.rules.json` e `storage.rules` e publicar via `firebase.json` (`database`/`storage`). |
+
+### 🟠 Segurança — prioridade média
+
+| # | Item | Onde | Risco | Recomendação |
+|---|---|---|---|---|
+| 5 | **Funções de pagamento/notificação sem auth nem rate-limit** | `create-payment.js`, `create-gift-payment.js`, `notify-booking.js` | Geração de links/notificações em massa (spam ao admin via Telegram/push); o preço vem do cliente (`finalPrice`/`amount`). | Rate-limit + checagem de origem (CORS/token). No `create-payment`, buscar o valor do agendamento no Firebase em vez de confiar no `finalPrice` enviado pelo cliente. |
+| 6 | **Rate-limit dos agentes de IA públicos é em memória** | `ai.js` (`rlStore`) | Reseta a cada cold start e é por instância — contornável; risco de custo na Claude API. | Rate-limit persistente (Firebase) e/ou captcha no concierge/orçamento; manter os tetos de orçamento por agente. |
+| 7 | **Fotos de check-in e galeria com leitura pública** | Regras do Storage (`checkin/**`, `gallery` → `read: if true`) | Fotos de veículos e placas ficam acessíveis por URL a quem a obtiver. | Avaliar leitura restrita/tokenizada para `checkin/**` (dado do cliente), mantendo `gallery` pública se for vitrine. |
+
+### 🟡 Débito técnico / organização
+
+| # | Item | Onde | Observação |
+|---|---|---|---|
+| 8 | **Código Firestore legado não corresponde à arquitetura RTDB** | `functions/`, `firestore.rules`, `lib/syncClient.js` | O app usa Realtime Database; o `firebase.json` só publica hosting. Esse conjunto Firestore provavelmente está inativo — decidir **remover** ou **reativar** para não gerar confusão (inclusive regras que não são aplicadas). |
+| 9 | **Log de debug versionado** | `firebase-debug.log` | Artefato do `firebase init` (Windows) commitado. Adicionar ao `.gitignore` e remover do repositório. |
+| 10 | **`index.html` monolítico (~540 KB)** | `index.html` | Site público + painel admin no mesmo arquivo dificultam manutenção e revisão. Avaliar separação/módulos a médio prazo. |
 
 ---
 
