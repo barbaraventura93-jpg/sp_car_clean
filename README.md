@@ -284,6 +284,12 @@ const CFG = {
 
 ### Firebase Realtime Database — regras de segurança
 
+> **As regras agora são versionadas** em [`database.rules.json`](database.rules.json) e
+> referenciadas no `firebase.json`. Publique-as com `firebase deploy --only database`
+> (preferível — mantém Console e repositório em sincronia) ou cole o conteúdo do arquivo
+> no Console. O bloco abaixo é uma cópia comentada; o arquivo versionado usa o e-mail real
+> do admin em vez do placeholder `ADMIN_EMAIL`.
+
 > **Privacidade dos agendamentos.** A coleção `bookings` **não** é mais legível
 > publicamente (isso expunha nome, telefone, e-mail e bairro de todos os clientes).
 > A disponibilidade do calendário vem do nó público `dayLoad` (só a lotação por dia,
@@ -292,6 +298,13 @@ const CFG = {
 > tem o código exato (`bookings/$id .read: true`), mas a coleção inteira não pode ser
 > listada nem apagada por visitantes. O cliente logado vê o próprio histórico pelo
 > índice `bookingIndex/$uid`.
+>
+> **Escrita protegida (item 2 do backlog).** Sem login, `bookings/$id` só aceita
+> **criar** um agendamento ou as alterações self-service (reagendar/cancelar/feedback):
+> valor, pagamento e identidade (`price`/`finalPrice`/`priceWithFee`/`paidAmount`/
+> `paymentTransactionId`/`email`/`name`/`phone`/`createdAt`/`id`) são imutáveis e o
+> `status` só pode virar `cancelled`. Admin (login) e webhook (Database Secret) escrevem
+> tudo pela regra do pai.
 >
 > ⚠️ **Ordem de ativação:** (1) publique o site (com as regras antigas o calendário
 > segue contando ao vivo, por fallback); (2) aplique as regras novas no Console;
@@ -308,7 +321,7 @@ const CFG = {
       ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'",
       "$id": {
         ".read":  true,
-        ".write": "newData.exists()"
+        ".write": "(!data.exists() && newData.exists()) || (data.exists() && newData.exists() && newData.child('id').val() == data.child('id').val() && newData.child('createdAt').val() == data.child('createdAt').val() && newData.child('email').val() == data.child('email').val() && newData.child('name').val() == data.child('name').val() && newData.child('phone').val() == data.child('phone').val() && newData.child('price').val() == data.child('price').val() && newData.child('finalPrice').val() == data.child('finalPrice').val() && newData.child('priceWithFee').val() == data.child('priceWithFee').val() && newData.child('paidAmount').val() == data.child('paidAmount').val() && newData.child('paymentTransactionId').val() == data.child('paymentTransactionId').val() && newData.child('paymentConfirmedAt').val() == data.child('paymentConfirmedAt').val() && (newData.child('status').val() == data.child('status').val() || newData.child('status').val() == 'cancelled'))"
       }
     },
     "dayLoad":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
@@ -482,6 +495,8 @@ sp-car-clean/
 ├── firebase-messaging-sw.js     # Service worker de push (Firebase Cloud Messaging)
 ├── package.json
 ├── netlify.toml                 # Config Netlify (build, publish, functions, cron)
+├── firebase.json                # Config Firebase (hosting + regras do Realtime Database)
+├── database.rules.json          # Regras de segurança do Realtime Database (versionadas)
 ├── assets/
 │   ├── logo.png                 # Logo oficial (PNG com fundo transparente)
 │   └── portfolio/               # Imagens e vídeos do carrossel hero
@@ -567,14 +582,14 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 | # | Item | Onde | O que foi feito |
 |---|---|---|---|
 | 1 | **Webhook de pagamento sem verificação** | `netlify/functions/infinitepay-webhook.js` | O corpo do webhook deixou de ser confiável: antes de confirmar um agendamento ou ativar um gift card, a função consulta o endpoint oficial `POST payment_check` do InfinitePay (autenticado pelo nosso `handle`) e só prossegue se `paid === true`. Confere também o valor pago contra o valor esperado do pedido (`priceWithFee`/`amount`) e faz **fail-closed** — se não conseguir verificar, devolve erro para o InfinitePay reenviar em vez de confirmar às cegas. |
+| 2 | **Regra RTDB permitia sobrescrever qualquer agendamento** | `database.rules.json` (`bookings/$id`) | A escrita pública passou de `newData.exists()` (qualquer alteração) para: **criar** um agendamento, ou fazer só as alterações self-service (reagendar/cancelar/feedback). Campos de valor, pagamento e identidade (`price`, `finalPrice`, `priceWithFee`, `paidAmount`, `paymentTransactionId`, `email`, `name`, `phone`, `createdAt`, `id`) ficaram imutáveis sem login, e o `status` só pode ir para `cancelled` — nunca para `approved`/`confirmed`/`completed`. Regra validada com 15 casos (targaryen). As regras agora são **versionadas** em `database.rules.json` e referenciadas no `firebase.json` (parte do item 4). |
 
 ### 🔴 Segurança — prioridade alta
 
 | # | Item | Onde | Risco | Recomendação |
 |---|---|---|---|---|
-| 2 | **Regra RTDB permite sobrescrever qualquer agendamento** | Regras `bookings/$id .write: "newData.exists()"` | `newData.exists()` vale para criação **e** atualização — quem souber um código pode alterar status, preço ou PII de um agendamento existente, sem login. | Restringir a escrita pública apenas à criação (`!data.exists() && newData.exists()`); mudanças de status só via Admin SDK/admin. Validar schema dos campos gravados. |
 | 3 | **Códigos de reserva curtos + leitura pública** | `bookings/$id .read: true`, código tipo `SPC-X7K2M` | Enumeração/brute force de códigos expõe nome, telefone, e-mail e bairro dos clientes. | Aumentar a entropia do código, aplicar rate-limit na consulta, ou exigir e-mail + código para leitura. |
-| 4 | **Regras de RTDB e Storage não versionadas** | Só existem coladas neste README (aplicação manual no Console) | Divergência silenciosa entre o que está documentado e o que está no Console; sem histórico nem revisão. | Versionar em `database.rules.json` e `storage.rules` e publicar via `firebase.json` (`database`/`storage`). |
+| 4 | **Regras de Storage ainda não versionadas** | RTDB já versionado (`database.rules.json`); falta o Storage | As regras do Storage ainda vivem só neste README (aplicação manual no Console). | Versionar em `storage.rules` e publicar via `firebase.json` (`storage`), como já foi feito para o Realtime Database. |
 
 ### 🟠 Segurança — prioridade média
 
