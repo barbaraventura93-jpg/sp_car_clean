@@ -562,11 +562,16 @@ sp-car-clean/
 Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual é
 **segurança do backend**, já que o app move pagamentos e dados pessoais de clientes.
 
+### ✅ Concluído
+
+| # | Item | Onde | O que foi feito |
+|---|---|---|---|
+| 1 | **Webhook de pagamento sem verificação** | `netlify/functions/infinitepay-webhook.js` | O corpo do webhook deixou de ser confiável: antes de confirmar um agendamento ou ativar um gift card, a função consulta o endpoint oficial `POST payment_check` do InfinitePay (autenticado pelo nosso `handle`) e só prossegue se `paid === true`. Confere também o valor pago contra o valor esperado do pedido (`priceWithFee`/`amount`) e faz **fail-closed** — se não conseguir verificar, devolve erro para o InfinitePay reenviar em vez de confirmar às cegas. |
+
 ### 🔴 Segurança — prioridade alta
 
 | # | Item | Onde | Risco | Recomendação |
 |---|---|---|---|---|
-| 1 | **Webhook de pagamento sem verificação de assinatura** | `netlify/functions/infinitepay-webhook.js` | Qualquer POST com `order_nsu` + `status:paid` confirma um agendamento ou **ativa um gift card sem pagamento real** (fraude). O endpoint é público e os códigos de reserva são exibidos ao cliente. | Validar a assinatura/HMAC do InfinitePay a cada chamada; **e/ou** consultar a API do InfinitePay pelo `transaction_nsu` antes de confirmar; conferir `paid_amount` contra o valor esperado do pedido. |
 | 2 | **Regra RTDB permite sobrescrever qualquer agendamento** | Regras `bookings/$id .write: "newData.exists()"` | `newData.exists()` vale para criação **e** atualização — quem souber um código pode alterar status, preço ou PII de um agendamento existente, sem login. | Restringir a escrita pública apenas à criação (`!data.exists() && newData.exists()`); mudanças de status só via Admin SDK/admin. Validar schema dos campos gravados. |
 | 3 | **Códigos de reserva curtos + leitura pública** | `bookings/$id .read: true`, código tipo `SPC-X7K2M` | Enumeração/brute force de códigos expõe nome, telefone, e-mail e bairro dos clientes. | Aumentar a entropia do código, aplicar rate-limit na consulta, ou exigir e-mail + código para leitura. |
 | 4 | **Regras de RTDB e Storage não versionadas** | Só existem coladas neste README (aplicação manual no Console) | Divergência silenciosa entre o que está documentado e o que está no Console; sem histórico nem revisão. | Versionar em `database.rules.json` e `storage.rules` e publicar via `firebase.json` (`database`/`storage`). |
