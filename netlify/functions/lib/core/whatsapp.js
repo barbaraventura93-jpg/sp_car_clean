@@ -23,36 +23,39 @@ const LANG          = process.env.WHATSAPP_TEMPLATE_LANG  || 'pt_BR';
 // A ORDEM do array `params` deve bater EXATAMENTE com {{1}},{{2}}… do
 // corpo do template cadastrado na Meta (ver PASSO A PASSO no fim do arquivo
 // e em WHATSAPP_SETUP.md).
+// Os templates da Meta usam parâmetros NOMEADOS (ex.: {{nome}}), então cada
+// parâmetro é um par [nome_da_variável, valor]. Os nomes têm que ser idênticos
+// aos usados no corpo do template cadastrado (minúsculas, underscore, sem acento).
 const TEMPLATES = {
   // Novo agendamento recebido (cliente acabou de solicitar pelo site)
   'new-booking': {
     name:   process.env.WA_TPL_NEW_BOOKING || 'agendamento_recebido',
-    params: d => [d.name, d.service || '-', d.date || '-', d.id || '-']
+    params: d => [['nome', d.name], ['servico', d.service || '-'], ['data', d.date || '-'], ['codigo', d.id || '-']]
   },
   // Reagendamento aprovado pela loja
   'reschedule-approved': {
     name:   process.env.WA_TPL_RESCHEDULE_APPROVED || 'reagendamento_aprovado',
-    params: d => [d.name, d.newDate || '-', d.id || '-']
+    params: d => [['nome', d.name], ['nova_data', d.newDate || '-'], ['codigo', d.id || '-']]
   },
   // Reagendamento recusado pela loja
   'reschedule-rejected': {
     name:   process.env.WA_TPL_RESCHEDULE_REJECTED || 'reagendamento_recusado',
-    params: d => [d.name, d.id || '-']
+    params: d => [['nome', d.name], ['codigo', d.id || '-']]
   },
   // Cancelamento confirmado
   'client-cancel': {
     name:   process.env.WA_TPL_CANCEL || 'cancelamento_confirmado',
-    params: d => [d.name, d.service || '-', d.date || '-', d.id || '-']
+    params: d => [['nome', d.name], ['servico', d.service || '-'], ['data', d.date || '-'], ['codigo', d.id || '-']]
   },
   // Correção de valor
   'price-correction': {
     name:   process.env.WA_TPL_PRICE || 'correcao_valor',
-    params: d => [d.name, d.oldPrice || '-', d.newPrice || '-', d.id || '-']
+    params: d => [['nome', d.name], ['valor_antigo', d.oldPrice || '-'], ['valor_novo', d.newPrice || '-'], ['codigo', d.id || '-']]
   },
   // Lembrete do dia anterior (enviado pela rotina reminder-check)
   'reminder': {
     name:   process.env.WA_TPL_REMINDER || 'lembrete_agendamento',
-    params: d => [d.name, d.date || '-']
+    params: d => [['nome', d.name], ['data', d.date || '-']]
   }
 };
 
@@ -112,7 +115,9 @@ async function sendWhatsAppTemplate(type, data) {
     const to = normalizePhone(data.phone);
     if (!to)                    return { ok: false, skipped: 'no_phone' };
 
-    const values = cfg.params(data).map(v => ({ type: 'text', text: String(v ?? '-') }));
+    const values = cfg.params(data).map(([pname, v]) => ({
+      type: 'text', parameter_name: pname, text: String(v ?? '-')
+    }));
     const resp = await callGraph({
       to,
       type: 'template',

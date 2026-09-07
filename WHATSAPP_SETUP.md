@@ -80,52 +80,53 @@ O número precisa poder receber SMS/ligação para o código de verificação.
 
 ## 4. Templates a cadastrar
 
-Nome do template (exato) → corpo sugerido. Você pode mudar o texto, **mas não
-a quantidade/ordem das variáveis**.
+O editor da Meta usa **variáveis nomeadas** (minúsculas, underscore, sem
+acento). Os nomes abaixo têm que ser **idênticos** aos do código — cadastre o
+corpo exatamente com essas variáveis.
 
-### `agendamento_recebido`  — variáveis: nome, serviço, data, código
+### `agendamento_recebido`  — variáveis: nome, servico, data, codigo
 ```
-Olá {{1}}! Recebemos sua solicitação de agendamento na SP Car Clean. ✨
+Olá {{nome}}! Recebemos sua solicitação de agendamento na SP Car Clean. ✨
 
-🔧 Serviço: {{2}}
-📅 Data: {{3}}
-📋 Código: {{4}}
+🔧 Serviço: {{servico}}
+📅 Data: {{data}}
+📋 Código: {{codigo}}
 
 Assim que confirmarmos, avisamos por aqui. Obrigado! 🚗
 ```
 
-### `reagendamento_aprovado`  — variáveis: nome, nova data, código
+### `reagendamento_aprovado`  — variáveis: nome, nova_data, codigo
 ```
-Boa notícia, {{1}}! Seu reagendamento foi aprovado. ✅
+Boa notícia, {{nome}}! Seu reagendamento foi aprovado. ✅
 
-🗓️ Nova data confirmada: {{2}}
-📋 Código: {{3}}
+🗓️ Nova data confirmada: {{nova_data}}
+📋 Código: {{codigo}}
 
 Aguardamos você na SP Car Clean!
 ```
 
-### `reagendamento_recusado`  — variáveis: nome, código
+### `reagendamento_recusado`  — variáveis: nome, codigo
 ```
-Olá {{1}}, infelizmente não conseguimos aprovar o reagendamento do agendamento {{2}}. A data original será mantida. Qualquer dúvida, estamos à disposição. — SP Car Clean
+Olá {{nome}}, infelizmente não conseguimos aprovar o reagendamento do agendamento {{codigo}}. A data original será mantida. Qualquer dúvida, estamos à disposição. — SP Car Clean
 ```
 
-### `cancelamento_confirmado`  — variáveis: nome, serviço, data, código
+### `cancelamento_confirmado`  — variáveis: nome, servico, data, codigo
 ```
-Olá {{1}}, confirmamos o cancelamento do seu agendamento na SP Car Clean.
+Olá {{nome}}, confirmamos o cancelamento do seu agendamento na SP Car Clean.
 
-🔧 Serviço: {{2}}
-📅 Data: {{3}}
-📋 Código: {{4}}
+🔧 Serviço: {{servico}}
+📅 Data: {{data}}
+📋 Código: {{codigo}}
 
 Se precisar, é só agendar novamente. Até breve! 🚗
 ```
 
-### `correcao_valor`  — variáveis: nome, valor antigo, valor novo, código
+### `correcao_valor`  — variáveis: nome, valor_antigo, valor_novo, codigo
 ```
-Olá {{1}}, houve um ajuste no valor do seu agendamento na SP Car Clean.
+Olá {{nome}}, houve um ajuste no valor do seu agendamento na SP Car Clean.
 
-💰 Valor: {{2}} → {{3}}
-📋 Código: {{4}}
+💰 Valor: {{valor_antigo}} → {{valor_novo}}
+📋 Código: {{codigo}}
 
 Qualquer dúvida, fale com a gente. Obrigado!
 ```
@@ -133,7 +134,7 @@ Qualquer dúvida, fale com a gente. Obrigado!
 ### `lembrete_agendamento`  — variáveis: nome, data
 Enviado automaticamente **um dia antes** pela rotina `reminder-check`.
 ```
-Olá {{1}}! 👋 Passando para lembrar do seu agendamento na SP Car Clean amanhã, {{2}}.
+Olá {{nome}}! 👋 Passando para lembrar do seu agendamento na SP Car Clean amanhã, {{data}}.
 
 Se precisar remarcar ou cancelar, é só acessar seus agendamentos no site. Te esperamos! 🚗✨
 ```
