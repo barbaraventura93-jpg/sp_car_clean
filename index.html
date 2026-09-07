@@ -4620,7 +4620,7 @@ function savePriceCorrection(id) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      type: 'price-correction', id: b.id, name: b.name,
+      type: 'price-correction', id: b.id, name: b.name, phone: b.phone,
       oldPrice: fmtMoney(current), newPrice: fmtMoney(newPrice), reason
     })
   }).catch(() => {});

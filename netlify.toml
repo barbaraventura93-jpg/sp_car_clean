@@ -14,6 +14,9 @@
 [functions."birthday-check"]
   schedule = "0 12 * * *"
 
+[functions."reminder-check"]
+  schedule = "0 13 * * *"
+
 [functions."ai-dispatcher"]
   schedule = "0 11 * * *"
 
