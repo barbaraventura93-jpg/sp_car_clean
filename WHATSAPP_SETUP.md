@@ -219,7 +219,7 @@ Para configurar na tela *WhatsApp → Configuração → Webhooks* da Meta:
 | Campo | O que colocar |
 |---|---|
 | **URL de callback** | `https://www.spcarclean.com.br/.netlify/functions/whatsapp-webhook` |
-| **Verificar token** | Uma senha que VOCÊ inventa (ex.: `spcarclean_webhook_2025`) |
+| **Verificar token** | Uma senha que VOCÊ inventa (uma string qualquer, só sua) |
 
 Passos:
 1. Defina no **Netlify** a variável `WHATSAPP_VERIFY_TOKEN` com **exatamente a
