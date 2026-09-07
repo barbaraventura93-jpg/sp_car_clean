@@ -1,0 +1,22 @@
+rules_version = '2';
+
+// Regras de segurança do Firebase Storage (versionadas — publique com
+// `firebase deploy --only storage`).
+//
+// gallery/  → fotos da galeria antes/depois (vitrine pública): leitura livre,
+//             escrita só autenticada (admin).
+// checkin/  → fotos do check-in do veículo: leitura livre hoje (o cliente vê as
+//             miniaturas em "Minha Conta" pela URL). Restringir/tokenizar essa
+//             leitura é o item 7 do backlog de segurança do README.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /gallery/{file} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /checkin/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}

@@ -393,6 +393,10 @@ const CFG = {
 
 ### Firebase Storage — regras de segurança
 
+> **Versionadas** em [`storage.rules`](storage.rules) e referenciadas no `firebase.json`.
+> Publique com `firebase deploy --only storage` (ou cole no Console). O bloco abaixo é
+> uma cópia do arquivo versionado.
+
 ```
 rules_version = '2';
 service firebase.storage {
@@ -495,8 +499,9 @@ sp-car-clean/
 ├── firebase-messaging-sw.js     # Service worker de push (Firebase Cloud Messaging)
 ├── package.json
 ├── netlify.toml                 # Config Netlify (build, publish, functions, cron)
-├── firebase.json                # Config Firebase (hosting + regras do Realtime Database)
+├── firebase.json                # Config Firebase (hosting + regras de Database e Storage)
 ├── database.rules.json          # Regras de segurança do Realtime Database (versionadas)
+├── storage.rules                # Regras de segurança do Firebase Storage (versionadas)
 ├── assets/
 │   ├── logo.png                 # Logo oficial (PNG com fundo transparente)
 │   └── portfolio/               # Imagens e vídeos do carrossel hero
@@ -582,14 +587,14 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 | # | Item | Onde | O que foi feito |
 |---|---|---|---|
 | 1 | **Webhook de pagamento sem verificação** | `netlify/functions/infinitepay-webhook.js` | O corpo do webhook deixou de ser confiável: antes de confirmar um agendamento ou ativar um gift card, a função consulta o endpoint oficial `POST payment_check` do InfinitePay (autenticado pelo nosso `handle`) e só prossegue se `paid === true`. Confere também o valor pago contra o valor esperado do pedido (`priceWithFee`/`amount`) e faz **fail-closed** — se não conseguir verificar, devolve erro para o InfinitePay reenviar em vez de confirmar às cegas. |
-| 2 | **Regra RTDB permitia sobrescrever qualquer agendamento** | `database.rules.json` (`bookings/$id`) | A escrita pública passou de `newData.exists()` (qualquer alteração) para: **criar** um agendamento, ou fazer só as alterações self-service (reagendar/cancelar/feedback). Campos de valor, pagamento e identidade (`price`, `finalPrice`, `priceWithFee`, `paidAmount`, `paymentTransactionId`, `email`, `name`, `phone`, `createdAt`, `id`) ficaram imutáveis sem login, e o `status` só pode ir para `cancelled` — nunca para `approved`/`confirmed`/`completed`. Regra validada com 15 casos (targaryen). As regras agora são **versionadas** em `database.rules.json` e referenciadas no `firebase.json` (parte do item 4). |
+| 2 | **Regra RTDB permitia sobrescrever qualquer agendamento** | `database.rules.json` (`bookings/$id`) | A escrita pública passou de `newData.exists()` (qualquer alteração) para: **criar** um agendamento, ou fazer só as alterações self-service (reagendar/cancelar/feedback). Campos de valor, pagamento e identidade (`price`, `finalPrice`, `priceWithFee`, `paidAmount`, `paymentTransactionId`, `email`, `name`, `phone`, `createdAt`, `id`) ficaram imutáveis sem login, e o `status` só pode ir para `cancelled` — nunca para `approved`/`confirmed`/`completed`. Regra validada com 15 casos (targaryen). |
+| 4 | **Regras de segurança não versionadas** | `database.rules.json`, `storage.rules`, `firebase.json` | As regras do Realtime Database e do Storage viviam só neste README (colar manual no Console, sem histórico nem revisão). Agora são **versionadas** em `database.rules.json` e `storage.rules`, referenciadas no `firebase.json`, e publicáveis com `firebase deploy --only database,storage`. (As regras do Storage foram versionadas **sem alterar o comportamento atual** — endurecer a leitura de `checkin/**` é o item 7.) |
 
 ### 🔴 Segurança — prioridade alta
 
 | # | Item | Onde | Risco | Recomendação |
 |---|---|---|---|---|
 | 3 | **Códigos de reserva curtos + leitura pública** | `bookings/$id .read: true`, código tipo `SPC-X7K2M` | Enumeração/brute force de códigos expõe nome, telefone, e-mail e bairro dos clientes. | Aumentar a entropia do código, aplicar rate-limit na consulta, ou exigir e-mail + código para leitura. |
-| 4 | **Regras de Storage ainda não versionadas** | RTDB já versionado (`database.rules.json`); falta o Storage | As regras do Storage ainda vivem só neste README (aplicação manual no Console). | Versionar em `storage.rules` e publicar via `firebase.json` (`storage`), como já foi feito para o Realtime Database. |
 
 ### 🟠 Segurança — prioridade média
 
