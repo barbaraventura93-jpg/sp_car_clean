@@ -130,6 +130,14 @@ Olá {{1}}, houve um ajuste no valor do seu agendamento na SP Car Clean.
 Qualquer dúvida, fale com a gente. Obrigado!
 ```
 
+### `lembrete_agendamento`  — variáveis: nome, data
+Enviado automaticamente **um dia antes** pela rotina `reminder-check`.
+```
+Olá {{1}}! 👋 Passando para lembrar do seu agendamento na SP Car Clean amanhã, {{2}}.
+
+Se precisar remarcar ou cancelar, é só acessar seus agendamentos no site. Te esperamos! 🚗✨
+```
+
 > Se preferir usar OUTROS nomes de template, você pode sobrescrever cada um
 > por variável de ambiente (ver tabela abaixo) sem mexer no código.
 
@@ -182,3 +190,19 @@ O código normaliza automaticamente para o padrão internacional do Brasil
   entrada nesse mapa e cadastrar o template correspondente na Meta.
 - `sendWhatsAppText()` existe para respostas de texto livre, mas só funciona
   **dentro da janela de 24h** (após o cliente ter escrito primeiro).
+
+## 8. Lembrete do dia anterior (automático)
+
+`netlify/functions/reminder-check.js` é uma **Scheduled Function** que roda
+todo dia às **10:00 BRT** (`0 13 * * *` no `netlify.toml`). Ela:
+
+- lê `/bookings` no Firebase (usa `FIREBASE_DATABASE_URL` e
+  `FIREBASE_DATABASE_SECRET`, as mesmas do `birthday-check`);
+- seleciona agendamentos com data de **amanhã** (fuso de Brasília), status
+  `approved`/`confirmed` e telefone preenchido;
+- envia o template `lembrete_agendamento` ao cliente;
+- grava `reminderSentAt` no agendamento para não repetir o envio.
+
+Não exige nenhuma variável nova além das que o WhatsApp e o Firebase já usam.
+Para desativar o lembrete, basta remover o bloco `[functions."reminder-check"]`
+do `netlify.toml`.

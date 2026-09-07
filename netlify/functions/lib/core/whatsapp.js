@@ -48,6 +48,11 @@ const TEMPLATES = {
   'price-correction': {
     name:   process.env.WA_TPL_PRICE || 'correcao_valor',
     params: d => [d.name, d.oldPrice || '-', d.newPrice || '-', d.id || '-']
+  },
+  // Lembrete do dia anterior (enviado pela rotina reminder-check)
+  'reminder': {
+    name:   process.env.WA_TPL_REMINDER || 'lembrete_agendamento',
+    params: d => [d.name, d.date || '-']
   }
 };
 
