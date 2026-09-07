@@ -122,9 +122,10 @@ Se precisar, é só agendar novamente. Até breve! 🚗
 
 ### `correcao_valor`  — variáveis: nome, valor antigo, valor novo, código
 ```
-Olá {{1}}, houve um ajuste no valor do seu agendamento {{4}} na SP Car Clean.
+Olá {{1}}, houve um ajuste no valor do seu agendamento na SP Car Clean.
 
 💰 Valor: {{2}} → {{3}}
+📋 Código: {{4}}
 
 Qualquer dúvida, fale com a gente. Obrigado!
 ```
