@@ -206,3 +206,27 @@ todo dia às **10:00 BRT** (`0 13 * * *` no `netlify.toml`). Ela:
 Não exige nenhuma variável nova além das que o WhatsApp e o Firebase já usam.
 Para desativar o lembrete, basta remover o bloco `[functions."reminder-check"]`
 do `netlify.toml`.
+
+## 9. Webhook — receber respostas dos clientes (opcional)
+
+**Para apenas ENVIAR mensagens (confirmações/lembretes), o webhook NÃO é
+necessário.** Ele serve para o caminho inverso: receber as mensagens que o
+cliente te manda e os status de entrega. `netlify/functions/whatsapp-webhook.js`
+já trata isso e encaminha as mensagens recebidas para o seu Telegram.
+
+Para configurar na tela *WhatsApp → Configuração → Webhooks* da Meta:
+
+| Campo | O que colocar |
+|---|---|
+| **URL de callback** | `https://www.spcarclean.com.br/.netlify/functions/whatsapp-webhook` |
+| **Verificar token** | Uma senha que VOCÊ inventa (ex.: `spcarclean_webhook_2025`) |
+
+Passos:
+1. Defina no **Netlify** a variável `WHATSAPP_VERIFY_TOKEN` com **exatamente a
+   mesma string** que você vai digitar no campo "Verificar token" → redeploy.
+2. Na Meta, preencha a URL de callback e o token acima e clique em
+   **Verificar e salvar** (a Meta faz um GET de verificação no endpoint).
+3. Em **Campos do webhook**, assine o campo **`messages`**.
+
+> A Meta só entrega webhooks de produção depois que o app é **publicado**.
+> Antes disso, dá para testar pela própria tela ("Enviar webhook de teste").
