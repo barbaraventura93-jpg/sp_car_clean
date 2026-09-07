@@ -10,6 +10,10 @@
 # Isentamos apenas essas chaves públicas — segredos de verdade continuam protegidos.
 [build.environment]
   SECRETS_SCAN_OMIT_KEYS = "FIREBASE_API_KEY,FIREBASE_VAPID_KEY,EMAILJS_SERVICE_ID,EMAILJS_PUBLIC_KEY"
+  # Docs de setup mencionam nomes de variáveis e exemplos; não são publicados
+  # no site (o build.js não os copia para dist/). Isentamos do secret scanning
+  # para exemplos de configuração não quebrarem o build.
+  SECRETS_SCAN_OMIT_PATHS = "WHATSAPP_SETUP.md,DEPLOY_GUIDE.md,INSTAGRAM_SETUP.md,README.md,PORTFOLIO_README.md"
 
 [functions."birthday-check"]
   schedule = "0 12 * * *"
