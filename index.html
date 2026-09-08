@@ -7587,6 +7587,18 @@ function renderAdminConfig() {
       <button class="btn-primary" onclick="saveConfig()">Salvar Configurações</button>
     </div>
     <div class="admin-panel" style="max-width:520px">
+      <h3>📲 Integração WhatsApp Business</h3>
+      <p style="font-size:.82rem;color:var(--muted);line-height:1.5;margin-bottom:1rem">
+        Conecte o número dedicado da loja à WhatsApp Cloud API da Meta para envio e
+        recebimento automatizado de mensagens. O login é feito pela própria Meta
+        (Embedded Signup) e o token de acesso é guardado com segurança no servidor —
+        ele nunca fica exposto aqui no painel.
+      </p>
+      <button class="btn-primary" id="waConnectBtn" onclick="connectWhatsAppBusiness()">Conectar WhatsApp Business</button>
+      <div id="waConnectMsg" style="font-size:.78rem;margin-top:.8rem;line-height:1.5;display:none"></div>
+    </div>
+    <script>ensureFacebookSDK();<\/script>
+    <div class="admin-panel" style="max-width:520px">
       <h3>Segurança</h3>
       <div class="form-row full"><div class="form-group"><label>Nova senha de administrador</label><input id="cfgNewPw" type="password" placeholder="Mínimo 8 caracteres"/></div></div>
       <div class="form-row full"><div class="form-group"><label>Confirmar senha</label><input id="cfgConfPw" type="password" placeholder="Repita a nova senha"/></div></div>
@@ -7635,6 +7647,95 @@ function renderAdminConfig() {
       &nbsp;<button class="btn-ghost" style="font-size:.78rem" onclick="migrateBookingsToUid()">🔗 Vincular agendamentos a contas</button>
       &nbsp;<button class="btn-reject" style="font-size:.78rem" onclick="clearAllData()">🗑️ Limpar Todos os Dados</button>
     </div>`;
+}
+
+// ============================================================
+// WhatsApp Business — Embedded Signup (Facebook Login for Business)
+// ============================================================
+// Só é usado na área admin (o botão só existe no painel de Configurações).
+// Fluxo: carrega o SDK do Facebook → FB.login com config_id/response_type=code
+// → captura response.authResponse.code → envia ao backend
+// (whatsapp-exchange-token) que troca o code por token e o salva no Firebase.
+// App ID e Configuration ID são PÚBLICOS; o App Secret fica só no servidor.
+const FB_APP_ID_WA        = '1621228889417536';
+const FB_CONFIG_ID_WA     = '1532766208890900';
+const FB_GRAPH_VERSION_WA = 'v21.0';
+
+// Carrega o SDK do Facebook uma única vez, de forma assíncrona, e o inicializa.
+function ensureFacebookSDK() {
+  if (window.__waSdkRequested) return;
+  window.__waSdkRequested = true;
+
+  window.fbAsyncInit = function () {
+    try {
+      FB.init({ appId: FB_APP_ID_WA, version: FB_GRAPH_VERSION_WA, xfbml: true });
+    } catch (e) { console.error('FB.init falhou:', e); }
+  };
+
+  if (document.getElementById('facebook-jssdk')) return;
+  const js = document.createElement('script');
+  js.id = 'facebook-jssdk';
+  js.async = true;
+  js.defer = true;
+  js.crossOrigin = 'anonymous';
+  js.src = 'https://connect.facebook.net/pt_BR/sdk.js';
+  document.head.appendChild(js);
+}
+
+function waConnectMsg(text, kind) {
+  const el = document.getElementById('waConnectMsg');
+  if (!el) return;
+  const color = kind === 'error' ? 'var(--red)' : kind === 'ok' ? 'var(--green)' : 'var(--muted)';
+  el.style.color = color;
+  el.style.display = 'block';
+  el.textContent = text;
+}
+
+// Dispara o Embedded Signup e trata o retorno.
+function connectWhatsAppBusiness() {
+  if (typeof FB === 'undefined' || !FB.login) {
+    ensureFacebookSDK();
+    waConnectMsg('Carregando o login da Meta… tente novamente em alguns segundos.', 'info');
+    return;
+  }
+
+  const btn = document.getElementById('waConnectBtn');
+  if (btn) btn.disabled = true;
+  waConnectMsg('Abrindo o login da Meta…', 'info');
+
+  FB.login(function (response) {
+    const code = response && response.authResponse && response.authResponse.code;
+    if (!code) {
+      // Usuário cancelou ou fechou a janela sem concluir.
+      waConnectMsg('Conexão cancelada. Nenhuma alteração foi feita — você pode tentar de novo quando quiser.', 'error');
+      if (btn) btn.disabled = false;
+      return;
+    }
+
+    waConnectMsg('Finalizando a conexão com o servidor…', 'info');
+    fetch('/.netlify/functions/whatsapp-exchange-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    })
+      .then(r => r.json().catch(() => ({})))
+      .then(data => {
+        if (data && data.ok) {
+          waConnectMsg('✅ WhatsApp Business conectado com sucesso! O token foi salvo com segurança no servidor.', 'ok');
+        } else {
+          waConnectMsg('❌ Não foi possível concluir a conexão: ' + ((data && data.error) || 'erro desconhecido') + '. Tente novamente.', 'error');
+        }
+      })
+      .catch(() => {
+        waConnectMsg('❌ Erro de rede ao finalizar a conexão. Verifique a internet e tente novamente.', 'error');
+      })
+      .finally(() => { if (btn) btn.disabled = false; });
+  }, {
+    config_id: FB_CONFIG_ID_WA,
+    response_type: 'code',
+    override_default_response_type: true,
+    extras: { sessionInfoVersion: '3' }
+  });
 }
 
 function saveLoyaltyConfig() {

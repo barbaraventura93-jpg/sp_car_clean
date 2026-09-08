@@ -9,7 +9,10 @@
 # também no plano gratuito) marcaria isso como falso-positivo e quebraria o deploy.
 # Isentamos apenas essas chaves públicas — segredos de verdade continuam protegidos.
 [build.environment]
-  SECRETS_SCAN_OMIT_KEYS = "FIREBASE_API_KEY,FIREBASE_VAPID_KEY,EMAILJS_SERVICE_ID,EMAILJS_PUBLIC_KEY"
+  # FB_APP_ID e WHATSAPP_CONFIG_ID são identificadores PÚBLICOS do Embedded
+  # Signup (aparecem de propósito no HTML do frontend). O App Secret e o access
+  # token NÃO estão aqui — continuam protegidos e só existem no servidor.
+  SECRETS_SCAN_OMIT_KEYS = "FIREBASE_API_KEY,FIREBASE_VAPID_KEY,EMAILJS_SERVICE_ID,EMAILJS_PUBLIC_KEY,FB_APP_ID,WHATSAPP_CONFIG_ID"
   # Docs de setup mencionam nomes de variáveis e exemplos; não são publicados
   # no site (o build.js não os copia para dist/). Isentamos do secret scanning
   # para exemplos de configuração não quebrarem o build.

@@ -231,3 +231,56 @@ Passos:
 
 > A Meta só entrega webhooks de produção depois que o app é **publicado**.
 > Antes disso, dá para testar pela própria tela ("Enviar webhook de teste").
+
+Além de encaminhar para o Telegram, o webhook **persiste** cada mensagem
+recebida no Firebase Realtime Database em
+`whatsappMessages/{waId}/{messageId}`. Quando o telefone bate com um cliente
+já cadastrado (`clientProfiles`), o registro guarda também `clientUid` e o
+nome. Status de entrega/leitura vão para `whatsappStatuses/{messageId}`. Esse
+nó `whatsappMessages` é privado (nunca lido no client público).
+
+Assine, além de `messages`, os campos **`message_status`** (entrega/leitura) e
+**`account_update`** (avisa se o número for desconectado/reconectado no futuro).
+
+---
+
+## 10. Embedded Signup — conectar o número pelo painel admin
+
+Em vez de copiar tokens manualmente (passo 4), você pode conectar o número
+direto pelo painel, usando o **Embedded Signup** (Facebook Login for Business)
+da Meta.
+
+### Como usar
+1. Abra o painel admin → aba **⚙️ Configurações** → seção
+   **📲 Integração WhatsApp Business**.
+2. Clique em **Conectar WhatsApp Business**. Uma janela da Meta abre para
+   autenticar, escolher o negócio e o número.
+3. Ao concluir, a Meta devolve um `code`; o site o envia para a função
+   `whatsapp-exchange-token`, que o troca por um access token **no servidor** e
+   o salva no Firebase em `integrations/whatsapp/accessToken`. O token **nunca**
+   aparece no frontend nem em respostas ao navegador.
+
+### Credenciais do Embedded Signup (já existentes)
+| Item | Valor |
+|---|---|
+| App ID | `1621228889417536` |
+| Configuration ID (template "60 Expiration Token") | `1532766208890900` |
+| Business ID | `2339889886416155` |
+| Domínio do site | `www.spcarclean.com.br` |
+
+> O domínio **precisa estar liberado** em *Facebook Login → Configurações →
+> "Domínios permitidos para o SDK do JavaScript"* nas configurações do app,
+> senão o login falha com erro de domínio.
+
+### Variáveis de ambiente adicionais (Netlify)
+| Variável | Obrigatória | Valor |
+|---|---|---|
+| `FB_APP_ID` | ✅ | `1621228889417536` (público) |
+| `FB_APP_SECRET` | ✅ | App Secret — *Configurações Básicas* do app no developers.facebook.com. **SECRETO**, nunca commitar. |
+| `WHATSAPP_VERIFY_TOKEN` | ✅ | String arbitrária, a mesma usada no webhook (ex.: `spcarclean_wh_2026_x7k9`). |
+| `WHATSAPP_CONFIG_ID` | ➖ | `1532766208890900` (público, referência) |
+
+> `FB_APP_ID` e `WHATSAPP_CONFIG_ID` são identificadores públicos e aparecem no
+> HTML do frontend de propósito — por isso estão isentos do secret scanning do
+> Netlify (`netlify.toml`). **`FB_APP_SECRET` e o access token NÃO** — eles só
+> existem no servidor.
