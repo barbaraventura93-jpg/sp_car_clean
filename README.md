@@ -164,6 +164,20 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
   - Círculos de raio 5 km / 10 km / 15 km a partir do centro de São Paulo
   - Ranking de bairros com barra de participação percentual
 
+### Notificações automáticas por WhatsApp (Cloud API)
+Além do link `wa.me` manual, a loja envia **mensagens oficiais pelo WhatsApp Cloud API
+da Meta**, saindo do número comercial, via `notify-booking.js` (helper `lib/core/whatsapp.js`).
+
+- **Mensagens de template ao cliente** a cada evento: novo agendamento, reagendamento
+  aprovado/recusado, cancelamento e correção de valor (best-effort — não bloqueia o fluxo)
+- **Lembrete automático D-1**: `reminder-check.js` (Netlify Scheduled Function, 10h00 BRT)
+  varre os agendamentos de amanhã com status ativo e dispara o template `lembrete_agendamento`,
+  marcando `reminderSentAt` para não repetir
+- **Webhook de entrada** (`whatsapp-webhook.js`): responde o handshake de verificação da Meta
+  e encaminha as mensagens recebidas dos clientes para o **Telegram** do admin
+- Nomes dos templates e idioma são configuráveis por variáveis de ambiente (`WA_TPL_*`,
+  `WHATSAPP_TEMPLATE_LANG`). Passo a passo completo em **[`WHATSAPP_SETUP.md`](WHATSAPP_SETUP.md)**
+
 ### Central de IA (Admin + Site)
 Camada de agentes de IA (Claude / Anthropic) orquestrada pela Netlify Function `ai.js`
 (gatilho HTTP) e pela Scheduled Function `ai-dispatcher.js` (gatilho cron diário). Cada
@@ -221,7 +235,7 @@ auto-desliga ao estourar o teto (avisa via Telegram).
 | Domínio | www.spcarclean.com.br (Registro.br + Netlify DNS) |
 | Pagamento | InfinitePay (PIX + cartão) via Netlify Function |
 | Inteligência Artificial | Claude API (Anthropic) via Netlify Functions (`ai` + `ai-dispatcher`) |
-| Notificações | Netlify Functions + EmailJS + Telegram Bot API |
+| Notificações | Netlify Functions + EmailJS + Telegram Bot API + WhatsApp Cloud API (Meta) |
 | E-mail automático de aniversário | Netlify Scheduled Function (cron diário) + EmailJS REST API |
 | Mapa | Leaflet.js + OpenStreetMap + Nominatim (geocoding) |
 | Fontes | Google Fonts (Montserrat + Open Sans) |
@@ -270,6 +284,12 @@ const CFG = {
 | `EMAILJS_GIFT_TEMPLATE` | ID do template de e-mail de ativação de gift card (opcional; usa `template_update` como fallback) |
 | `TELEGRAM_BOT_TOKEN` | Token do bot de notificações via Telegram. **Secreto** |
 | `TELEGRAM_CHAT_ID` | ID do chat para receber as notificações |
+| `WHATSAPP_TOKEN` | Token de acesso do WhatsApp Cloud API (Meta). **Secreto** — ver [`WHATSAPP_SETUP.md`](WHATSAPP_SETUP.md) |
+| `WHATSAPP_PHONE_NUMBER_ID` | ID do número comercial do WhatsApp Cloud API |
+| `WHATSAPP_VERIFY_TOKEN` | String que você inventa para o handshake do webhook da Meta. **Secreto** |
+| `WHATSAPP_GRAPH_VERSION` | Versão da Graph API (opcional; ex.: `v21.0`) |
+| `WHATSAPP_TEMPLATE_LANG` | Idioma dos templates (opcional; ex.: `pt_BR`) |
+| `WA_TPL_NEW_BOOKING`, `WA_TPL_RESCHEDULE_APPROVED`, `WA_TPL_RESCHEDULE_REJECTED`, `WA_TPL_CANCEL`, `WA_TPL_PRICE`, `WA_TPL_REMINDER` | Nomes dos templates aprovados na Meta para cada evento (opcionais; têm padrão) |
 | `INFINITEPAY_HANDLE` | InfiniteTag (usuário InfinitePay) para geração de links de pagamento |
 | `INFINITEPAY_FEE_RATE` | Taxa a embutir no preço (padrão: `0.0315` = 3,15% crédito à vista) |
 | `ANTHROPIC_API_KEY` | Chave da API Claude (Anthropic) — usada server-side pelos agentes da Central de IA. **Secreto** |
@@ -281,6 +301,9 @@ const CFG = {
 > exclusivamente dentro das Netlify Functions. Apenas as chaves realmente públicas
 > (`FIREBASE_API_KEY`, `FIREBASE_VAPID_KEY`, `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`)
 > são injetadas no HTML — por isso constam no `SECRETS_SCAN_OMIT_KEYS` do `netlify.toml`.
+> Os arquivos de documentação (`WHATSAPP_SETUP.md`, `DEPLOY_GUIDE.md`, etc.) citam nomes
+> de variáveis em exemplos e **não** são publicados no site, então ficam em
+> `SECRETS_SCAN_OMIT_PATHS` para não quebrarem o build.
 
 ### Firebase Realtime Database — regras de segurança
 
@@ -511,18 +534,23 @@ sp-car-clean/
 │   └── lib/syncClient.js
 └── netlify/
     └── functions/
-        ├── notify-booking.js        # Notifica o admin (Telegram + push FCM)
+        ├── notify-booking.js        # Notifica admin (Telegram + push FCM) e cliente (WhatsApp)
         ├── create-payment.js        # Gera link de pagamento InfinitePay (agendamento)
         ├── create-gift-payment.js   # Gera link de pagamento InfinitePay (gift card)
         ├── infinitepay-webhook.js   # Confirma pagamento/ativa gift card e atualiza Firebase
+        ├── whatsapp-webhook.js      # Webhook do WhatsApp Cloud API (verificação + mensagens → Telegram)
         ├── birthday-check.js        # Cron diário: detecta aniversariantes, cria cupom e envia e-mail
+        ├── reminder-check.js        # Cron diário: lembrete D-1 por WhatsApp ao cliente
         ├── ai.js                    # Orquestrador HTTP dos agentes de IA (admin + públicos)
         ├── ai-dispatcher.js         # Cron diário: dispara agentes de IA agendados
         └── lib/
             ├── fcm.js               # Helper de envio de push (OAuth2 + FCM HTTP v1)
             ├── agents/              # Agentes de IA (concierge, relatorio, upsell, orcamento, …)
-            └── core/                # Núcleo dos agentes (claude, firebase, telegram, email, config, logger)
+            └── core/                # Núcleo (claude, firebase, telegram, email, whatsapp, config, logger)
 ```
+
+> Docs de setup complementares na raiz: **`WHATSAPP_SETUP.md`** (WhatsApp Cloud API),
+> `DEPLOY_GUIDE.md`, `INSTAGRAM_SETUP.md`.
 
 ---
 
@@ -574,6 +602,9 @@ sp-car-clean/
 | Gift cards (compra online + ativação por webhook) | ✅ |
 | Avaliações do cliente + depoimentos aprovados na vitrine | ✅ |
 | Controle de estoque/insumos com previsão de reposição (IA) | ✅ |
+| Notificações automáticas ao cliente por WhatsApp Cloud API | ✅ |
+| Lembrete automático D-1 do agendamento por WhatsApp | ✅ |
+| Webhook de WhatsApp (mensagens do cliente → Telegram do admin) | ✅ |
 
 ---
 
