@@ -1,21 +1,30 @@
-// Netlify Scheduled Function — lembrete do dia anterior via WhatsApp.
+// Netlify Scheduled Function — lembrete do dia anterior.
 // Roda todo dia às 10:00 BRT (13:00 UTC). Config em netlify.toml:
 //   [functions."reminder-check"] schedule = "0 13 * * *"
 //
 // Varre /bookings no Firebase, encontra agendamentos marcados para AMANHÃ
-// (horário de Brasília) com status ativo e telefone, e dispara o template
-// `lembrete_agendamento` ao cliente. Marca `reminderSentAt` para não enviar
-// o mesmo lembrete duas vezes.
+// (horário de Brasília) com status ativo e avisa o cliente por:
+//   - E-mail (EmailJS), quando o agendamento tem e-mail; e
+//   - WhatsApp (template `lembrete_agendamento`), quando configurado e há telefone.
+// Marca `reminderSentAt` para não enviar o mesmo lembrete duas vezes.
 //
-// Reaproveita as variáveis já existentes:
-//   FIREBASE_DATABASE_URL, FIREBASE_DATABASE_SECRET (como o birthday-check)
-//   WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID (como o notify-booking)
+// Reaproveita variáveis já existentes:
+//   FIREBASE_DATABASE_URL, FIREBASE_DATABASE_SECRET   (como o birthday-check)
+//   EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY (como o birthday-check)
+//   WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID          (como o notify-booking)
 
-const { dbGet, dbPatch }        = require('./lib/core/firebase');
-const { sendWhatsAppTemplate, isConfigured } = require('./lib/core/whatsapp');
+const { dbGet, dbPatch } = require('./lib/core/firebase');
+const { sendWhatsAppTemplate, isConfigured: whatsappConfigured } = require('./lib/core/whatsapp');
+const { sendEmail } = require('./lib/core/email');
 
 // Status que ainda merecem lembrete (agendamento de pé).
 const ACTIVE_STATUSES = ['approved', 'confirmed'];
+
+const UPDATE_TEMPLATE = process.env.EMAILJS_UPDATE_TEMPLATE || 'template_update';
+
+function emailConfigured() {
+  return Boolean(process.env.EMAILJS_SERVICE_ID && process.env.EMAILJS_PUBLIC_KEY);
+}
 
 // Data de "amanhã" no fuso de Brasília (UTC-3, sem horário de verão desde 2019).
 function tomorrowBRT() {
@@ -30,10 +39,31 @@ function fmtBR(ymd) {
   return `${d}/${m}/${y}`;
 }
 
+async function sendReminderEmail(b, dataFmt) {
+  const firstName = (b.name || 'Cliente').split(' ')[0];
+  await sendEmail({
+    templateId: UPDATE_TEMPLATE,
+    params: {
+      to_email:   b.email,
+      to_name:    b.name || 'Cliente',
+      booking_id: b.id,
+      titulo:     '⏰ Lembrete do seu agendamento — SP Car Clean',
+      mensagem:
+        `Olá ${firstName}! ⏰\n\n` +
+        `Passando para lembrar que você tem um agendamento na SP Car Clean amanhã, ${dataFmt}.\n\n` +
+        `📋 Código: ${b.id}\n\n` +
+        `Se precisar remarcar ou cancelar, acesse "Meus agendamentos" no site. Até amanhã! 🚗✨\n\n` +
+        `— Equipe SP Car Clean`
+    }
+  });
+}
+
 exports.handler = async () => {
-  if (!isConfigured()) {
-    console.log('reminder-check: WhatsApp não configurado — nada a enviar');
-    return { statusCode: 200, body: JSON.stringify({ ok: true, skipped: 'whatsapp_not_configured' }) };
+  const waReady    = whatsappConfigured();
+  const mailReady  = emailConfigured();
+  if (!waReady && !mailReady) {
+    console.log('reminder-check: nem WhatsApp nem e-mail configurados — nada a enviar');
+    return { statusCode: 200, body: JSON.stringify({ ok: true, skipped: 'no_channel_configured' }) };
   }
 
   const target = tomorrowBRT();
@@ -56,24 +86,33 @@ exports.handler = async () => {
   for (const [key, b] of Object.entries(bookings)) {
     if (!b || typeof b !== 'object') continue;
     const bookingDate = (b.startDate || b.date || '').slice(0, 10);
-    if (bookingDate !== target)                 { continue; }
-    if (!ACTIVE_STATUSES.includes(b.status))    { continue; }
-    if (!b.phone)                               { skipped++; continue; }
-    if (b.reminderSentAt === target)            { skipped++; continue; } // já lembrado
+    if (bookingDate !== target)              { continue; }
+    if (!ACTIVE_STATUSES.includes(b.status)) { continue; }
+    if (b.reminderSentAt === target)         { skipped++; continue; } // já lembrado
 
-    const res = await sendWhatsAppTemplate('reminder', {
-      name:  b.name || 'Cliente',
-      phone: b.phone,
-      date:  fmtBR(bookingDate)
-    });
+    const dataFmt = fmtBR(bookingDate);
+    let anySent = false;
 
-    if (res.ok) {
+    // WhatsApp (best-effort, só se configurado e houver telefone).
+    if (waReady && b.phone) {
+      const res = await sendWhatsAppTemplate('reminder', { name: b.name || 'Cliente', phone: b.phone, date: dataFmt });
+      if (res.ok) anySent = true;
+      else errors.push({ id: b.id || key, canal: 'whatsapp', reason: res.error || res.skipped });
+    }
+
+    // E-mail (best-effort, só se configurado e houver e-mail).
+    if (mailReady && b.email) {
+      try { await sendReminderEmail(b, dataFmt); anySent = true; }
+      catch (e) { errors.push({ id: b.id || key, canal: 'email', reason: e.message }); }
+    }
+
+    if (anySent) {
       sent++;
       // Marca para dedupe (best-effort; não falha o fluxo se o patch der erro).
       try { await dbPatch(`/bookings/${b.id || key}`, { reminderSentAt: target }); }
       catch (e) { console.warn('reminder-check: falha ao marcar reminderSentAt:', e.message); }
-    } else {
-      errors.push({ id: b.id || key, reason: res.error || res.skipped });
+    } else if (!b.phone && !b.email) {
+      skipped++;
     }
   }
 
