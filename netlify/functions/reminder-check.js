@@ -53,7 +53,10 @@ async function sendReminderEmail(b, dataFmt) {
         `Passando para lembrar que você tem um agendamento na SP Car Clean amanhã, ${dataFmt}.\n\n` +
         `📋 Código: ${b.id}\n\n` +
         `Se precisar remarcar ou cancelar, acesse "Meus agendamentos" no site. Até amanhã! 🚗✨\n\n` +
-        `— Equipe SP Car Clean`
+        `— — — — —\n` +
+        `📍 Rua São José, 301 — Parque Santo Antônio, Guarulhos-SP\n` +
+        `🕗 Entrada 08:00 · Retirada até 18:00\n` +
+        `📱 WhatsApp: (11) 92669-7474`
     }
   });
 }
