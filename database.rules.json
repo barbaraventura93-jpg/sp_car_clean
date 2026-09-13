@@ -4,7 +4,7 @@
       ".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
       ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
       "$id": {
-        ".read": true,
+        ".read": "auth != null && (auth.token.email == 'spcarclean0@gmail.com' || data.child('clientUid').val() == auth.uid || data.child('email').val() == auth.token.email)",
         ".write": "(!data.exists() && newData.exists()) || (data.exists() && newData.exists() && newData.child('id').val() == data.child('id').val() && newData.child('createdAt').val() == data.child('createdAt').val() && newData.child('email').val() == data.child('email').val() && newData.child('name').val() == data.child('name').val() && newData.child('phone').val() == data.child('phone').val() && newData.child('price').val() == data.child('price').val() && newData.child('finalPrice').val() == data.child('finalPrice').val() && newData.child('priceWithFee').val() == data.child('priceWithFee').val() && newData.child('paidAmount').val() == data.child('paidAmount').val() && newData.child('paymentTransactionId').val() == data.child('paymentTransactionId').val() && newData.child('paymentConfirmedAt').val() == data.child('paymentConfirmedAt').val() && (newData.child('status').val() == data.child('status').val() || newData.child('status').val() == 'cancelled'))"
       }
     },
