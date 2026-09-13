@@ -2469,6 +2469,22 @@ async function submitBooking() {
   // Auto-upsert cliente no cache local (funciona mesmo sem conta criada)
   upsertClient(email, { email, name, phone, car, plate, bairro, cep, obs, bookingId: id });
 
+  // Confirmação "solicitação recebida" por e-mail ao cliente (best-effort)
+  if (email) {
+    sendEmail('template_update', {
+      to_email: email, to_name: name, booking_id: id,
+      titulo:   '📩 Recebemos sua solicitação — SP Car Clean',
+      mensagem: `Olá ${name.split(' ')[0]}! 🎉\n\n` +
+                `Recebemos sua solicitação de agendamento e ela já está em análise.\n\n` +
+                `🔧 Serviço: ${bkLabel(b)}\n` +
+                `📅 Data solicitada: ${fmtDate(booking.date)}\n` +
+                `💰 Valor estimado: ${fmtMoney(b.price)}\n` +
+                `📋 Código: ${id}\n\n` +
+                `Assim que confirmarmos, avisamos por aqui por e-mail. Você também pode acompanhar pelo código no site.\n\n` +
+                `Obrigado pela preferência! 🚗✨\n\n— Equipe SP Car Clean`,
+    });
+  }
+
   // Notificar negócio via Netlify Function
   fetch('/.netlify/functions/notify-booking', {
     method: 'POST',
