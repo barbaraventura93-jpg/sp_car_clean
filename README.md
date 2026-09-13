@@ -131,6 +131,18 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - Botão **WhatsApp** com mensagem de reativação pré-formatada
 - Botão para **gerar cupom personalizado** por cliente inativo direto do painel
 
+### Indique um Amigo (Referral)
+- Ao **concluir um serviço**, o cliente é convidado a indicar um amigo na tela de pesquisa de satisfação (e também em **Minha Conta**, para quem já tem atendimento concluído)
+- Formulário coleta **nome, e-mail e telefone** do amigo; o benefício fica **explícito na tela e no e-mail** de indicação
+- O **amigo indicado** recebe automaticamente por e-mail um **cupom de desconto** (padrão 15%) nominal ao seu e-mail, válido no primeiro serviço
+- O amigo entra na base de clientes numa categoria **🌱 Oportunidade** (visível na aba **Clientes**, com origem "indicado por…")
+- Quando o amigo **fecha o primeiro serviço** (booking `confirmed`/`completed`), quem indicou recebe **automaticamente** um **cupom de agradecimento** (padrão 15%) por e-mail
+- Aba **🤝 Indicações** no painel admin: lista todas as indicações, status (aguardando/convertida), cupons gerados e **taxa de conversão**
+- A criação do cupom do amigo + registro da indicação + e-mails rodam **server-side** na Netlify Function `create-referral` (usa o `FIREBASE_DATABASE_SECRET`, como o `birthday-check`), sem depender das regras de escrita do cliente
+- Percentuais e validade configuráveis por variáveis de ambiente: `REFERRAL_FRIEND_PCT`, `REFERRAL_REFERRER_PCT`, `REFERRAL_VALID_DAYS` (padrões: 15 / 15 / 90 dias)
+
+> **Regras do Realtime Database.** O nó `/referrals` deve ser **legível apenas pelo admin** (contém dados de contato de terceiros). O front carrega `/referrals` só no painel administrativo; a escrita é feita pela função server-side com o token do banco.
+
 ### Galeria Antes/Depois (Admin)
 - Aba dedicada **📸 Galeria** no painel administrativo
 - Upload de foto **ANTES** + foto **DEPOIS** diretamente pelo admin (máx 5 MB cada)
@@ -233,6 +245,9 @@ const CFG = {
 | `INFINITEPAY_FEE_RATE` | Taxa a embutir no preço (padrão: `0.0315` = 3,15% crédito à vista) |
 | `FIREBASE_VAPID_KEY` | Chave pública Web Push (certificado do Firebase Cloud Messaging) — injetada no build; habilita o registro de push no celular do admin |
 | `FCM_SERVICE_ACCOUNT` | JSON (ou base64 do JSON) da service account do Firebase — usado **apenas server-side** pela função `notify-booking` para enviar os pushes. **Secreto: nunca commitar** |
+| `REFERRAL_FRIEND_PCT` | (Opcional) % de desconto do cupom do amigo indicado no programa Indique um Amigo (padrão: `15`) |
+| `REFERRAL_REFERRER_PCT` | (Opcional) % de desconto do cupom de recompensa para quem indicou (padrão: `15`) |
+| `REFERRAL_VALID_DAYS` | (Opcional) Validade em dias dos cupons de indicação (padrão: `90`) |
 
 ### Firebase Realtime Database — regras de segurança
 

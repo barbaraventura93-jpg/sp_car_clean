@@ -626,6 +626,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 .client-row-spent{font-family:'Montserrat',sans-serif;font-size:.92rem;font-weight:800;color:var(--blue)}
 .client-row-visits{font-size:.72rem;color:var(--muted)}
 .vip-badge{background:linear-gradient(135deg,#F59E0B,#FBBF24);color:#1a0a00;font-family:'Montserrat',sans-serif;font-size:.58rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:.18rem .5rem;border-radius:50px;white-space:nowrap}
+.opp-badge{background:linear-gradient(135deg,#10B981,#48C9F5);color:#04121a;font-family:'Montserrat',sans-serif;font-size:.58rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:.18rem .5rem;border-radius:50px;white-space:nowrap;margin-left:.3rem}
 .client-profile-back{display:inline-flex;align-items:center;gap:.4rem;color:var(--accent);cursor:pointer;font-size:.78rem;font-weight:700;margin-bottom:1.2rem;background:none;border:none;font-family:'Montserrat',sans-serif;letter-spacing:.06em;text-transform:uppercase;padding:.2rem 0;transition:color .2s}
 .client-profile-back:hover{color:var(--white)}
 .client-profile-header{display:flex;align-items:center;gap:1.2rem;margin-bottom:1.5rem;flex-wrap:wrap}
@@ -1216,7 +1217,68 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <div style="font-size:3rem;margin-bottom:.8rem">🎉</div>
       <h3 style="margin-bottom:.5rem">Obrigado pelo feedback!</h3>
       <p style="color:var(--muted);font-size:.9rem">Sua avaliação foi recebida.<br/>Agradecemos a confiança!</p>
-      <button class="btn-primary" style="margin-top:1.5rem" onclick="closeModal('surveyModal')">Fechar</button>
+      <div style="margin-top:1.6rem;background:linear-gradient(135deg,rgba(72,201,245,.1),rgba(16,185,129,.08));border:1px solid rgba(72,201,245,.3);border-radius:12px;padding:1.2rem">
+        <div style="font-size:1.8rem;margin-bottom:.3rem">🤝🎁</div>
+        <h4 style="font-family:Montserrat,sans-serif;font-size:.95rem;margin-bottom:.4rem">Indique um amigo e vocês dois ganham!</h4>
+        <p style="color:var(--muted);font-size:.82rem;line-height:1.5;margin-bottom:1rem">
+          Seu amigo ganha um <strong style="color:var(--accent)">cupom de desconto</strong> no primeiro serviço.
+          Quando ele fechar o serviço, <strong style="color:var(--accent)">você também ganha um cupom</strong> de agradecimento. 🚗✨
+        </p>
+        <button class="btn-primary btn-full" onclick="openReferralModal('survey')">🎁 Indicar um amigo agora</button>
+      </div>
+      <button class="btn-ghost" style="margin-top:1rem;font-size:.82rem" onclick="closeModal('surveyModal')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================
+     INDIQUE UM AMIGO — solicitação de indicação
+=================================================== -->
+<div id="referralModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-hdr">
+      <div>
+        <h3>🤝 Indique um amigo</h3>
+        <div class="sub">Vocês dois saem ganhando</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('referralModal')">✕</button>
+    </div>
+    <div class="modal-body" id="referralBody">
+      <div style="background:linear-gradient(135deg,rgba(72,201,245,.1),rgba(16,185,129,.08));border:1px solid rgba(72,201,245,.25);border-radius:10px;padding:1rem 1.1rem;margin-bottom:1.2rem">
+        <div style="font-family:Montserrat,sans-serif;font-size:.82rem;font-weight:700;margin-bottom:.5rem">Como funciona o benefício</div>
+        <ul style="margin:0;padding-left:1.1rem;color:var(--muted);font-size:.82rem;line-height:1.6">
+          <li>Seu amigo recebe por e-mail um <strong style="color:var(--accent)" id="refFriendPctTxt">cupom de desconto</strong> para o primeiro serviço.</li>
+          <li>Assim que ele <strong>fechar o serviço</strong>, você recebe um <strong style="color:var(--accent)" id="refReferrerPctTxt">cupom de agradecimento</strong> para usar quando quiser.</li>
+          <li>Sem limite: indique quantos amigos quiser. 😉</li>
+        </ul>
+      </div>
+      <div class="form-group" style="margin-bottom:.9rem">
+        <label>Seu nome</label>
+        <input id="refFromName" type="text" placeholder="Como você quer ser identificado"/>
+      </div>
+      <div class="form-row" style="gap:.8rem">
+        <div class="form-group"><label>Seu e-mail</label><input id="refFromEmail" type="email" placeholder="para enviar seu cupom"/></div>
+        <div class="form-group"><label>Seu WhatsApp</label><input id="refFromPhone" type="tel" placeholder="(11) 99999-9999"/></div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0"/>
+      <div style="font-family:Montserrat,sans-serif;font-size:.8rem;font-weight:700;margin-bottom:.7rem">Dados do amigo indicado</div>
+      <div class="form-group" style="margin-bottom:.9rem">
+        <label>Nome do amigo *</label>
+        <input id="refFriendName" type="text" placeholder="Nome completo"/>
+      </div>
+      <div class="form-row" style="gap:.8rem">
+        <div class="form-group"><label>E-mail do amigo *</label><input id="refFriendEmail" type="email" placeholder="amigo@email.com"/></div>
+        <div class="form-group"><label>WhatsApp do amigo *</label><input id="refFriendPhone" type="tel" placeholder="(11) 99999-9999"/></div>
+      </div>
+      <div id="referralMsg" style="min-height:1.2em;font-size:.8rem;margin-top:.4rem"></div>
+      <button class="btn-primary btn-full" style="margin-top:.8rem" onclick="submitReferral()">Enviar indicação 🎁</button>
+      <p style="color:var(--muted);font-size:.72rem;text-align:center;margin-top:.7rem">Só usamos os dados do seu amigo para enviar o cupom e o convite da SP Car Clean.</p>
+    </div>
+    <div id="referralThanks" style="display:none;padding:2rem 1rem;text-align:center">
+      <div style="font-size:3rem;margin-bottom:.8rem">🎉</div>
+      <h3 style="margin-bottom:.5rem">Indicação enviada!</h3>
+      <p style="color:var(--muted);font-size:.9rem" id="referralThanksMsg">Enviamos o cupom para o seu amigo.<br/>Quando ele fechar o serviço, o seu cupom chega por e-mail. Obrigado! 🚗✨</p>
+      <button class="btn-primary" style="margin-top:1.5rem" onclick="closeModal('referralModal')">Fechar</button>
     </div>
   </div>
 </div>
@@ -1463,6 +1525,9 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <div class="admin-tab" onclick="switchAdminTab('giftcards',this)" id="tab-giftcards">
         <span class="admin-tab-icon">🎁</span><span>&nbsp;Gift Cards</span>
       </div>
+      <div class="admin-tab" onclick="switchAdminTab('indicacoes',this)" id="tab-indicacoes">
+        <span class="admin-tab-icon">🤝</span><span>&nbsp;Indicações</span>
+      </div>
       <div class="admin-tab" onclick="switchAdminTab('config',this)" id="tab-config">
         <span class="admin-tab-icon">⚙️</span><span>&nbsp;Configurações</span>
       </div>
@@ -1540,7 +1605,8 @@ let _checkinPhotos    = {};
 let _bookings = [];
 let _blocked  = [];
 let _dayLoad  = {};   // lotação pública por dia { 'YYYY-MM-DD': nº de vagas ocupadas } — sem dados pessoais
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef, _stockRef, _stockRecipesRef, _dayLoadRef, _bookingIndexRef, _portfolioRef;
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef, _stockRef, _stockRecipesRef, _dayLoadRef, _bookingIndexRef, _portfolioRef, _referralsRef;
+let _referrals = {};                 // referrals/{id} — programa "Indique um amigo" (carregado só no painel admin)
 const _COMBOS = {};
 let _authUser = null;
 let _clientProfile = null;
@@ -3102,7 +3168,7 @@ async function deleteGiftCard(code) {
   renderAdminGiftCards();
 }
 
-async function validateCoupon(code, orderValue) {
+async function validateCoupon(code, orderValue, email) {
   if (!_couponsRef || !code) return null;
   const snap = await _couponsRef.child(code.toUpperCase()).once('value');
   const c = snap.val();
@@ -3110,6 +3176,11 @@ async function validateCoupon(code, orderValue) {
   if (c.used) return { error: 'Cupom já utilizado.' };
   if (c.validUntil && new Date(c.validUntil) < new Date()) return { error: 'Cupom expirado.' };
   if (c.clientUid && c.clientUid !== _authUser?.uid) return { error: 'Cupom não válido para este cliente.' };
+  // Cupom nominal por e-mail (cupom do amigo indicado): só quem tem o e-mail cadastrado usa.
+  if (c.clientEmail) {
+    const buyerEmail = (email || document.getElementById('fEmail')?.value || _authUser?.email || '').trim().toLowerCase();
+    if (buyerEmail && buyerEmail !== c.clientEmail.toLowerCase()) return { error: 'Cupom válido apenas para o e-mail indicado.' };
+  }
   if (c.minValue && orderValue < c.minValue) return { error: `Pedido mínimo de ${fmtMoney(c.minValue)} para este cupom.` };
   const discount = c.discountType === 'percent' ? Math.round(orderValue * c.discountValue / 100) : c.discountValue;
   return { ok: true, code, discount, discountType: c.discountType, discountValue: c.discountValue, label: c.discountType === 'percent' ? `${c.discountValue}% de desconto` : `${fmtMoney(c.discountValue)} de desconto` };
@@ -3120,7 +3191,8 @@ async function applyCouponInBooking() {
   const msgEl = document.getElementById('couponMsg');
   if (!code) return;
   const total = booking.services.reduce((s, id) => s + (SVCS[id]?.[booking.carSize] || 0), 0);
-  const result = await validateCoupon(code, total);
+  const buyerEmail = (document.getElementById('fEmail')?.value || '').trim().toLowerCase();
+  const result = await validateCoupon(code, total, buyerEmail);
   if (!result || result.error) {
     if (msgEl) msgEl.innerHTML = `<span class="coupon-error">${result?.error || 'Erro ao validar.'}</span>`;
     _appliedCoupon = null;
@@ -3133,6 +3205,248 @@ async function applyCouponInBooking() {
 async function _markCouponUsed(code) {
   if (!_couponsRef || !code) return;
   _couponsRef.child(code).update({ used: true, usedAt: new Date().toISOString() }).catch(() => {});
+}
+
+// ============================================================
+// INDIQUE UM AMIGO — programa de indicação (referral)
+// Fluxo: cliente conclui serviço → indica amigo (nome/e-mail/telefone)
+//   → amigo recebe cupom de desconto e entra na base como "Oportunidade"
+//   → quando o amigo fecha um serviço → quem indicou recebe um cupom.
+// ============================================================
+const REFERRAL_FRIEND_PCT   = 15;  // % de desconto para o amigo indicado
+const REFERRAL_REFERRER_PCT = 15;  // % de desconto para quem indicou (na conversão)
+const REFERRAL_VALID_DAYS   = 90;  // validade dos cupons de indicação (dias)
+
+function _refExpiryDate(days) {
+  const d = new Date(); d.setDate(d.getDate() + (days || REFERRAL_VALID_DAYS));
+  return d.toISOString().slice(0, 10);
+}
+function _fmtBrDate(iso) {
+  return iso ? `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}` : '';
+}
+function _refCode(prefix) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let r = '';
+  for (let i = 0; i < 5; i++) r += chars[Math.floor(Math.random() * chars.length)];
+  return `${prefix}-${r}`;
+}
+
+// Pré-preenche e abre o modal de indicação. context: 'survey' | 'account' | 'admin'
+function openReferralModal(context) {
+  document.getElementById('referralBody').style.display   = '';
+  document.getElementById('referralThanks').style.display = 'none';
+  const msg = document.getElementById('referralMsg'); if (msg) msg.innerHTML = '';
+  ['refFriendName','refFriendEmail','refFriendPhone'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+
+  // Explicita o benefício na tela
+  const fp = document.getElementById('refFriendPctTxt');
+  const rp = document.getElementById('refReferrerPctTxt');
+  if (fp) fp.textContent = `cupom de ${REFERRAL_FRIEND_PCT}% de desconto`;
+  if (rp) rp.textContent = `cupom de ${REFERRAL_REFERRER_PCT}% de desconto`;
+
+  // Dados de quem indica: da avaliação em andamento, da conta logada, ou em branco.
+  let from = { name: '', email: '', phone: '' };
+  if (context === 'survey' && _surveyBookingData) {
+    from = { name: _surveyBookingData.name || '', email: _surveyBookingData.email || '', phone: _surveyBookingData.phone || '' };
+  } else if (isClient()) {
+    const p = _clientProfile || {};
+    from = { name: p.name || '', email: _authUser?.email || '', phone: p.phone || '' };
+  }
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('refFromName', from.name); set('refFromEmail', from.email); set('refFromPhone', from.phone);
+
+  document.getElementById('referralModal').style.display = 'flex';
+}
+
+const REFERRAL_ERR_MSGS = {
+  'missing-fields':  'Preencha nome, e-mail e telefone do amigo.',
+  'invalid-email':   'Informe um e-mail válido para o amigo.',
+  'self-referral':   'Você não pode indicar o seu próprio e-mail. 😉',
+  'already-referred':'Este amigo já foi indicado anteriormente. 🙌',
+  'db-not-configured':'Serviço indisponível no momento. Tente mais tarde.'
+};
+
+async function submitReferral() {
+  const msgEl = document.getElementById('referralMsg');
+  const setErr = t => { if (msgEl) msgEl.innerHTML = `<span class="coupon-error">${t}</span>`; };
+
+  const fromName  = (document.getElementById('refFromName')?.value  || '').trim();
+  const fromEmail = (document.getElementById('refFromEmail')?.value || '').trim().toLowerCase();
+  const fromPhone = (document.getElementById('refFromPhone')?.value || '').trim();
+  const fName  = (document.getElementById('refFriendName')?.value  || '').trim();
+  const fEmail = (document.getElementById('refFriendEmail')?.value || '').trim().toLowerCase();
+  const fPhone = (document.getElementById('refFriendPhone')?.value || '').trim();
+
+  if (!fName || !fEmail || !fPhone) { setErr('Preencha nome, e-mail e telefone do amigo.'); return; }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fEmail)) { setErr('Informe um e-mail válido para o amigo.'); return; }
+  if (fromEmail && fEmail === fromEmail) { setErr('Você não pode indicar o seu próprio e-mail. 😉'); return; }
+
+  // Checagens locais rápidas (o servidor revalida de forma autoritativa).
+  const alreadyClient = (_bookings || []).some(b => (b.email || '').toLowerCase() === fEmail);
+  if (alreadyClient) { setErr('Este amigo já é nosso cliente. Que tal indicar outra pessoa?'); return; }
+
+  const btn = document.querySelector('#referralBody .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+
+  try {
+    // A criação do cupom + registro da indicação + e-mails roda server-side
+    // (Netlify Function) para não depender das regras de escrita do cliente.
+    const resp = await fetch('/.netlify/functions/create-referral', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        referrerName: fromName, referrerEmail: fromEmail, referrerPhone: fromPhone,
+        referrerUid: (isClient() ? _authUser?.uid : null) || null,
+        friendName: fName, friendEmail: fEmail, friendPhone: fPhone,
+        sourceBookingId: (_surveyBookingData?.id || _pendingSurveyCode || null),
+        adminEmail: CFG.adminEmail
+      })
+    });
+    const result = await resp.json().catch(() => ({}));
+    if (!result.ok) { setErr(REFERRAL_ERR_MSGS[result.error] || 'Erro ao enviar a indicação. Tente novamente.'); return; }
+
+    const friendPct   = result.friendPct   || REFERRAL_FRIEND_PCT;
+    const referrerPct = result.referrerPct || REFERRAL_REFERRER_PCT;
+    document.getElementById('referralBody').style.display   = 'none';
+    document.getElementById('referralThanks').style.display = '';
+    const tm = document.getElementById('referralThanksMsg');
+    if (tm) tm.innerHTML = `Enviamos um cupom de ${friendPct}% para <strong>${esc(fName)}</strong>.<br/>Quando ele(a) fechar o serviço, o seu cupom de ${referrerPct}% chega por e-mail. Obrigado! 🚗✨`;
+  } catch (e) {
+    console.error('submitReferral:', e);
+    setErr('Erro ao enviar a indicação. Verifique sua conexão e tente novamente.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar indicação 🎁'; }
+  }
+}
+
+// Confere se algum amigo indicado já efetivou a compra (booking confirmado/concluído)
+// e, em caso positivo, gera o cupom de recompensa para quem indicou. Idempotente.
+function _reconcileReferrals() {
+  if (!_referralsRef || !_couponsRef) return;
+  const pending = Object.entries(_referrals || {}).filter(([, r]) => r && r.status === 'pending');
+  if (!pending.length) return;
+  const converted = new Set(['confirmed', 'completed']);
+  pending.forEach(([key, r]) => {
+    const email = (r.friendEmail || '').toLowerCase();
+    if (!email) return;
+    const bk = (_bookings || []).find(b => (b.email || '').toLowerCase() === email && converted.has(b.status));
+    if (bk) _processReferralConversion(key, r, bk);
+  });
+}
+
+const _referralProcessing = new Set(); // trava em memória contra dupla conversão na mesma sessão
+function _processReferralConversion(key, r, booking) {
+  if (!_referralsRef || !_couponsRef || !r || r.status !== 'pending') return;
+  if (_referralProcessing.has(key)) return;
+  _referralProcessing.add(key);
+  const rewardCode = _refCode('OBRIGADO');
+  const expiry = _refExpiryDate();
+
+  // Marca a indicação como convertida primeiro (evita duplicar recompensa em corridas)
+  _referralsRef.child(key).update({
+    status: 'converted',
+    convertedAt: new Date().toISOString(),
+    convertedBookingId: booking.id || null,
+    referrerCouponCode: rewardCode
+  }).then(() => {
+    // Cupom de recompensa para quem indicou (nominal por UID quando houver, senão por e-mail)
+    _couponsRef.child(rewardCode).set({
+      code: rewardCode, discountType: 'percent', discountValue: REFERRAL_REFERRER_PCT,
+      minValue: 0, used: false, validUntil: expiry, createdAt: new Date().toISOString(),
+      ...(r.referrerUid ? { clientUid: r.referrerUid } : {}),
+      ...(r.referrerEmail ? { clientEmail: r.referrerEmail } : {}),
+      note: `Recompensa por indicar ${r.friendName || 'um amigo'}`
+    });
+
+    // E-mail de recompensa para quem indicou
+    if (r.referrerEmail) {
+      sendEmail('template_update', {
+        to_email: r.referrerEmail,
+        to_name:  r.referrerName || 'Cliente',
+        booking_id: rewardCode,
+        titulo: '🎉 Seu amigo fechou o serviço — cupom liberado!',
+        mensagem:
+          `Olá ${(r.referrerName || 'Cliente').split(' ')[0]}! 🎉\n\n` +
+          `${(r.friendName || 'O amigo que você indicou')} fechou um serviço com a gente. Como agradecimento pela indicação, aqui está o seu cupom:\n\n` +
+          `🎁 ${REFERRAL_REFERRER_PCT}% de desconto no seu próximo serviço\n` +
+          `👉 Cupom: ${rewardCode}\n` +
+          `📅 Válido até ${_fmtBrDate(expiry)}\n\n` +
+          `Obrigado por confiar e indicar a SP Car Clean! Continue indicando: cada amigo que fecha rende um novo cupom pra você. 🚗✨\n\n` +
+          `— Equipe SP Car Clean`
+      });
+    }
+    // Aviso ao admin
+    sendEmail('template_update', {
+      to_email: CFG.adminEmail, to_name: 'Equipe SP Car Clean', booking_id: rewardCode,
+      titulo: `🎉 Indicação convertida — ${r.friendName || ''}`,
+      mensagem: `${r.friendName || 'Amigo indicado'} (${r.friendEmail}) fechou um serviço.\n` +
+                `Cupom de recompensa gerado para ${r.referrerName || 'quem indicou'} (${r.referrerEmail || 'sem e-mail'}): ${rewardCode} (${REFERRAL_REFERRER_PCT}%)`
+    });
+  }).catch(e => console.warn('_processReferralConversion:', e));
+}
+
+// Painel admin — aba Indicações (Indique um Amigo)
+function renderAdminReferrals() {
+  const el = document.getElementById('adminContent');
+  if (!el) return;
+  const list = Object.entries(_referrals || {})
+    .map(([key, r]) => ({ key, ...r }))
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  const total     = list.length;
+  const converted = list.filter(r => r.status === 'converted').length;
+  const pending   = total - converted;
+  const rate      = total ? Math.round(converted / total * 100) : 0;
+
+  const rows = list.map(r => {
+    const isConv = r.status === 'converted';
+    const badge = isConv
+      ? '<span class="status-badge completed">🎉 Convertida</span>'
+      : '<span class="status-badge pending">⏳ Aguardando 1ª compra</span>';
+    const friendWa = r.friendPhone ? buildWaPhone(r.friendPhone) : '';
+    const waMsg = encodeURIComponent(
+      `Olá ${(r.friendName||'').split(' ')[0]}! 🎁 Você foi indicado(a) à SP Car Clean e ganhou ${REFERRAL_FRIEND_PCT}% de desconto no 1º serviço. ` +
+      `Use o cupom ${r.friendCouponCode} ao agendar: https://www.spcarclean.com.br`
+    );
+    return `<div class="admin-panel" style="max-width:640px;padding:1rem 1.2rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem">
+        <strong style="font-family:Montserrat,sans-serif">🤝 ${esc(r.friendName || '—')}</strong>
+        ${badge}
+      </div>
+      <div style="font-size:.8rem;color:var(--muted);line-height:1.7">
+        <div>📧 ${esc(r.friendEmail || '—')} &nbsp;·&nbsp; 📞 ${esc(r.friendPhone || '—')}</div>
+        <div>Indicado por <strong style="color:var(--text)">${esc(r.referrerName || '—')}</strong> ${r.referrerEmail?'· '+esc(r.referrerEmail):''} ${r.referrerPhone?'· '+esc(r.referrerPhone):''}</div>
+        <div>🎁 Cupom do amigo: <strong style="color:var(--accent)">${esc(r.friendCouponCode || '—')}</strong> (${REFERRAL_FRIEND_PCT}%)</div>
+        ${isConv
+          ? `<div>✅ Recompensa gerada: <strong style="color:var(--accent)">${esc(r.referrerCouponCode || '—')}</strong> (${REFERRAL_REFERRER_PCT}%) · convertida em ${r.convertedAt ? fmtDateShort(r.convertedAt.slice(0,10)) : '—'}</div>`
+          : `<div style="color:var(--muted)">Aguardando o amigo fechar o 1º serviço — a recompensa é gerada automaticamente.</div>`}
+        <div style="color:var(--muted);font-size:.72rem">Criada em ${r.createdAt ? fmtDateShort(r.createdAt.slice(0,10)) : '—'}</div>
+      </div>
+      <div style="display:flex;gap:.5rem;margin-top:.7rem;flex-wrap:wrap">
+        ${friendWa ? `<a class="btn-ghost" style="font-size:.74rem;padding:.35rem .8rem;text-decoration:none" href="https://wa.me/${friendWa}?text=${waMsg}" target="_blank" rel="noopener noreferrer">💬 WhatsApp p/ amigo</a>` : ''}
+        <button class="ba-admin-del" onclick="deleteReferral('${r.key}')" title="Remover indicação">🗑️</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <h2>🤝 Indique um Amigo</h2>
+    <p style="color:var(--muted);font-size:.85rem;max-width:640px;margin-bottom:1rem">
+      Clientes indicam amigos ao concluir um serviço. O amigo recebe um cupom de <strong>${REFERRAL_FRIEND_PCT}%</strong> e entra na base como
+      <strong>Oportunidade</strong> (aba Clientes). Quando o amigo fecha o 1º serviço, quem indicou ganha automaticamente um cupom de <strong>${REFERRAL_REFERRER_PCT}%</strong>.
+    </p>
+    <div style="display:flex;gap:.8rem;flex-wrap:wrap;margin-bottom:1.2rem">
+      <div class="fin-card"><div class="num">${total}</div><div class="lbl">Indicações</div></div>
+      <div class="fin-card"><div class="num" style="color:var(--orange)">${pending}</div><div class="lbl">Aguardando</div></div>
+      <div class="fin-card"><div class="num" style="color:var(--green)">${converted}</div><div class="lbl">Convertidas</div></div>
+      <div class="fin-card"><div class="num">${rate}%</div><div class="lbl">Taxa de conversão</div></div>
+    </div>
+    ${rows || '<p style="color:var(--muted);font-size:.85rem;text-align:center;padding:2.5rem 0">Nenhuma indicação ainda. As indicações feitas pelos clientes aparecem aqui.</p>'}`;
+}
+
+async function deleteReferral(key) {
+  if (!confirm('Remover esta indicação? O cupom já enviado ao amigo continua válido.')) return;
+  if (!_referralsRef) return;
+  await _referralsRef.child(key).remove().catch(e => alert('Erro: ' + e.message));
 }
 
 let _clientOnboardingDismissed = false; // "sugerido e dispensável": reseta a cada abertura/login, nunca bloqueia o acesso
@@ -3296,6 +3610,11 @@ function renderClientAccount() {
       <div style="font-size:.83rem;color:var(--muted);margin-bottom:.6rem">Já faz ${suggestion.daysSince} dias desde seu último ${SVCS[suggestion.svcId].icon} ${SVCS[suggestion.svcId].name}. Que tal agendar?</div>
       <button class="btn-primary" style="font-size:.8rem;padding:.5rem 1rem" onclick="closeModal('clientAccountModal');openBooking('${suggestion.svcId}')">📅 Agendar agora</button>
     </div>` : ''}
+    ${myBookings.some(b => b.status === 'completed') ? `<div class="client-booking-card" style="border-color:var(--accent);margin-top:.8rem;background:linear-gradient(135deg,rgba(72,201,245,.08),rgba(16,185,129,.06))">
+      <div style="font-weight:700;margin-bottom:.3rem">🤝 Indique um amigo e ganhe desconto</div>
+      <div style="font-size:.83rem;color:var(--muted);margin-bottom:.6rem">Seu amigo ganha um cupom no primeiro serviço e, quando ele fechar, <strong style="color:var(--accent)">você também ganha</strong> um cupom de agradecimento.</div>
+      <button class="btn-primary" style="font-size:.8rem;padding:.5rem 1rem" onclick="openReferralModal('account')">🎁 Indicar agora</button>
+    </div>` : ''}
     <button class="btn-ghost" style="margin-top:1.2rem;width:100%" onclick="_renderClientOnboardingForm(true)">📋 Dados Cadastrais</button>
     <details style="margin-top:1.2rem">
       <summary class="client-section-title" style="cursor:pointer;display:inline-block">Ver histórico completo</summary>
@@ -3445,6 +3764,7 @@ function switchAdminTab(tab, el) {
   else if(tab==='espera') renderAdminWaitlist();
   else if(tab==='avaliacoes') renderAdminFeedback();
   else if(tab==='giftcards') renderAdminGiftCards();
+  else if(tab==='indicacoes') renderAdminReferrals();
   else if(tab==='config') renderAdminConfig();
   else if(tab==='ia') renderAdminIA();
 }
@@ -5113,13 +5433,27 @@ function _buildClientMap() {
     }
   });
 
+  // Oportunidades: amigos indicados (Indique um Amigo) que ainda não têm agendamento.
+  // Entram na base de clientes numa categoria "Oportunidade" para acompanhamento comercial.
+  Object.values(_referrals || {}).forEach(r => {
+    if (!r || !r.friendEmail) return;
+    const key = r.friendEmail.toLowerCase();
+    if (clientMap[key]) return; // já virou cliente (tem booking) — não duplica
+    clientMap[key] = {
+      name: r.friendName || r.friendEmail, phone: r.friendPhone || '', email: r.friendEmail,
+      bairro: '', cep: '', bookings: [], vehicles: {},
+      isOpportunity: true, referredBy: r.referrerName || '', referralCreatedAt: r.createdAt || ''
+    };
+  });
+
   return Object.entries(clientMap).map(([key, c]) => {
     const done = c.bookings.filter(b => ['confirmed','approved','completed'].includes(b.status));
     const totalSpent = done.reduce((s,b) => s + paidValue(b), 0);
     const doneDates = done.map(b => b.startDate || b.date).filter(Boolean).sort();
     const lastVisit = doneDates[doneDates.length - 1] || null;
     const vip = totalSpent >= 1000 || done.length >= 3;
-    return { ...c, key, totalSpent, lastVisit, completedCount: done.length, vip };
+    const category = c.isOpportunity ? 'oportunidade' : (vip ? 'vip' : (done.length >= 1 ? 'recorrente' : 'novo'));
+    return { ...c, key, totalSpent, lastVisit, completedCount: done.length, vip, category };
   });
 }
 
@@ -5170,19 +5504,22 @@ function renderAdminClients(filter) {
   const rows = clients.map(c => {
     const initials = c.name.split(' ').filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase();
     const vipBadge = c.vip ? '<span class="vip-badge">★ VIP</span>' : '';
+    const oppBadge = c.isOpportunity ? '<span class="opp-badge">🌱 Oportunidade</span>' : '';
     const latestCar = Object.values(c.vehicles)[0];
     const carInfo = latestCar ? (latestCar.car + (latestCar.plate ? ' · ' + latestCar.plate : '')) : '';
     const bairroInfo = c.bairro ? ` · 📍 ${c.bairro}` : '';
+    const oppInfo = c.isOpportunity ? `<div class="client-row-sub" style="margin-top:1px;color:var(--accent)">🤝 Indicado${c.referredBy ? ' por ' + esc(c.referredBy) : ''}</div>` : '';
     return `<div class="client-row" onclick="openClientProfile('${encodeURIComponent(c.key)}')">
       <div class="client-row-avatar">${initials}</div>
       <div class="client-row-info">
-        <div class="client-row-name">${c.name} ${vipBadge}</div>
+        <div class="client-row-name">${c.name} ${vipBadge}${oppBadge}</div>
         <div class="client-row-sub">${c.email} · ${c.phone||'—'}${bairroInfo}</div>
         ${carInfo ? `<div class="client-row-sub" style="margin-top:1px">🚗 ${carInfo}</div>` : ''}
+        ${oppInfo}
       </div>
       <div class="client-row-meta">
         <div class="client-row-spent">${c.totalSpent > 0 ? fmtMoney(c.totalSpent) : '—'}</div>
-        <div class="client-row-visits">${c.completedCount} atend. · ${c.lastVisit ? fmtDateShort(c.lastVisit) : 'sem data'}</div>
+        <div class="client-row-visits">${c.isOpportunity ? 'sem atendimento' : c.completedCount + ' atend. · ' + (c.lastVisit ? fmtDateShort(c.lastVisit) : 'sem data')}</div>
       </div>
     </div>`;
   }).join('') || '<p style="color:var(--muted);font-size:.85rem;text-align:center;padding:2.5rem 0">Nenhum cliente encontrado.</p>';
@@ -5822,7 +6159,8 @@ function openClientProfile(encodedKey) {
           <div class="profile-field"><strong>Telefone</strong><span id="cfDisplay-phone">${c.phone||'—'} <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.05rem .35rem;margin-left:.3rem" onclick="editClientField('${encKey}','phone','${encodeURIComponent(c.phone||'')}')" title="Editar telefone">✏️</button></span></div>
           <div class="profile-field"><strong>E-mail</strong><span id="cfDisplay-email">${c.email} <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.05rem .35rem;margin-left:.3rem" onclick="editClientField('${encKey}','email','${encodeURIComponent(c.email)}')" title="Editar e-mail">✏️</button></span></div>
           ${c.bairro?`<div class="profile-field"><strong>Bairro</strong><span>📍 ${c.bairro}${c.cep?' · '+c.cep:''}</span></div>`:''}
-          <div class="profile-field"><strong>Classificação</strong><span>${c.vip?'<span class="vip-badge">★ VIP</span>':c.completedCount>=1?'<span style="color:var(--green);font-size:.8rem">Recorrente</span>':'<span style="color:var(--muted);font-size:.8rem">Novo</span>'}</span></div>
+          <div class="profile-field"><strong>Classificação</strong><span>${c.isOpportunity?'<span class="opp-badge" style="margin-left:0">🌱 Oportunidade</span>':c.vip?'<span class="vip-badge">★ VIP</span>':c.completedCount>=1?'<span style="color:var(--green);font-size:.8rem">Recorrente</span>':'<span style="color:var(--muted);font-size:.8rem">Novo</span>'}</span></div>
+          ${c.isOpportunity?`<div class="profile-field"><strong>Origem</strong><span style="color:var(--accent);font-size:.8rem">🤝 Indicado${c.referredBy?' por '+esc(c.referredBy):''}${c.referralCreatedAt?' · '+fmtDateShort(c.referralCreatedAt.slice(0,10)):''}</span></div>`:''}
           ${c.birthDate?`<div class="profile-field"><strong>Aniversário</strong><span>🎂 ${c.birthDate.slice(5).replace('-','/')}</span></div>`:''}
           ${c.points?`<div class="profile-field"><strong>Pontos</strong><span>⭐ ${c.points} pts</span></div>`:''}
           ${c.merged?`<div class="profile-field"><strong>E-mails vinculados</strong><span style="font-size:.8rem">${esc((c.linkedEmails||[]).join(', '))} <button class="btn-ghost" style="font-size:.68rem;padding:.15rem .5rem;margin-left:.4rem" onclick="undoMergeClient('${encKey}')">↩ Desfazer mesclagem</button></span></div>`:''}
@@ -8164,6 +8502,7 @@ _buildHeroCarousel(HERO_FALLBACK);
     _clientNotesRef    = _fbDB.ref('clientNotes');
     _clientProfilesRef = _fbDB.ref('clientProfiles');
     _couponsRef        = _fbDB.ref('coupons');
+    _referralsRef      = _fbDB.ref('referrals');   // programa Indique um Amigo
     _giftcardsRef      = _fbDB.ref('giftcards');
     _waitlistRef       = _fbDB.ref('waitlist');
     _feedbackRef       = _fbDB.ref('feedback');
@@ -8191,6 +8530,16 @@ _buildHeroCarousel(HERO_FALLBACK);
         _abClientCache = null;
         if (isAdmin() && currentAdminTab === 'clientes') renderAdminClients();
       }, e => console.warn('Firebase clientOverrides:', e));
+      // Indicações (Indique um Amigo) — só o admin lê a base completa; alimenta a aba
+      // Indicações e a categoria "Oportunidade" na aba Clientes.
+      _referralsRef.off('value'); // evita empilhar listeners a cada novo login do admin
+      _referralsRef.on('value', snap => {
+        _referrals = snap.val() || {};
+        _abClientCache = null;
+        _reconcileReferrals(); // confere conversões de amigos que já efetivaram compra
+        if (isAdmin() && currentAdminTab === 'indicacoes') renderAdminReferrals();
+        if (isAdmin() && currentAdminTab === 'clientes')   renderAdminClients();
+      }, e => console.warn('Firebase referrals:', e));
     }
 
     // ── Agendamentos: escuta em tempo real (somente admin) ──
@@ -8211,11 +8560,14 @@ _buildHeroCarousel(HERO_FALLBACK);
         _recomputeDayLoad();
         // Vincula agendamentos órfãos a contas de clientes (1x por sessão, sem interação)
         autoLinkBookingsSilent();
+        // Confere conversões do programa Indique um Amigo (amigo indicado que fechou serviço)
+        if (isAdmin()) _reconcileReferrals();
         // Atualiza painel admin se estiver aberto
         if(isAdmin() && document.getElementById('adminPanel').style.display !== 'none') {
           if(currentAdminTab === 'agendamentos')  renderAdminBookings();
           else if(currentAdminTab === 'calendario')  renderAdminCalendar();
           else if(currentAdminTab === 'estatisticas') renderAdminStats();
+          else if(currentAdminTab === 'indicacoes') renderAdminReferrals();
         }
       }, e => {
         _bookingsListenerOn = false;
