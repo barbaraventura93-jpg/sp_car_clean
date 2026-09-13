@@ -460,6 +460,10 @@ body.admin-gate-on #waFloat,body.admin-gate-on #concierge-fab,body.admin-gate-on
 .form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--accent);background:rgba(72,201,245,.04)}
 .form-group textarea{resize:vertical;min-height:70px}
 .form-group select option{background:var(--card);color:var(--text)}
+.cob-vehicle-row{display:grid;grid-template-columns:1fr 1fr auto;gap:.7rem;align-items:end;margin-bottom:.7rem}
+.cob-vehicle-row .cob-v-remove{border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--muted);border-radius:8px;padding:.7rem .8rem;cursor:pointer;font-size:.9rem;line-height:1;transition:all .2s;height:fit-content}
+.cob-vehicle-row .cob-v-remove:hover{border-color:var(--red,#e05260);color:var(--red,#e05260)}
+@media(max-width:560px){.cob-vehicle-row{grid-template-columns:1fr auto}.cob-vehicle-row .cob-v-plate-group{grid-column:1}}
 .booking-summary{background:rgba(42,159,214,.07);border:1px solid rgba(42,159,214,.2);border-radius:10px;padding:1rem;margin-bottom:1.2rem}
 .booking-summary h4{font-family:'Montserrat',sans-serif;font-size:.75rem;font-weight:800;color:var(--accent);letter-spacing:.1em;text-transform:uppercase;margin-bottom:.6rem}
 .summary-row{display:flex;justify-content:space-between;font-size:.83rem;margin-bottom:.25rem;color:var(--text)}
@@ -2317,7 +2321,26 @@ function renderBookingStep() {
       fill('fName', p.name); fill('fPhone', p.phone); fill('fEmail', p.email);
       const myLast = _bookings.filter(b => (b.clientUid === _authUser.uid) || (!b.clientUid && b.email?.toLowerCase() === p.email?.toLowerCase()))
         .sort((a, b) => (b.submittedAt||'').localeCompare(a.submittedAt||''))[0];
-      if (myLast) { fill('fCar', myLast.car); fill('fPlate', myLast.plate); fill('fBairro', myLast.bairro); fill('fCep', myLast.cep); }
+      if (myLast) { fill('fBairro', myLast.bairro); fill('fCep', myLast.cep); }
+      // Frota: veículos cadastrados no perfil + os identificados nos agendamentos.
+      const fleetVehicles = _buildLoggedClientFleet(p, myLast);
+      if (fleetVehicles.length) {
+        _fFleet = fleetVehicles;
+        const cards = document.getElementById('fFleetCards');
+        const fleetWrap = document.getElementById('fFleetPicker');
+        if (cards && fleetWrap) {
+          cards.innerHTML = fleetVehicles.map((v, i) => `
+            <div class="vehicle-card" style="cursor:pointer;border:1px solid var(--border);transition:border-color .15s" onclick="fPickVehicle(${i},this)">
+              <div class="vehicle-card-label">${esc(v.car || 'Veículo')}</div>
+              ${v.plate ? `<div class="vehicle-card-plate">${esc(v.plate)}</div>` : ''}
+            </div>`).join('');
+          fleetWrap.style.display = 'block';
+        }
+        // Pré-seleciona o primeiro veículo da lista.
+        fill('fCar', fleetVehicles[0].car); fill('fPlate', fleetVehicles[0].plate);
+      } else if (myLast) {
+        fill('fCar', myLast.car); fill('fPlate', myLast.plate);
+      }
       const badge = document.getElementById('clientLoggedBadge');
       const wrap  = document.getElementById('clientSignupWrap');
       const emailSpan = document.getElementById('clientLoggedEmail');
@@ -3260,13 +3283,21 @@ function renderClientAccount() {
     .sort((a, b) => (b.startDate||b.date||'').localeCompare(a.startDate||a.date||''))
     .slice(0, 10);
 
+  // Veículos cadastrados pelo cliente (perfil) + os identificados nos agendamentos.
   const vehicles = {};
+  const profileVehicles = Array.isArray(profile.vehicles) && profile.vehicles.length
+    ? profile.vehicles
+    : (profile.primaryVehicle && (profile.primaryVehicle.car || profile.primaryVehicle.plate) ? [profile.primaryVehicle] : []);
+  profileVehicles.forEach(v => {
+    const k = ((v.plate || v.car || '')).trim().toUpperCase();
+    if (k) vehicles[k] = { car: v.car || '', plate: v.plate || '' };
+  });
   myBookings.forEach(b => {
     const k = ((b.plate || b.car || '')).trim().toUpperCase();
-    if (k) vehicles[k] = { car: b.car || '', plate: b.plate || '' };
+    if (k && !vehicles[k]) vehicles[k] = { car: b.car || '', plate: b.plate || '' };
   });
 
-  const vCard = v => `<div class="client-booking-card">${v.car}${v.plate ? ' · <strong>' + v.plate + '</strong>' : ''}</div>`;
+  const vCard = v => `<div class="client-booking-card">${esc(v.car)}${v.plate ? ' · <strong>' + esc(v.plate) + '</strong>' : ''}</div>`;
   const bCard = (b, actions) => {
     const statusMap = { pending:'⏳ Aguardando', approved:'✅ Aprovado', confirmed:'🔒 Confirmado', rejected:'❌ Rejeitado', cancelled:'🚫 Cancelado', completed:'🏁 Concluído' };
     const canAct = actions && ['approved','confirmed'].includes(b.status) && !b.checkin;
@@ -3320,19 +3351,73 @@ function renderClientAccount() {
     </details>`;
 }
 
+// HTML de uma linha de veículo no formulário de dados cadastrais.
+function _clientVehicleRowHtml(car, plate) {
+  return `<div class="cob-vehicle-row">
+    <div class="form-group"><label>Veículo (modelo)</label><input class="cob-v-car" value="${esc(car || '')}" placeholder="Ex: Honda Civic Prata 2020"/></div>
+    <div class="form-group cob-v-plate-group"><label>Placa</label><input class="cob-v-plate" value="${esc(plate || '')}" placeholder="ABC1D23" oninput="this.value=this.value.toUpperCase()"/></div>
+    <button type="button" class="cob-v-remove" title="Remover veículo" onclick="removeClientVehicleRow(this)">✕</button>
+  </div>`;
+}
+
+// Adiciona uma nova linha de veículo (em branco) ao formulário.
+function addClientVehicleRow() {
+  const wrap = document.getElementById('cobVehicles');
+  if (!wrap) return;
+  wrap.insertAdjacentHTML('beforeend', _clientVehicleRowHtml('', ''));
+}
+
+// Remove a linha de veículo clicada; mantém sempre pelo menos uma linha (limpa a última).
+function removeClientVehicleRow(btn) {
+  const wrap = document.getElementById('cobVehicles');
+  const row  = btn.closest('.cob-vehicle-row');
+  if (!wrap || !row) return;
+  if (wrap.querySelectorAll('.cob-vehicle-row').length <= 1) {
+    row.querySelector('.cob-v-car').value = '';
+    row.querySelector('.cob-v-plate').value = '';
+  } else {
+    row.remove();
+  }
+}
+
+// Lê as linhas de veículo do formulário, remove vazias e deduplica por placa/modelo.
+function _readClientVehicleRows() {
+  const out = [];
+  const seen = new Set();
+  document.querySelectorAll('#cobVehicles .cob-vehicle-row').forEach(row => {
+    const car   = (row.querySelector('.cob-v-car')?.value || '').trim();
+    const plate = (row.querySelector('.cob-v-plate')?.value || '').trim().toUpperCase();
+    if (!car && !plate) return;
+    const key = (plate || car).toUpperCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ car, plate });
+  });
+  return out;
+}
+
 // ── Onboarding / Dados Cadastrais — formulário completo de cadastro do cliente ──
 function _renderClientOnboardingForm(isEditMode) {
   const profile = _clientProfile || {};
   const myBookings = _getMyBookings();
   const lastBooking = [...myBookings].sort((a,b)=>(b.startDate||b.date||'').localeCompare(a.startDate||a.date||''))[0];
   const addr = profile.address || {};
-  const veh  = profile.primaryVehicle || {};
 
   const name   = profile.name  || lastBooking?.name  || '';
   const phone  = profile.phone || lastBooking?.phone || '';
   const bairro = addr.bairro   || lastBooking?.bairro || '';
-  const car    = veh.car       || lastBooking?.car    || '';
-  const plate  = veh.plate     || lastBooking?.plate  || '';
+
+  // Veículos cadastrados — suporta múltiplos (profile.vehicles). Migra de
+  // profile.primaryVehicle (formato antigo) e, se não houver nenhum, sugere o
+  // veículo do último agendamento como ponto de partida.
+  let vehicles = Array.isArray(profile.vehicles) ? profile.vehicles.filter(v => v && (v.car || v.plate)) : [];
+  if (!vehicles.length && profile.primaryVehicle && (profile.primaryVehicle.car || profile.primaryVehicle.plate)) {
+    vehicles = [{ car: profile.primaryVehicle.car || '', plate: profile.primaryVehicle.plate || '' }];
+  }
+  if (!vehicles.length && lastBooking && (lastBooking.car || lastBooking.plate)) {
+    vehicles = [{ car: lastBooking.car || '', plate: lastBooking.plate || '' }];
+  }
+  if (!vehicles.length) vehicles = [{ car: '', plate: '' }]; // sempre pelo menos uma linha
 
   document.getElementById('clientAccountBody').innerHTML = `
     ${!isEditMode ? `<div style="background:rgba(6,182,212,.08);border:1px solid var(--accent);border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.83rem;color:var(--text)">
@@ -3353,10 +3438,9 @@ function _renderClientOnboardingForm(isEditMode) {
         <div class="form-group"><label>CEP</label><input id="cobCep" value="${esc(addr.cep||'')}" maxlength="9" oninput="fmtCep(this)"/></div>
       </div>
       <div class="form-row"><div class="form-group"><label>Data de aniversário</label><input type="date" id="cobBirthDate" value="${profile.birthDate || ''}"/></div></div>
-      <div class="form-row">
-        <div class="form-group"><label>Veículo (modelo)</label><input id="cobCar" value="${esc(car)}" placeholder="Ex: Honda Civic Prata 2020"/></div>
-        <div class="form-group"><label>Placa</label><input id="cobPlate" value="${esc(plate)}" placeholder="ABC1D23" oninput="this.value=this.value.toUpperCase()"/></div>
-      </div>
+      <label class="client-section-title" style="display:block;margin:.4rem 0 .6rem;color:var(--muted)">🚗 Meus veículos</label>
+      <div id="cobVehicles">${vehicles.map(v => _clientVehicleRowHtml(v.car || '', v.plate || '')).join('')}</div>
+      <button type="button" class="btn-ghost" style="font-size:.74rem;padding:.5rem 1.1rem;margin-bottom:.4rem" onclick="addClientVehicleRow()">+ Adicionar veículo</button>
       <p style="font-size:.68rem;color:var(--muted);margin-top:.8rem;line-height:1.4">Ao salvar, você concorda com nossa <a onclick="document.getElementById('privacyModal').style.display='flex'" style="color:var(--accent);cursor:pointer;text-decoration:underline">Política de Privacidade</a>.</p>
       <div style="display:flex;gap:.6rem;margin-top:.8rem;flex-wrap:wrap">
         <button class="btn-primary" onclick="saveClientOnboarding(${isEditMode})">💾 Salvar${isEditMode ? '' : ' e continuar'}</button>
@@ -3380,8 +3464,7 @@ async function saveClientOnboarding(isEditMode) {
   const bairro = document.getElementById('cobBairro')?.value.trim();
   const cep    = document.getElementById('cobCep')?.value.trim();
   const birthDate = document.getElementById('cobBirthDate')?.value;
-  const car    = document.getElementById('cobCar')?.value.trim();
-  const plate  = document.getElementById('cobPlate')?.value.trim().toUpperCase();
+  const vehicles = _readClientVehicleRows();
 
   if (!name)   { alert('Informe seu nome.'); return; }
   if (!phone)  { alert('Informe seu telefone.'); return; }
@@ -3391,7 +3474,10 @@ async function saveClientOnboarding(isEditMode) {
     name, phone,
     address: { street, number, bairro, cep, city: 'São Paulo' },
     ...(birthDate ? { birthDate } : {}),
-    ...((car || plate) ? { primaryVehicle: { car, plate } } : {}),
+    // Salva a lista completa e mantém primaryVehicle (1º) por compatibilidade.
+    // Se não houver veículos, zera primaryVehicle para não exibir dado antigo.
+    vehicles,
+    primaryVehicle: vehicles.length ? { car: vehicles[0].car, plate: vehicles[0].plate } : null,
   };
   if (!isEditMode) payload.onboardingCompletedAt = new Date().toISOString();
 
@@ -4253,6 +4339,32 @@ function fLookupClient() {
       if (selSvc) setTimeout(() => iaUpsellSuggest(email, selSvc, match).catch(() => {}), 150);
     }
   });
+}
+
+// Monta a frota de um cliente logado: veículos do perfil (cadastrados em
+// Minha Conta) primeiro, depois os identificados nos agendamentos anteriores.
+// Deduplica por placa/modelo (case-insensitive).
+function _buildLoggedClientFleet(profile, _ignored) {
+  const out = [];
+  const seen = new Set();
+  const push = v => {
+    const car = (v.car || '').trim(), plate = (v.plate || '').trim();
+    if (!car && !plate) return;
+    const key = (plate || car).toUpperCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ car, plate });
+  };
+  const profVehicles = Array.isArray(profile.vehicles) && profile.vehicles.length
+    ? profile.vehicles
+    : (profile.primaryVehicle && (profile.primaryVehicle.car || profile.primaryVehicle.plate) ? [profile.primaryVehicle] : []);
+  profVehicles.forEach(push);
+  const email = (profile.email || '').toLowerCase();
+  _bookings
+    .filter(b => (b.clientUid && _authUser && b.clientUid === _authUser.uid) || (!b.clientUid && b.email?.toLowerCase() === email))
+    .sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''))
+    .forEach(push);
+  return out;
 }
 
 function fPickVehicle(idx, el) {
