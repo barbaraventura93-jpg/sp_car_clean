@@ -1487,7 +1487,7 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 // ============================================================
 const CFG = {
   whatsapp: '11926697474',
-  location: 'A definir — São Paulo, SP',
+  location: 'Rua São José, 301 — Parque Santo Antônio, Guarulhos-SP',
   dropoffTime: '08:00',
   pickupTime: '18:00',
   adminEmail: 'spcarclean0@gmail.com',
@@ -1496,6 +1496,13 @@ const CFG = {
   pointsToReal: 0.10,    // 1 ponto = R$0,10 de desconto
   minPointsRedeem: 50,   // mínimo de pontos para resgatar
 };
+
+// Assinatura padrão anexada aos e-mails ao cliente (endereço, horário e contato).
+const EMAIL_FOOTER =
+  `\n\n— — — — —\n` +
+  `📍 ${CFG.location}\n` +
+  `🕗 Entrada ${CFG.dropoffTime} · Retirada até ${CFG.pickupTime}\n` +
+  `📱 WhatsApp: (11) 92669-7474`;
 
 // ============================================================
 // SERVICES DATA
@@ -2504,7 +2511,7 @@ async function submitBooking() {
                 `💰 Valor estimado: ${fmtMoney(b.price)}\n` +
                 `📋 Código: ${id}\n\n` +
                 `Assim que confirmarmos, avisamos por aqui por e-mail. Você também pode acompanhar pelo código no site.\n\n` +
-                `Obrigado pela preferência! 🚗✨\n\n— Equipe SP Car Clean`,
+                `Obrigado pela preferência! 🚗✨` + EMAIL_FOOTER,
     });
   }
 
@@ -2726,7 +2733,7 @@ function submitClientCancel(id, tier) {
     to_email: b.email, to_name: b.name,
     booking_id: b.id,
     titulo:   '🚫 Cancelamento do seu agendamento',
-    mensagem: `Seu agendamento ${b.id} (${SVCS[b.service]?.name || b.service}) marcado para ${fmtDateShort(b.startDate || b.date)} foi cancelado.\n\n${refundMsg}`,
+    mensagem: `Seu agendamento ${b.id} (${SVCS[b.service]?.name || b.service}) marcado para ${fmtDateShort(b.startDate || b.date)} foi cancelado.\n\n${refundMsg}` + EMAIL_FOOTER,
   });
   document.getElementById('statusResult').innerHTML = `
     <div style="background:var(--red-lt);border:1px solid #f5c6c3;border-radius:10px;padding:1rem;font-size:.85rem;color:var(--red);text-align:center;line-height:1.6">
@@ -5017,7 +5024,7 @@ function approveReschedule(id) {
     to_email: b.email, to_name: b.name,
     booking_id: b.id,
     titulo:   '✅ Reagendamento aprovado — SP Car Clean',
-    mensagem: `Seu pedido de reagendamento para o agendamento ${b.id} foi aprovado!\n\nNova data confirmada: ${fmtDate(newDate)}\n\nAguardamos você!`,
+    mensagem: `Seu pedido de reagendamento para o agendamento ${b.id} foi aprovado!\n\nNova data confirmada: ${fmtDate(newDate)}\n\nAguardamos você!` + EMAIL_FOOTER,
   });
   closeModal('detailModal');
   renderAdminBookings();
