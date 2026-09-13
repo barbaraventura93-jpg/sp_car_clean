@@ -1,4 +1,5 @@
 const { sendAdminPush } = require('./lib/fcm');
+const { sendWhatsAppTemplate } = require('./lib/core/whatsapp');
 
 // Título/corpo curtos da notificação push por tipo de evento.
 function buildPush(data) {
@@ -41,10 +42,15 @@ exports.handler = async (event) => {
     }
   })();
 
+  // WhatsApp para o CLIENTE (best-effort), saindo do número oficial da loja.
+  // 'new-booking' cobre o agendamento recém-solicitado (payload sem `type`).
+  const waType = data.type || 'new-booking';
+  const whatsappPromise = sendWhatsAppTemplate(waType, data);
+
   if (!botToken || !chatId) {
-    // Sem Telegram configurado ainda tentamos entregar o push antes de sair.
-    const push = await pushPromise;
-    return { statusCode: 200, body: JSON.stringify({ ok: true, telegram: false, push }) };
+    // Sem Telegram configurado ainda tentamos entregar push e WhatsApp antes de sair.
+    const [push, whatsapp] = await Promise.all([pushPromise, whatsappPromise]);
+    return { statusCode: 200, body: JSON.stringify({ ok: true, telegram: false, push, whatsapp }) };
   }
 
   const portalUrl = `${process.env.URL || 'https://sp-car-clean.web.app'}/?admin`;
@@ -132,13 +138,16 @@ exports.handler = async (event) => {
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
     });
     const body = await resp.json();
-    const push = await pushPromise;
+    const [push, whatsapp] = await Promise.all([pushPromise, whatsappPromise]);
     if (!body.ok) {
-      return { statusCode: 502, body: JSON.stringify({ ok: false, error: body, push }) };
+      return { statusCode: 502, body: JSON.stringify({ ok: false, error: body, push, whatsapp }) };
     }
-    return { statusCode: 200, body: JSON.stringify({ ok: true, push }) };
+    return { statusCode: 200, body: JSON.stringify({ ok: true, push, whatsapp }) };
   } catch (err) {
-    const push = await pushPromise.catch(() => ({ ok: false }));
-    return { statusCode: 500, body: JSON.stringify({ ok: false, error: err.message, push }) };
+    const [push, whatsapp] = await Promise.all([
+      pushPromise.catch(() => ({ ok: false })),
+      whatsappPromise.catch(() => ({ ok: false }))
+    ]);
+    return { statusCode: 500, body: JSON.stringify({ ok: false, error: err.message, push, whatsapp }) };
   }
 };
