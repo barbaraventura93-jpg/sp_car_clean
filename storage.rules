@@ -5,9 +5,14 @@ rules_version = '2';
 //
 // gallery/  → fotos da galeria antes/depois (vitrine pública): leitura livre,
 //             escrita só autenticada (admin).
-// checkin/  → fotos do check-in do veículo: leitura livre hoje (o cliente vê as
-//             miniaturas em "Minha Conta" pela URL). Restringir/tokenizar essa
-//             leitura é o item 7 do backlog de segurança do README.
+// checkin/  → fotos do check-in do veículo (placa, avarias). Leitura restrita
+//             (item 7): o acesso por CAMINHO bruto exige autenticação, o que
+//             bloqueia raspagem/enumeração do bucket. As miniaturas continuam
+//             abrindo para o cliente porque o app usa a URL de download com
+//             `?token=` (gerada pelo admin no upload via getDownloadURL): esse
+//             token é a credencial e funciona independentemente destas regras,
+//             inclusive para o cliente deslogado (link por e-mail/WhatsApp).
+//             Escrita só autenticada (admin).
 service firebase.storage {
   match /b/{bucket}/o {
     match /gallery/{file} {
@@ -15,7 +20,7 @@ service firebase.storage {
       allow write: if request.auth != null;
     }
     match /checkin/{allPaths=**} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if request.auth != null;
     }
   }
