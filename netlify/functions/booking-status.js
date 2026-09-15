@@ -13,8 +13,11 @@ const RL_WINDOW_MS = 3_600_000; // 1 hora
 const RL_MAX       = 30;        // tentativas por IP/hora
 const rlStore      = {};        // em memória — reseta a cada cold start
 
-// Campos internos que nunca voltam ao cliente.
-const INTERNAL_FIELDS = ['adminNotes'];
+// Campos internos que nunca voltam ao cliente. Vazio por ora: `adminNotes` é,
+// por design, uma observação que o admin compartilha com o cliente (aparece como
+// "Nota" na consulta de status e como "Obs" no WhatsApp de aprovação). Se um dia
+// existir uma nota realmente privada, adicione o nome do campo aqui.
+const INTERNAL_FIELDS = [];
 
 exports.handler = async (event) => {
   const reply = (status, body) => ({

@@ -77,7 +77,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - Rejeitar e cancelar agendamentos — **cancelamento bloqueado após check-in** (veículo já em serviço)
 - **Alterar datas**: antes do check-in altera início + conclusão; após check-in altera apenas a data de retirada e envia e-mail automático ao cliente com a nova previsão
 - **Alerta de capacidade** por dia (`maxPerDay` configurável)
-- **Notas do admin** por agendamento (campo interno, não visível ao cliente)
+- **Nota do agendamento** (`adminNotes`): observação escrita na aprovação e **compartilhada com o cliente** — aparece como "Nota" na consulta de status e como "Obs" no WhatsApp de aprovação
 - Contato direto com o cliente via **WhatsApp** a partir do painel
 - **Notificação em tempo real via Telegram** a cada novo agendamento, reagendamento ou cancelamento
 - **Exportação de dados** em JSON
@@ -639,13 +639,13 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 | 2 | **Regra RTDB permitia sobrescrever qualquer agendamento** | `database.rules.json` (`bookings/$id`) | A escrita pública passou de `newData.exists()` (qualquer alteração) para: **criar** um agendamento, ou fazer só as alterações self-service (reagendar/cancelar/feedback). Campos de valor, pagamento e identidade (`price`, `finalPrice`, `priceWithFee`, `paidAmount`, `paymentTransactionId`, `email`, `name`, `phone`, `createdAt`, `id`) ficaram imutáveis sem login, e o `status` só pode ir para `cancelled` — nunca para `approved`/`confirmed`/`completed`. Regra validada com 15 casos (targaryen). |
 | 4 | **Regras de segurança não versionadas** | `database.rules.json`, `storage.rules`, `firebase.json` | As regras do Realtime Database e do Storage viviam só neste README (colar manual no Console, sem histórico nem revisão). Agora são **versionadas** em `database.rules.json` e `storage.rules`, referenciadas no `firebase.json`, e publicáveis com `firebase deploy --only database,storage`. (As regras do Storage foram versionadas **sem alterar o comportamento atual** — endurecer a leitura de `checkin/**` é o item 7.) |
 | 3 | **Códigos de reserva/gift card curtos e previsíveis** | `index.html` (`genId`, `genGiftId`) | Os códigos passaram de 6 caracteres gerados com `Math.random()` (`SPC-` ≈ 10⁹, não-criptográfico) para **10 caracteres via CSPRNG** (`crypto.getRandomValues`), num alfabeto de 32 sem ambíguos → **32¹⁰ ≈ 1,1×10¹⁵** combinações. Inviabiliza enumeração/brute force para os **novos** agendamentos e gift cards. Mesma correção aplicada ao `genGiftId`. |
-| 3b | **Leitura pública expunha o agendamento inteiro (inclui enumeração de códigos antigos)** | `database.rules.json` (`bookings/$id .read`), `netlify/functions/booking-status.js`, `index.html` | `bookings/$id .read` deixou de ser `true`: agora exige login e só o dono (`clientUid == auth.uid` ou `email == auth.token.email`) ou o admin leem — fecha a enumeração, **inclusive dos códigos antigos**. A consulta sem login passou para a função server-side `booking-status` (exige **código + e-mail**, remove campos internos como `adminNotes`, tem rate-limit por IP e resposta genérica anti-oráculo). Regra e função validadas (8 + 7 casos). |
+| 3b | **Leitura pública expunha o agendamento inteiro (inclui enumeração de códigos antigos)** | `database.rules.json` (`bookings/$id .read`), `netlify/functions/booking-status.js`, `index.html` | `bookings/$id .read` deixou de ser `true`: agora exige login e só o dono (`clientUid == auth.uid` ou `email == auth.token.email`) ou o admin leem — fecha a enumeração, **inclusive dos códigos antigos**. A consulta sem login passou para a função server-side `booking-status` (exige **código + e-mail**, devolve só ao dono verificado, com rate-limit por IP e resposta genérica anti-oráculo). Regra e função validadas (8 + 7 casos). |
 
-### 🔴 Segurança — prioridade alta
+### ⚪ Descartado (por design)
 
-| # | Item | Onde | Risco | Recomendação |
-|---|---|---|---|---|
-| 3c | **Cliente logado ainda lê `adminNotes` do próprio agendamento** | `bookings/$id` | Com a leitura restrita ao dono, o campo interno `adminNotes` continua legível pelo próprio cliente ao ler seu registro direto (a função `booking-status` já o remove, mas o app logado lê o nó direto). | Mover `adminNotes` para um nó só-admin (ex.: `bookingAdminNotes/$id`) e deixar `bookings/$id` sem campos internos. |
+| # | Item | Decisão |
+|---|---|---|
+| 3c | **Tornar `adminNotes` um campo só-admin** | Descartado: o `adminNotes` é, por design, uma observação que o admin **compartilha com o cliente** (aparece como "Nota" na consulta de status e como "Obs" no WhatsApp de aprovação). Não é um segredo interno, então não há o que esconder. Com o item 3b, quem lê já é só o dono verificado (não mais qualquer um com o código). |
 
 ### 🟠 Segurança — prioridade média
 
