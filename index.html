@@ -1047,10 +1047,17 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
       <button class="modal-close" onclick="closeModal('statusModal')">✕</button>
     </div>
     <div class="modal-body">
-      <div class="form-row full" style="margin-bottom:1rem">
+      <div class="form-row full" style="margin-bottom:.8rem">
         <div class="form-group">
           <label>Código de Reserva</label>
           <input id="statusInput" placeholder="Ex: SPC-X7K2M4NP8Q" oninput="this.value=this.value.toUpperCase()" style="font-family:'Montserrat',sans-serif;font-weight:700;letter-spacing:.1em;font-size:1rem"/>
+        </div>
+      </div>
+      <div class="form-row full" style="margin-bottom:1rem">
+        <div class="form-group">
+          <label>E-mail do agendamento</label>
+          <input id="statusEmailInput" type="email" placeholder="o e-mail usado no agendamento" autocomplete="email" style="font-size:1rem"/>
+          <small style="color:var(--muted);font-size:.75rem">Confirmamos seu e-mail para proteger seus dados pessoais.</small>
         </div>
       </div>
       <button class="btn-primary" onclick="checkStatus()" style="width:100%;justify-content:center">Consultar</button>
@@ -2605,25 +2612,35 @@ function openStatusCheck() {
   document.getElementById('statusModal').style.display = 'flex';
   document.getElementById('statusResult').innerHTML = '';
   document.getElementById('statusInput').value = '';
+  const emailEl = document.getElementById('statusEmailInput');
+  if (emailEl) emailEl.value = (isClient() && _authUser?.email) ? _authUser.email : '';
 }
 
-function checkStatus() {
-  const code = document.getElementById('statusInput').value.trim().toUpperCase();
-  const res  = document.getElementById('statusResult');
+async function checkStatus() {
+  const code  = document.getElementById('statusInput').value.trim().toUpperCase();
+  const email = (document.getElementById('statusEmailInput')?.value || '').trim();
+  const res   = document.getElementById('statusResult');
   if (!code) return;
-  // A coleção /bookings não é mais legível publicamente; consulta pontual por
-  // código (regra .read do nó por-id permite ler UM agendamento por vez, sem listar).
-  if (_bookingsRef) {
-    res.innerHTML = `<p style="color:var(--muted);font-size:.85rem;padding:.5rem">Consultando...</p>`;
-    _bookingsRef.child(code).once('value')
-      .then(snap => {
-        const bk = snap.val();
-        if (bk) { const i = _bookings.findIndex(x => x.id === bk.id); if (i >= 0) _bookings[i] = bk; else _bookings.push(bk); }
-        _renderStatusResult(bk);
-      })
-      .catch(() => _renderStatusResult(null));
-  } else {
-    _renderStatusResult(getBookings().find(x => x.id === code));
+  if (!email || !email.includes('@')) {
+    res.innerHTML = `<div style="background:var(--red-lt);border:1px solid #f5c6c3;border-radius:8px;padding:1rem;font-size:.85rem;color:var(--red)">Informe o e-mail usado no agendamento.</div>`;
+    return;
+  }
+  // A leitura pública de /bookings foi desativada (evita enumeração de códigos e
+  // exposição de dados). A consulta passa por uma função server-side que confere
+  // código + e-mail e devolve só os campos seguros (sem notas internas).
+  res.innerHTML = `<p style="color:var(--muted);font-size:.85rem;padding:.5rem">Consultando...</p>`;
+  try {
+    const resp = await fetch('/.netlify/functions/booking-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, email })
+    });
+    const data = await resp.json();
+    const bk = (data && data.ok) ? data.booking : null;
+    if (bk) { const i = _bookings.findIndex(x => x.id === bk.id); if (i >= 0) _bookings[i] = bk; else _bookings.push(bk); }
+    _renderStatusResult(bk);
+  } catch (e) {
+    _renderStatusResult(null);
   }
 }
 
@@ -6012,9 +6029,11 @@ async function openSurveyModal(code) {
     return;
   }
 
-  // Carrega dados do agendamento
-  const bkSnap = await _bookingsRef.child(code).once('value');
-  _surveyBookingData = bkSnap.val();
+  // Carrega dados do agendamento (best-effort — cosmético). A leitura pública de
+  // /bookings foi desativada; se falhar (visitante anônimo), usa o rótulo genérico.
+  let _sbd = null;
+  try { _sbd = (await _bookingsRef.child(code).once('value')).val(); } catch (e) { _sbd = null; }
+  _surveyBookingData = _sbd;
   if (_surveyBookingData) {
     const svcName = SVCS[_surveyBookingData.service]?.name || _surveyBookingData.service || '';
     document.getElementById('surveySub').textContent = svcName ? `${svcName} — ${_surveyBookingData.name}` : _surveyBookingData.name || 'SP Car Clean';

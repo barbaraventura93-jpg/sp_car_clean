@@ -41,7 +41,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - **Calendário interativo** com disponibilidade em tempo real integrado ao Firebase Realtime Database
 - Dias esgotados aparecem em laranja com opção de **entrar na lista de espera**
 - **Código de rastreamento único** por agendamento (ex: `SPC-X7K2M`)
-- **Consulta de status** pelo código — sem login, acessível ao cliente a qualquer momento
+- **Consulta de status** por código + e-mail — sem login, via função server-side (`booking-status`) que protege os dados pessoais
 - **Reagendamento self-service**: cliente solicita nova data com justificativa; admin aprova ou rejeita
 - **Cancelamento self-service**: política de reembolso calculada automaticamente por dias úteis
 - **Confirmação automática por e-mail** via EmailJS em cada mudança de status relevante
@@ -331,10 +331,12 @@ const CFG = {
 > **Privacidade dos agendamentos.** A coleção `bookings` **não** é mais legível
 > publicamente (isso expunha nome, telefone, e-mail e bairro de todos os clientes).
 > A disponibilidade do calendário vem do nó público `dayLoad` (só a lotação por dia,
-> sem dado pessoal), mantido automaticamente pelo painel admin. A consulta por código
-> de reserva continua funcionando: cada agendamento é legível individualmente por quem
-> tem o código exato (`bookings/$id .read: true`), mas a coleção inteira não pode ser
-> listada nem apagada por visitantes. O cliente logado vê o próprio histórico pelo
+> sem dado pessoal), mantido automaticamente pelo painel admin. **A leitura de
+> `bookings/$id` deixou de ser pública (item 3b):** agora exige login e só o dono
+> (`clientUid == auth.uid` ou `email == auth.token.email`) ou o admin conseguem ler —
+> isso fecha a enumeração de códigos, inclusive os antigos. A **consulta por código
+> sem login** passou a ser feita pela função server-side `booking-status`
+> (código + e-mail, sem campos internos). O cliente logado vê o próprio histórico pelo
 > índice `bookingIndex/$uid`.
 >
 > **Escrita protegida (item 2 do backlog).** Sem login, `bookings/$id` só aceita
@@ -358,7 +360,7 @@ const CFG = {
       ".read":  "auth != null && auth.token.email == 'ADMIN_EMAIL'",
       ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'",
       "$id": {
-        ".read":  true,
+        ".read":  "auth != null && (auth.token.email == 'ADMIN_EMAIL' || data.child('clientUid').val() == auth.uid || data.child('email').val() == auth.token.email)",
         ".write": "(!data.exists() && newData.exists()) || (data.exists() && newData.exists() && newData.child('id').val() == data.child('id').val() && newData.child('createdAt').val() == data.child('createdAt').val() && newData.child('email').val() == data.child('email').val() && newData.child('name').val() == data.child('name').val() && newData.child('phone').val() == data.child('phone').val() && newData.child('price').val() == data.child('price').val() && newData.child('finalPrice').val() == data.child('finalPrice').val() && newData.child('priceWithFee').val() == data.child('priceWithFee').val() && newData.child('paidAmount').val() == data.child('paidAmount').val() && newData.child('paymentTransactionId').val() == data.child('paymentTransactionId').val() && newData.child('paymentConfirmedAt').val() == data.child('paymentConfirmedAt').val() && (newData.child('status').val() == data.child('status').val() || newData.child('status').val() == 'cancelled'))"
       }
     },
@@ -553,6 +555,7 @@ sp-car-clean/
         ├── create-payment.js        # Gera link de pagamento InfinitePay (agendamento)
         ├── create-gift-payment.js   # Gera link de pagamento InfinitePay (gift card)
         ├── infinitepay-webhook.js   # Confirma pagamento/ativa gift card e atualiza Firebase
+        ├── booking-status.js        # Consulta de status por código + e-mail (leitura server-side)
         ├── whatsapp-webhook.js      # Webhook do WhatsApp Cloud API (verificação + mensagens → Telegram)
         ├── birthday-check.js        # Cron diário: detecta aniversariantes, cria cupom e envia e-mail
         ├── reminder-check.js        # Cron diário: lembrete D-1 por WhatsApp ao cliente
@@ -636,12 +639,13 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 | 2 | **Regra RTDB permitia sobrescrever qualquer agendamento** | `database.rules.json` (`bookings/$id`) | A escrita pública passou de `newData.exists()` (qualquer alteração) para: **criar** um agendamento, ou fazer só as alterações self-service (reagendar/cancelar/feedback). Campos de valor, pagamento e identidade (`price`, `finalPrice`, `priceWithFee`, `paidAmount`, `paymentTransactionId`, `email`, `name`, `phone`, `createdAt`, `id`) ficaram imutáveis sem login, e o `status` só pode ir para `cancelled` — nunca para `approved`/`confirmed`/`completed`. Regra validada com 15 casos (targaryen). |
 | 4 | **Regras de segurança não versionadas** | `database.rules.json`, `storage.rules`, `firebase.json` | As regras do Realtime Database e do Storage viviam só neste README (colar manual no Console, sem histórico nem revisão). Agora são **versionadas** em `database.rules.json` e `storage.rules`, referenciadas no `firebase.json`, e publicáveis com `firebase deploy --only database,storage`. (As regras do Storage foram versionadas **sem alterar o comportamento atual** — endurecer a leitura de `checkin/**` é o item 7.) |
 | 3 | **Códigos de reserva/gift card curtos e previsíveis** | `index.html` (`genId`, `genGiftId`) | Os códigos passaram de 6 caracteres gerados com `Math.random()` (`SPC-` ≈ 10⁹, não-criptográfico) para **10 caracteres via CSPRNG** (`crypto.getRandomValues`), num alfabeto de 32 sem ambíguos → **32¹⁰ ≈ 1,1×10¹⁵** combinações. Inviabiliza enumeração/brute force para os **novos** agendamentos e gift cards. Mesma correção aplicada ao `genGiftId`. |
+| 3b | **Leitura pública expunha o agendamento inteiro (inclui enumeração de códigos antigos)** | `database.rules.json` (`bookings/$id .read`), `netlify/functions/booking-status.js`, `index.html` | `bookings/$id .read` deixou de ser `true`: agora exige login e só o dono (`clientUid == auth.uid` ou `email == auth.token.email`) ou o admin leem — fecha a enumeração, **inclusive dos códigos antigos**. A consulta sem login passou para a função server-side `booking-status` (exige **código + e-mail**, remove campos internos como `adminNotes`, tem rate-limit por IP e resposta genérica anti-oráculo). Regra e função validadas (8 + 7 casos). |
 
 ### 🔴 Segurança — prioridade alta
 
 | # | Item | Onde | Risco | Recomendação |
 |---|---|---|---|---|
-| 3b | **Leitura pública devolve o objeto inteiro do agendamento** | `bookings/$id .read: true` | Quem tem o código lê **todos** os campos, inclusive internos (`adminNotes`). Códigos **antigos** (6 chars) seguem enumeráveis. | Para blindar de vez: mover a consulta de status para uma Netlify Function que exija **código + e-mail** (Admin SDK) e devolva só os campos seguros; opcionalmente reemitir códigos antigos. |
+| 3c | **Cliente logado ainda lê `adminNotes` do próprio agendamento** | `bookings/$id` | Com a leitura restrita ao dono, o campo interno `adminNotes` continua legível pelo próprio cliente ao ler seu registro direto (a função `booking-status` já o remove, mas o app logado lê o nó direto). | Mover `adminNotes` para um nó só-admin (ex.: `bookingAdminNotes/$id`) e deixar `bookings/$id` sem campos internos. |
 
 ### 🟠 Segurança — prioridade média
 
