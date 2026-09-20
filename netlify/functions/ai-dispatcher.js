@@ -11,6 +11,10 @@ exports.handler = async () => {
   const now = new Date();
   const dow = ['sun','mon','tue','wed','thu','fri','sat'][now.getDay()];
 
+  // Limpeza dos buckets de rate-limit (item 6): remove contadores de horas de
+  // dias anteriores para não acumular. As chaves são `YYYYMMDDHH_ip`.
+  await cleanupRateLimit(now).catch(e => console.error('ai-dispatcher: cleanup rate-limit falhou:', e.message));
+
   let dispatched = 0;
 
   for (const agentId of Object.keys(config.DEFAULTS)) {
@@ -73,4 +77,26 @@ function buildCore() {
   };
 
   return { core, getUsage: () => ({ ...usage }) };
+}
+
+// Remove os buckets de rate-limit (aiRateLimit) cujas chaves são de dias
+// anteriores a hoje. Usa `shallow=true` para baixar só as chaves.
+async function cleanupRateLimit(now) {
+  const dbUrl    = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
+  const dbSecret = process.env.FIREBASE_DATABASE_SECRET;
+  if (!dbUrl || !dbSecret) return;
+  const today = now.toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
+  const resp = await fetch(`${dbUrl}/aiRateLimit.json?shallow=true&auth=${dbSecret}`);
+  if (!resp.ok) return;
+  const keys = await resp.json();
+  if (!keys || typeof keys !== 'object') return;
+  let removed = 0;
+  for (const key of Object.keys(keys)) {
+    const day = key.slice(0, 8); // YYYYMMDD do bucket
+    if (day < today) {
+      await fetch(`${dbUrl}/aiRateLimit/${encodeURIComponent(key)}.json?auth=${dbSecret}`, { method: 'DELETE' }).catch(() => {});
+      removed++;
+    }
+  }
+  if (removed) console.log(`ai-dispatcher: ${removed} bucket(s) de rate-limit antigos removidos`);
 }

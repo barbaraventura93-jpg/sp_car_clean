@@ -414,7 +414,8 @@ const CFG = {
       "concierge": { "enabled": { ".read": true } }
     },
     "aiUsage":         { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "aiLogs":          { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" }
+    "aiLogs":          { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "aiRateLimit":     { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" }
   }
 }
 ```
@@ -643,6 +644,7 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 | 3b | **Leitura pública expunha o agendamento inteiro (inclui enumeração de códigos antigos)** | `database.rules.json` (`bookings/$id .read`), `netlify/functions/booking-status.js`, `index.html` | `bookings/$id .read` deixou de ser `true`: agora exige login e só o dono (`clientUid == auth.uid` ou `email == auth.token.email`) ou o admin leem — fecha a enumeração, **inclusive dos códigos antigos**. A consulta sem login passou para a função server-side `booking-status` (exige **código + e-mail**, devolve só ao dono verificado, com rate-limit por IP e resposta genérica anti-oráculo). Regra e função validadas (8 + 7 casos). |
 | 7 | **Fotos de check-in com leitura pública** | `storage.rules` (`checkin/**`) | A leitura de `checkin/**` passou de `if true` para `if request.auth != null`: o acesso por **caminho bruto** deixou de ser público (bloqueia raspagem/enumeração do bucket). As miniaturas continuam abrindo para o cliente porque o app usa a URL de download com `?token=` (gerada pelo admin no upload) — esse token funciona independentemente das regras, inclusive para o cliente deslogado (link por e-mail/WhatsApp). `gallery/` segue pública (vitrine). |
 | 5 | **Funções de pagamento/notificação sem auth nem rate-limit** | `netlify/functions/lib/guard.js` (novo), `create-payment.js`, `create-gift-payment.js`, `notify-booking.js` | Helper `guard.js` adiciona **rate-limit por IP** + **checagem de origem (CORS)** às três funções públicas (corta geração de links e disparo de notificações/WhatsApp em massa por terceiros — incluindo abuso do número oficial de WhatsApp). Além disso, `create-payment` e `create-gift-payment` passaram a ler o **valor no Firebase** (preço do agendamento / valor do gift card) em vez de confiar no valor enviado pelo cliente; o webhook (item 1) ainda revalida o valor pago. Validado (8 casos). |
+| 6 | **Rate-limit dos agentes de IA públicos era só em memória** | `ai.js`, `ai-dispatcher.js`, `database.rules.json` (`aiRateLimit`) | Além do rate-limit em memória (por instância), o `ai.js` agora faz um rate-limit **persistente e compartilhado** entre instâncias: contador por hora e por IP no Realtime Database via **incremento atômico** (`{".sv":{"increment":1}}`), escrito com o Database Secret. **Fail-open** se o DB não responder (os tetos de orçamento por agente seguem valendo). O `ai-dispatcher` limpa diariamente os buckets antigos. Validado (21ª chamada do mesmo IP → 429). |
 
 ### ⚪ Descartado (por design)
 
@@ -650,11 +652,12 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 |---|---|---|
 | 3c | **Tornar `adminNotes` um campo só-admin** | Descartado: o `adminNotes` é, por design, uma observação que o admin **compartilha com o cliente** (aparece como "Nota" na consulta de status e como "Obs" no WhatsApp de aprovação). Não é um segredo interno, então não há o que esconder. Com o item 3b, quem lê já é só o dono verificado (não mais qualquer um com o código). |
 
-### 🟠 Segurança — prioridade média
+### 🟢 Produto / UX
 
-| # | Item | Onde | Risco | Recomendação |
-|---|---|---|---|---|
-| 6 | **Rate-limit dos agentes de IA públicos é em memória** | `ai.js` (`rlStore`) | Reseta a cada cold start e é por instância — contornável; risco de custo na Claude API. | Rate-limit persistente (Firebase) e/ou captcha no concierge/orçamento; manter os tetos de orçamento por agente. |
+| # | Item | Onde | Observação |
+|---|---|---|---|
+| 11 | **Cliente não consegue cadastrar mais de um veículo em "Minha Conta"** | `index.html` (`renderClientAccount`/`_renderClientOnboardingForm`, `addClientVehicleRow`, `_readClientVehicleRows`, `profile.vehicles`) | **Bug relatado.** O código já prevê múltiplos veículos (array `profile.vehicles`, linhas de add/remove, dedup por placa/modelo), mas na prática o cliente não consegue salvar mais de um. Investigar a UI (botão "adicionar veículo" visível/ativo no modo edição?) e a persistência (o save está gravando o array `vehicles` inteiro em `clientProfiles/$uid`?). |
+| 12 | **Destacar pacotes/combos na seleção de serviços do agendamento** | `index.html` (step 1 do agendamento; dados em `/combos`) | Ao escolher os serviços em "Agendar", exibir os **pacotes/combos existentes em bloco separado e em destaque** (preço regular vs. preço do combo + economia) para estimular a compra de pacotes. Hoje os combos têm seção própria (`#combos`) mas não aparecem em destaque no momento da seleção. |
 
 ### 🟡 Débito técnico / organização
 
