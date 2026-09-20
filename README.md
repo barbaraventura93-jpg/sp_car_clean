@@ -382,6 +382,7 @@ const CFG = {
     "clientLinkDismissals":   { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
     "clientOverrides":        { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
     "coupons":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "referrals":      { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
     "waitlist":       { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": true },
     "clientProfiles": {
       ".read":  "auth != null && auth.token.email == 'ADMIN_EMAIL'",
