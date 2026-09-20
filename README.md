@@ -547,10 +547,6 @@ sp-car-clean/
 ├── assets/
 │   ├── logo.png                 # Logo oficial (PNG com fundo transparente)
 │   └── portfolio/               # Imagens e vídeos do carrossel hero
-├── firestore.rules              # ⚠️ Regras Firestore legadas (ver Backlog — arquitetura atual usa RTDB)
-├── functions/                   # ⚠️ Cloud Functions Firestore legadas (syncClient) — ver Backlog
-│   ├── index.js
-│   └── lib/syncClient.js
 └── netlify/
     └── functions/
         ├── notify-booking.js        # Notifica admin (Telegram + push FCM) e cliente (WhatsApp)
@@ -646,6 +642,8 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 | 7 | **Fotos de check-in com leitura pública** | `storage.rules` (`checkin/**`) | A leitura de `checkin/**` passou de `if true` para `if request.auth != null`: o acesso por **caminho bruto** deixou de ser público (bloqueia raspagem/enumeração do bucket). As miniaturas continuam abrindo para o cliente porque o app usa a URL de download com `?token=` (gerada pelo admin no upload) — esse token funciona independentemente das regras, inclusive para o cliente deslogado (link por e-mail/WhatsApp). `gallery/` segue pública (vitrine). |
 | 5 | **Funções de pagamento/notificação sem auth nem rate-limit** | `netlify/functions/lib/guard.js` (novo), `create-payment.js`, `create-gift-payment.js`, `notify-booking.js` | Helper `guard.js` adiciona **rate-limit por IP** + **checagem de origem (CORS)** às três funções públicas (corta geração de links e disparo de notificações/WhatsApp em massa por terceiros — incluindo abuso do número oficial de WhatsApp). Além disso, `create-payment` e `create-gift-payment` passaram a ler o **valor no Firebase** (preço do agendamento / valor do gift card) em vez de confiar no valor enviado pelo cliente; o webhook (item 1) ainda revalida o valor pago. Validado (8 casos). |
 | 6 | **Rate-limit dos agentes de IA públicos era só em memória** | `ai.js`, `ai-dispatcher.js`, `database.rules.json` (`aiRateLimit`) | Além do rate-limit em memória (por instância), o `ai.js` agora faz um rate-limit **persistente e compartilhado** entre instâncias: contador por hora e por IP no Realtime Database via **incremento atômico** (`{".sv":{"increment":1}}`), escrito com o Database Secret. **Fail-open** se o DB não responder (os tetos de orçamento por agente seguem valendo). O `ai-dispatcher` limpa diariamente os buckets antigos. Validado (21ª chamada do mesmo IP → 429). |
+| 8 | **Código Firestore legado removido** | `functions/`, `firestore.rules`, `functions/lib/syncClient.js` | O conjunto Firestore (Cloud Function `syncClientFromBooking` + regras) não correspondia à arquitetura atual (Realtime Database) e não era referenciado por `firebase.json`/`netlify.toml`/app — código morto. **Removido** para eliminar a confusão (regras que não eram aplicadas, etc.). |
+| 9 | **Log de debug versionado** | `firebase-debug.log`, `.gitignore` | `firebase-debug.log` (artefato do `firebase init`) **removido** do repositório e adicionado ao `.gitignore`. |
 
 ### ⚪ Descartado (por design)
 
@@ -665,8 +663,6 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 
 | # | Item | Onde | Observação |
 |---|---|---|---|
-| 8 | **Código Firestore legado não corresponde à arquitetura RTDB** | `functions/`, `firestore.rules`, `lib/syncClient.js` | O app usa Realtime Database; o `firebase.json` só publica hosting. Esse conjunto Firestore provavelmente está inativo — decidir **remover** ou **reativar** para não gerar confusão (inclusive regras que não são aplicadas). |
-| 9 | **Log de debug versionado** | `firebase-debug.log` | Artefato do `firebase init` (Windows) commitado. Adicionar ao `.gitignore` e remover do repositório. |
 | 10 | **`index.html` monolítico (~540 KB)** | `index.html` | Site público + painel admin no mesmo arquivo dificultam manutenção e revisão. Avaliar separação/módulos a médio prazo. |
 
 ---
