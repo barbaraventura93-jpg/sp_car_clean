@@ -1,25 +1,55 @@
+const { clientIp, rateLimit, originAllowed, corsHeaders } = require('./lib/guard');
+
 exports.handler = async (event) => {
+  const cors = corsHeaders(event);
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' };
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
+    return { statusCode: 405, headers: cors, body: 'Method Not Allowed' };
+  }
+  if (!originAllowed(event)) return { statusCode: 403, headers: cors, body: JSON.stringify({ ok: false, error: 'origem não permitida' }) };
+  if (!rateLimit('create-payment', clientIp(event), { max: 20 })) {
+    return { statusCode: 429, headers: cors, body: JSON.stringify({ ok: false, error: 'muitas requisições — tente mais tarde' }) };
   }
 
   const handle = process.env.INFINITEPAY_HANDLE;
   if (!handle) {
-    return { statusCode: 500, body: JSON.stringify({ ok: false, error: 'INFINITEPAY_HANDLE não configurado' }) };
+    return { statusCode: 500, headers: cors, body: JSON.stringify({ ok: false, error: 'INFINITEPAY_HANDLE não configurado' }) };
   }
 
   let data;
   try { data = JSON.parse(event.body); }
-  catch { return { statusCode: 400, body: 'Invalid JSON' }; }
+  catch { return { statusCode: 400, headers: cors, body: 'Invalid JSON' }; }
 
   const { bookingId, finalPrice, customerName, customerEmail, customerPhone, service } = data;
-  if (!bookingId || !finalPrice) {
-    return { statusCode: 400, body: JSON.stringify({ ok: false, error: 'bookingId e finalPrice são obrigatórios' }) };
+  if (!bookingId) {
+    return { statusCode: 400, headers: cors, body: JSON.stringify({ ok: false, error: 'bookingId é obrigatório' }) };
+  }
+
+  // Valor autoritativo: buscamos o preço no Firebase (definido pelo admin ao
+  // aprovar) em vez de confiar no `finalPrice` enviado pelo cliente. O valor do
+  // cliente só é usado como fallback se o registro ainda não tiver preço (ex.:
+  // corrida com a escrita do painel). O webhook (item 1) ainda revalida o valor
+  // efetivamente pago.
+  let price = Number(finalPrice) || 0;
+  const dbUrl    = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
+  const dbSecret = process.env.FIREBASE_DATABASE_SECRET;
+  if (dbUrl && dbSecret) {
+    try {
+      const r = await fetch(`${dbUrl}/bookings/${encodeURIComponent(bookingId)}.json?auth=${dbSecret}`);
+      if (r.ok) {
+        const bk = await r.json();
+        const dbPrice = Number(bk?.finalPrice) || Number(bk?.price) || 0;
+        if (dbPrice > 0) price = dbPrice;
+      }
+    } catch (e) { /* mantém o fallback do cliente */ }
+  }
+  if (!price || price <= 0) {
+    return { statusCode: 400, headers: cors, body: JSON.stringify({ ok: false, error: 'preço do agendamento indisponível' }) };
   }
 
   // Embed card fee into price and round up so the business receives the full amount
   const feeRate = parseFloat(process.env.INFINITEPAY_FEE_RATE || '0.0315');
-  const priceWithFee = Math.ceil(finalPrice / (1 - feeRate));
+  const priceWithFee = Math.ceil(price / (1 - feeRate));
   const amountInCents = priceWithFee * 100;
 
   const siteUrl = (process.env.URL || 'https://sp-car-clean.netlify.app').replace(/\/$/, '');
@@ -51,14 +81,15 @@ exports.handler = async (event) => {
     });
     const result = await resp.json();
     if (!resp.ok) {
-      return { statusCode: resp.status, body: JSON.stringify({ ok: false, error: result }) };
+      return { statusCode: resp.status, headers: cors, body: JSON.stringify({ ok: false, error: result }) };
     }
     const paymentUrl = result.link || result.url || result.payment_url || result.checkout_url || '';
     return {
       statusCode: 200,
+      headers: cors,
       body: JSON.stringify({ ok: true, paymentUrl, priceWithFee })
     };
   } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ ok: false, error: err.message }) };
+    return { statusCode: 500, headers: cors, body: JSON.stringify({ ok: false, error: err.message }) };
   }
 };

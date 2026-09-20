@@ -563,6 +563,7 @@ sp-car-clean/
         ├── ai-dispatcher.js         # Cron diário: dispara agentes de IA agendados
         └── lib/
             ├── fcm.js               # Helper de envio de push (OAuth2 + FCM HTTP v1)
+            ├── guard.js             # Rate-limit por IP + checagem de origem (CORS) das funções públicas
             ├── agents/              # Agentes de IA (concierge, relatorio, upsell, orcamento, …)
             └── core/                # Núcleo (claude, firebase, telegram, email, whatsapp, config, logger)
 ```
@@ -641,6 +642,7 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 | 3 | **Códigos de reserva/gift card curtos e previsíveis** | `index.html` (`genId`, `genGiftId`) | Os códigos passaram de 6 caracteres gerados com `Math.random()` (`SPC-` ≈ 10⁹, não-criptográfico) para **10 caracteres via CSPRNG** (`crypto.getRandomValues`), num alfabeto de 32 sem ambíguos → **32¹⁰ ≈ 1,1×10¹⁵** combinações. Inviabiliza enumeração/brute force para os **novos** agendamentos e gift cards. Mesma correção aplicada ao `genGiftId`. |
 | 3b | **Leitura pública expunha o agendamento inteiro (inclui enumeração de códigos antigos)** | `database.rules.json` (`bookings/$id .read`), `netlify/functions/booking-status.js`, `index.html` | `bookings/$id .read` deixou de ser `true`: agora exige login e só o dono (`clientUid == auth.uid` ou `email == auth.token.email`) ou o admin leem — fecha a enumeração, **inclusive dos códigos antigos**. A consulta sem login passou para a função server-side `booking-status` (exige **código + e-mail**, devolve só ao dono verificado, com rate-limit por IP e resposta genérica anti-oráculo). Regra e função validadas (8 + 7 casos). |
 | 7 | **Fotos de check-in com leitura pública** | `storage.rules` (`checkin/**`) | A leitura de `checkin/**` passou de `if true` para `if request.auth != null`: o acesso por **caminho bruto** deixou de ser público (bloqueia raspagem/enumeração do bucket). As miniaturas continuam abrindo para o cliente porque o app usa a URL de download com `?token=` (gerada pelo admin no upload) — esse token funciona independentemente das regras, inclusive para o cliente deslogado (link por e-mail/WhatsApp). `gallery/` segue pública (vitrine). |
+| 5 | **Funções de pagamento/notificação sem auth nem rate-limit** | `netlify/functions/lib/guard.js` (novo), `create-payment.js`, `create-gift-payment.js`, `notify-booking.js` | Helper `guard.js` adiciona **rate-limit por IP** + **checagem de origem (CORS)** às três funções públicas (corta geração de links e disparo de notificações/WhatsApp em massa por terceiros — incluindo abuso do número oficial de WhatsApp). Além disso, `create-payment` e `create-gift-payment` passaram a ler o **valor no Firebase** (preço do agendamento / valor do gift card) em vez de confiar no valor enviado pelo cliente; o webhook (item 1) ainda revalida o valor pago. Validado (8 casos). |
 
 ### ⚪ Descartado (por design)
 
@@ -652,7 +654,6 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 
 | # | Item | Onde | Risco | Recomendação |
 |---|---|---|---|---|
-| 5 | **Funções de pagamento/notificação sem auth nem rate-limit** | `create-payment.js`, `create-gift-payment.js`, `notify-booking.js` | Geração de links/notificações em massa (spam ao admin via Telegram/push); o preço vem do cliente (`finalPrice`/`amount`). | Rate-limit + checagem de origem (CORS/token). No `create-payment`, buscar o valor do agendamento no Firebase em vez de confiar no `finalPrice` enviado pelo cliente. |
 | 6 | **Rate-limit dos agentes de IA públicos é em memória** | `ai.js` (`rlStore`) | Reseta a cada cold start e é por instância — contornável; risco de custo na Claude API. | Rate-limit persistente (Firebase) e/ou captcha no concierge/orçamento; manter os tetos de orçamento por agente. |
 
 ### 🟡 Débito técnico / organização
