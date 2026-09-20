@@ -1,5 +1,6 @@
 const { sendAdminPush } = require('./lib/fcm');
 const { sendWhatsAppTemplate } = require('./lib/core/whatsapp');
+const { clientIp, rateLimit, originAllowed, corsHeaders } = require('./lib/guard');
 
 // Título/corpo curtos da notificação push por tipo de evento.
 function buildPush(data) {
@@ -20,8 +21,17 @@ function buildPush(data) {
 }
 
 exports.handler = async (event) => {
+  const cors = corsHeaders(event);
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' };
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
+    return { statusCode: 405, headers: cors, body: 'Method Not Allowed' };
+  }
+  // Sem auth (visitante cria agendamento), mas com origem + rate-limit: evita
+  // spam ao Telegram/push e, sobretudo, disparo de WhatsApp (número oficial da
+  // loja) para telefones arbitrários por terceiros.
+  if (!originAllowed(event)) return { statusCode: 403, headers: cors, body: JSON.stringify({ ok: false, error: 'origem não permitida' }) };
+  if (!rateLimit('notify-booking', clientIp(event), { max: 30 })) {
+    return { statusCode: 429, headers: cors, body: JSON.stringify({ ok: false, error: 'muitas requisições — tente mais tarde' }) };
   }
 
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -29,7 +39,7 @@ exports.handler = async (event) => {
 
   let data;
   try { data = JSON.parse(event.body); }
-  catch { return { statusCode: 400, body: 'Invalid JSON' }; }
+  catch { return { statusCode: 400, headers: cors, body: 'Invalid JSON' }; }
 
   // Push para o celular do admin (best-effort; independente do Telegram).
   const portalLink = `${(process.env.URL || 'https://www.spcarclean.com.br').replace(/\/$/, '')}/?admin`;
@@ -50,7 +60,7 @@ exports.handler = async (event) => {
   if (!botToken || !chatId) {
     // Sem Telegram configurado ainda tentamos entregar push e WhatsApp antes de sair.
     const [push, whatsapp] = await Promise.all([pushPromise, whatsappPromise]);
-    return { statusCode: 200, body: JSON.stringify({ ok: true, telegram: false, push, whatsapp }) };
+    return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, telegram: false, push, whatsapp }) };
   }
 
   const portalUrl = `${process.env.URL || 'https://sp-car-clean.web.app'}/?admin`;
@@ -140,14 +150,14 @@ exports.handler = async (event) => {
     const body = await resp.json();
     const [push, whatsapp] = await Promise.all([pushPromise, whatsappPromise]);
     if (!body.ok) {
-      return { statusCode: 502, body: JSON.stringify({ ok: false, error: body, push, whatsapp }) };
+      return { statusCode: 502, headers: cors, body: JSON.stringify({ ok: false, error: body, push, whatsapp }) };
     }
-    return { statusCode: 200, body: JSON.stringify({ ok: true, push, whatsapp }) };
+    return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, push, whatsapp }) };
   } catch (err) {
     const [push, whatsapp] = await Promise.all([
       pushPromise.catch(() => ({ ok: false })),
       whatsappPromise.catch(() => ({ ok: false }))
     ]);
-    return { statusCode: 500, body: JSON.stringify({ ok: false, error: err.message, push, whatsapp }) };
+    return { statusCode: 500, headers: cors, body: JSON.stringify({ ok: false, error: err.message, push, whatsapp }) };
   }
 };
