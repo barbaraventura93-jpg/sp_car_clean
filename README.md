@@ -446,7 +446,7 @@ service firebase.storage {
       allow write: if request.auth != null;
     }
     match /checkin/{allPaths=**} {
-      allow read: if true;
+      allow read: if request.auth != null;   // item 7: bloqueia acesso por caminho bruto; URLs com ?token continuam abrindo
       allow write: if request.auth != null;
     }
   }
@@ -637,9 +637,10 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 |---|---|---|---|
 | 1 | **Webhook de pagamento sem verificação** | `netlify/functions/infinitepay-webhook.js` | O corpo do webhook deixou de ser confiável: antes de confirmar um agendamento ou ativar um gift card, a função consulta o endpoint oficial `POST payment_check` do InfinitePay (autenticado pelo nosso `handle`) e só prossegue se `paid === true`. Confere também o valor pago contra o valor esperado do pedido (`priceWithFee`/`amount`) e faz **fail-closed** — se não conseguir verificar, devolve erro para o InfinitePay reenviar em vez de confirmar às cegas. |
 | 2 | **Regra RTDB permitia sobrescrever qualquer agendamento** | `database.rules.json` (`bookings/$id`) | A escrita pública passou de `newData.exists()` (qualquer alteração) para: **criar** um agendamento, ou fazer só as alterações self-service (reagendar/cancelar/feedback). Campos de valor, pagamento e identidade (`price`, `finalPrice`, `priceWithFee`, `paidAmount`, `paymentTransactionId`, `email`, `name`, `phone`, `createdAt`, `id`) ficaram imutáveis sem login, e o `status` só pode ir para `cancelled` — nunca para `approved`/`confirmed`/`completed`. Regra validada com 15 casos (targaryen). |
-| 4 | **Regras de segurança não versionadas** | `database.rules.json`, `storage.rules`, `firebase.json` | As regras do Realtime Database e do Storage viviam só neste README (colar manual no Console, sem histórico nem revisão). Agora são **versionadas** em `database.rules.json` e `storage.rules`, referenciadas no `firebase.json`, e publicáveis com `firebase deploy --only database,storage`. (As regras do Storage foram versionadas **sem alterar o comportamento atual** — endurecer a leitura de `checkin/**` é o item 7.) |
+| 4 | **Regras de segurança não versionadas** | `database.rules.json`, `storage.rules`, `firebase.json` | As regras do Realtime Database e do Storage viviam só neste README (colar manual no Console, sem histórico nem revisão). Agora são **versionadas** em `database.rules.json` e `storage.rules`, referenciadas no `firebase.json`, e publicáveis com `firebase deploy --only database,storage`. (As regras do Storage foram versionadas sem alterar comportamento na época; a leitura de `checkin/**` foi endurecida depois, no item 7.) |
 | 3 | **Códigos de reserva/gift card curtos e previsíveis** | `index.html` (`genId`, `genGiftId`) | Os códigos passaram de 6 caracteres gerados com `Math.random()` (`SPC-` ≈ 10⁹, não-criptográfico) para **10 caracteres via CSPRNG** (`crypto.getRandomValues`), num alfabeto de 32 sem ambíguos → **32¹⁰ ≈ 1,1×10¹⁵** combinações. Inviabiliza enumeração/brute force para os **novos** agendamentos e gift cards. Mesma correção aplicada ao `genGiftId`. |
 | 3b | **Leitura pública expunha o agendamento inteiro (inclui enumeração de códigos antigos)** | `database.rules.json` (`bookings/$id .read`), `netlify/functions/booking-status.js`, `index.html` | `bookings/$id .read` deixou de ser `true`: agora exige login e só o dono (`clientUid == auth.uid` ou `email == auth.token.email`) ou o admin leem — fecha a enumeração, **inclusive dos códigos antigos**. A consulta sem login passou para a função server-side `booking-status` (exige **código + e-mail**, devolve só ao dono verificado, com rate-limit por IP e resposta genérica anti-oráculo). Regra e função validadas (8 + 7 casos). |
+| 7 | **Fotos de check-in com leitura pública** | `storage.rules` (`checkin/**`) | A leitura de `checkin/**` passou de `if true` para `if request.auth != null`: o acesso por **caminho bruto** deixou de ser público (bloqueia raspagem/enumeração do bucket). As miniaturas continuam abrindo para o cliente porque o app usa a URL de download com `?token=` (gerada pelo admin no upload) — esse token funciona independentemente das regras, inclusive para o cliente deslogado (link por e-mail/WhatsApp). `gallery/` segue pública (vitrine). |
 
 ### ⚪ Descartado (por design)
 
@@ -653,7 +654,6 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 |---|---|---|---|---|
 | 5 | **Funções de pagamento/notificação sem auth nem rate-limit** | `create-payment.js`, `create-gift-payment.js`, `notify-booking.js` | Geração de links/notificações em massa (spam ao admin via Telegram/push); o preço vem do cliente (`finalPrice`/`amount`). | Rate-limit + checagem de origem (CORS/token). No `create-payment`, buscar o valor do agendamento no Firebase em vez de confiar no `finalPrice` enviado pelo cliente. |
 | 6 | **Rate-limit dos agentes de IA públicos é em memória** | `ai.js` (`rlStore`) | Reseta a cada cold start e é por instância — contornável; risco de custo na Claude API. | Rate-limit persistente (Firebase) e/ou captcha no concierge/orçamento; manter os tetos de orçamento por agente. |
-| 7 | **Fotos de check-in e galeria com leitura pública** | Regras do Storage (`checkin/**`, `gallery` → `read: if true`) | Fotos de veículos e placas ficam acessíveis por URL a quem a obtiver. | Avaliar leitura restrita/tokenizada para `checkin/**` (dado do cliente), mantendo `gallery` pública se for vitrine. |
 
 ### 🟡 Débito técnico / organização
 
