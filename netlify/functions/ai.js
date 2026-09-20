@@ -47,7 +47,11 @@ exports.handler = async (event) => {
     if (!await verifyAdmin(token)) return reply(403, { ok: false, error: 'token inválido' });
   } else {
     const ip = (event.headers['x-forwarded-for'] || 'unknown').split(',')[0].trim();
+    // Pré-checagem em memória (rápida, por instância) + checagem persistente no
+    // Firebase (compartilhada entre instâncias/cold starts). Qualquer uma que
+    // estoure → 429.
     if (!checkRL(ip)) return reply(429, { ok: false, error: 'muitas requisições — tente em 1 hora' });
+    if (!await checkRLPersistent(ip)) return reply(429, { ok: false, error: 'muitas requisições — tente em 1 hora' });
   }
 
   // --- Flag + budget ---
@@ -122,4 +126,30 @@ function checkRL(ip) {
   if (rlStore[ip].count >= RL_MAX) return false;
   rlStore[ip].count++;
   return true;
+}
+
+// Rate-limit persistente e compartilhado entre instâncias (item 6). Usa o
+// incremento atômico do Realtime Database (server value {".sv":{"increment":1}})
+// num contador por hora e por IP, escrito com o Database Secret (ignora as
+// regras). Fail-open: se o DB não responder, não bloqueia (os tetos de orçamento
+// por agente e o rate-limit em memória seguem valendo). Os buckets antigos são
+// limpos diariamente pelo ai-dispatcher.
+async function checkRLPersistent(ip) {
+  const dbUrl    = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
+  const dbSecret = process.env.FIREBASE_DATABASE_SECRET;
+  if (!dbUrl || !dbSecret) return true; // sem DB configurado → não bloqueia
+  const bucket = new Date().toISOString().slice(0, 13).replace(/[-T:]/g, ''); // YYYYMMDDHH
+  const key    = `${bucket}_${String(ip).replace(/[^0-9A-Za-z]/g, '_').slice(0, 60)}`;
+  try {
+    const resp = await fetch(`${dbUrl}/aiRateLimit/${key}.json?auth=${dbSecret}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ '.sv': { increment: 1 } })
+    });
+    if (!resp.ok) return true; // fail-open
+    const count = Number(await resp.json());
+    return !Number.isFinite(count) || count <= RL_MAX;
+  } catch {
+    return true; // fail-open
+  }
 }
