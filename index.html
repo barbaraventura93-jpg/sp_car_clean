@@ -5498,6 +5498,20 @@ async function markCompleted(id) {
     mensagem: `Olá ${firstName}! 🎉\n\nSeu ${svcName} foi concluído com sucesso. Esperamos que o resultado tenha superado as expectativas!\n\nGostaríamos muito de saber sua opinião. Leva menos de 1 minuto:\n\n⭐ Avaliar agora → ${surveyLink}\n\nObrigado pela preferência! Até a próxima. 🚗✨\n\n— Equipe SP Car Clean`,
   });
 
+  // Item 13: além do e-mail automático, opção de enviar AGORA por WhatsApp a
+  // pesquisa + o convite de indicação (programa "Indique um amigo") — manual:
+  // abre o WhatsApp já preenchido para o admin conferir e enviar.
+  if (b.phone && confirm('Concluído! Deseja abrir o WhatsApp para enviar ao cliente a pesquisa de satisfação + o convite de indicação agora?')) {
+    const referralLink = `${window.location.origin}/?indicar=1`;
+    const waMsg = encodeURIComponent(
+      `Olá ${firstName}! 🎉\n\nSeu ${svcName} foi concluído com sucesso — esperamos que tenha superado as expectativas!\n\n` +
+      `⭐ *Avalie em 1 minuto:*\n${surveyLink}\n\n` +
+      `🎁 *Indique um amigo e vocês dois ganham ${REFERRAL_FRIEND_PCT}% de desconto:*\n${referralLink}\n\n` +
+      `Obrigado pela preferência! 🚗✨\n— Equipe SP Car Clean`
+    );
+    window.open(`https://wa.me/${buildWaPhone(b.phone)}?text=${waMsg}`, '_blank');
+  }
+
   closeModal('detailModal');
 }
 
@@ -9021,6 +9035,23 @@ _updateClientNavUI();
     };
     setTimeout(tryOpen, 500);
   }
+})();
+
+// Item 13: link de indicação compartilhável — ?indicar=1 abre o modal
+// "Indique um amigo" automaticamente (quem abre é o indicador; preenche os
+// próprios dados + os do amigo). Limpa a URL depois.
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('indicar') === null) return;
+  const tryOpen = () => {
+    if (typeof openReferralModal === 'function' && document.getElementById('referralModal')) {
+      openReferralModal('link');
+      history.replaceState({}, '', window.location.pathname);
+    } else {
+      setTimeout(tryOpen, 300);
+    }
+  };
+  setTimeout(tryOpen, 500);
 })();
 
 // ============================================================
