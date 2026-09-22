@@ -645,6 +645,7 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 | 8 | **Código Firestore legado removido** | `functions/`, `firestore.rules`, `functions/lib/syncClient.js` | O conjunto Firestore (Cloud Function `syncClientFromBooking` + regras) não correspondia à arquitetura atual (Realtime Database) e não era referenciado por `firebase.json`/`netlify.toml`/app — código morto. **Removido** para eliminar a confusão (regras que não eram aplicadas, etc.). |
 | 9 | **Log de debug versionado** | `firebase-debug.log`, `.gitignore` | `firebase-debug.log` (artefato do `firebase init`) **removido** do repositório e adicionado ao `.gitignore`. |
 | 11 | **Cliente só conseguia cadastrar 1 veículo em "Minha Conta"** | `index.html` (`_profileVehicles`) | Causa provável: o Realtime Database devolvia o array `vehicles` como objeto `{0:…,1:…}`, e `Array.isArray()` falhava → o app caía no fallback de 1 veículo (`primaryVehicle`) em 3 telas. Novo helper `_profileVehicles(profile)` aceita **array ou objeto** (e só cai no `primaryVehicle` quando não há lista), usado nas 3 leituras (resumo da conta, form de dados cadastrais, prefill do agendamento). Validado (6 casos). |
+| 12 | **Destacar pacotes/combos na seleção de serviços** | `index.html` (`renderBookingStep`, step 1) | No passo 1 do agendamento (só carro — combos usam porte pq/gr), um bloco destacado **"🎁 Pacotes com desconto"** lista os combos públicos ativos com preço regular vs. combo + economia e um botão **"Escolher pacote"** que adiciona os serviços do combo ao agendamento (`applyComboSuggestion`). Estimula a compra de pacotes no momento da escolha. |
 
 ### ⚪ Descartado (por design)
 
@@ -656,7 +657,6 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 
 | # | Item | Onde | Observação |
 |---|---|---|---|
-| 12 | **Destacar pacotes/combos na seleção de serviços do agendamento** | `index.html` (step 1 do agendamento; dados em `/combos`) | Ao escolher os serviços em "Agendar", exibir os **pacotes/combos existentes em bloco separado e em destaque** (preço regular vs. preço do combo + economia) para estimular a compra de pacotes. Hoje os combos têm seção própria (`#combos`) mas não aparecem em destaque no momento da seleção. |
 | 13 | **Ao concluir o serviço, enviar pesquisa + link de indicação por WhatsApp (manual, na hora)** | `index.html` (fluxo "Concluído" do admin; survey `?avaliar=CODE`; combos/indicação) | Quando o admin marca o agendamento como **concluído**, abrir uma ação para **enviar por WhatsApp, na hora e manualmente**, a **pesquisa de satisfação** (link `?avaliar=CODE`) **junto com um link de indicação** (indique-um-amigo). Requer criar o conceito de **link de indicação** (hoje não existe) — definir o incentivo (ex.: cupom para quem indica e/ou para o indicado) e a mensagem pré-formatada de WhatsApp. |
 
 ### 🟡 Débito técnico / organização
