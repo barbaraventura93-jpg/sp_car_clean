@@ -3639,9 +3639,7 @@ function renderClientAccount() {
 
   // Veículos cadastrados pelo cliente (perfil) + os identificados nos agendamentos.
   const vehicles = {};
-  const profileVehicles = Array.isArray(profile.vehicles) && profile.vehicles.length
-    ? profile.vehicles
-    : (profile.primaryVehicle && (profile.primaryVehicle.car || profile.primaryVehicle.plate) ? [profile.primaryVehicle] : []);
+  const profileVehicles = _profileVehicles(profile);
   profileVehicles.forEach(v => {
     const k = ((v.plate || v.car || '')).trim().toUpperCase();
     if (k) vehicles[k] = { car: v.car || '', plate: v.plate || '' };
@@ -3711,6 +3709,24 @@ function renderClientAccount() {
 }
 
 // HTML de uma linha de veículo no formulário de dados cadastrais.
+// Normaliza a lista de veículos do perfil. O Realtime Database pode devolver o
+// array `vehicles` como objeto com chaves numéricas ({0:…,1:…}) — nesse caso
+// `Array.isArray` falha e antes só aparecia 1 veículo (fallback primaryVehicle),
+// dando a impressão de "não dá para cadastrar mais de um". Aqui aceitamos array
+// OU objeto e só caímos no primaryVehicle quando realmente não há lista.
+function _profileVehicles(profile) {
+  const raw = profile && profile.vehicles;
+  let list = Array.isArray(raw)
+    ? raw
+    : (raw && typeof raw === 'object' ? Object.values(raw) : []);
+  list = list.filter(v => v && (v.car || v.plate));
+  if (!list.length && profile && profile.primaryVehicle &&
+      (profile.primaryVehicle.car || profile.primaryVehicle.plate)) {
+    list = [{ car: profile.primaryVehicle.car || '', plate: profile.primaryVehicle.plate || '' }];
+  }
+  return list;
+}
+
 function _clientVehicleRowHtml(car, plate) {
   return `<div class="cob-vehicle-row">
     <div class="form-group"><label>Veículo (modelo)</label><input class="cob-v-car" value="${esc(car || '')}" placeholder="Ex: Honda Civic Prata 2020"/></div>
@@ -3769,10 +3785,7 @@ function _renderClientOnboardingForm(isEditMode) {
   // Veículos cadastrados — suporta múltiplos (profile.vehicles). Migra de
   // profile.primaryVehicle (formato antigo) e, se não houver nenhum, sugere o
   // veículo do último agendamento como ponto de partida.
-  let vehicles = Array.isArray(profile.vehicles) ? profile.vehicles.filter(v => v && (v.car || v.plate)) : [];
-  if (!vehicles.length && profile.primaryVehicle && (profile.primaryVehicle.car || profile.primaryVehicle.plate)) {
-    vehicles = [{ car: profile.primaryVehicle.car || '', plate: profile.primaryVehicle.plate || '' }];
-  }
+  let vehicles = _profileVehicles(profile);
   if (!vehicles.length && lastBooking && (lastBooking.car || lastBooking.plate)) {
     vehicles = [{ car: lastBooking.car || '', plate: lastBooking.plate || '' }];
   }
@@ -4715,9 +4728,7 @@ function _buildLoggedClientFleet(profile, _ignored) {
     seen.add(key);
     out.push({ car, plate });
   };
-  const profVehicles = Array.isArray(profile.vehicles) && profile.vehicles.length
-    ? profile.vehicles
-    : (profile.primaryVehicle && (profile.primaryVehicle.car || profile.primaryVehicle.plate) ? [profile.primaryVehicle] : []);
+  const profVehicles = _profileVehicles(profile);
   profVehicles.forEach(push);
   const email = (profile.email || '').toLowerCase();
   _bookings
