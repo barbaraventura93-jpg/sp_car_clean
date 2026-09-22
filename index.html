@@ -2281,6 +2281,42 @@ function renderBookingStep() {
 
     const total = booking.services.reduce((s,id)=>s+(SVCS[id]?SVCS[id][booking.carSize]:0),0);
 
+    // Item 12: bloco destacado de PACOTES no momento da seleção (só carro — combos
+    // usam porte pq/gr). Lista os combos públicos ativos com economia e um botão
+    // que adiciona os serviços do combo ao agendamento (applyComboSuggestion).
+    let comboPicks = '';
+    if (!isMotoSel) {
+      const sz = booking.carSize;
+      const picks = Object.entries(_COMBOS)
+        .filter(([, c]) => c.active !== false && !c.internal)
+        .map(([cid, combo]) => {
+          const p = comboPrice(combo, sz);
+          if (!p.regular) return '';
+          const names = (combo.serviceIds || []).map(s => SVCS[s]?.name).filter(Boolean).join(' + ');
+          if (!names) return '';
+          const allIn = (combo.serviceIds || []).every(s => booking.services.includes(s));
+          return `<div style="border:1px solid var(--blue-mid);border-radius:10px;padding:.7rem .8rem;background:#fff;display:flex;flex-direction:column;gap:.35rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem">
+              <span style="font-family:Montserrat,sans-serif;font-weight:800;font-size:.86rem;color:var(--blue-dk)">${combo.emoji || '🎁'} ${combo.name}</span>
+              ${p.savings ? `<span style="background:var(--green);color:#fff;font-weight:800;font-size:.7rem;padding:.15rem .45rem;border-radius:999px;white-space:nowrap">− ${fmtMoney(p.savings)}</span>` : ''}
+            </div>
+            <div style="font-size:.74rem;color:var(--muted);line-height:1.3">${names}</div>
+            <div style="display:flex;align-items:baseline;gap:.4rem">
+              ${p.savings ? `<span style="text-decoration:line-through;color:var(--muted);font-size:.75rem">${fmtMoney(p.regular)}</span>` : ''}
+              <strong style="color:var(--blue);font-size:.98rem;font-family:Montserrat,sans-serif">${fmtMoney(p.final)}</strong>
+            </div>
+            <button onclick="applyComboSuggestion('${cid}')" ${allIn ? 'disabled' : ''}
+              style="margin-top:.15rem;border:none;border-radius:8px;padding:.45rem .7rem;font-weight:700;font-size:.78rem;cursor:${allIn ? 'default' : 'pointer'};${allIn ? 'background:var(--green-lt);color:#1a6b3a' : 'background:var(--blue);color:#fff'}">${allIn ? '✓ Adicionado' : 'Escolher pacote →'}</button>
+          </div>`;
+        }).filter(Boolean).join('');
+      if (picks) {
+        comboPicks = `<div style="background:var(--blue-lt);border:1px solid var(--blue-mid);border-radius:12px;padding:.8rem;margin-bottom:1rem">
+          <div style="font-family:Montserrat,sans-serif;font-weight:800;font-size:.82rem;color:var(--blue-dk);margin-bottom:.6rem">🎁 Pacotes com desconto <span style="font-weight:500;color:var(--muted);font-size:.9em">— economize levando um combo</span></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.6rem">${picks}</div>
+        </div>`;
+      }
+    }
+
     // Sugestão de combo: verifica se serviços selecionados fazem parte de algum combo
     let comboSuggestion = '';
     if (booking.services.length > 0) {
@@ -2317,6 +2353,7 @@ function renderBookingStep() {
     body.innerHTML = `<div class="step-indicator">${progress}</div>
       <div class="step-label">Selecione os serviços <span style="font-weight:400;color:var(--muted);font-size:.8em">(pode escolher mais de um)</span></div>
       ${vehicleSelector}
+      ${comboPicks}
       <div class="svc-pick-grid">${cards}</div>
       ${totalBar}`;
     footer.innerHTML = `<span></span><button class="btn-primary" onclick="nextStep()" ${!booking.services.length?'disabled style="opacity:.4;cursor:not-allowed"':''}>Próximo →</button>`;
