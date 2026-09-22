@@ -646,18 +646,13 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 | 9 | **Log de debug versionado** | `firebase-debug.log`, `.gitignore` | `firebase-debug.log` (artefato do `firebase init`) **removido** do repositório e adicionado ao `.gitignore`. |
 | 11 | **Cliente só conseguia cadastrar 1 veículo em "Minha Conta"** | `index.html` (`_profileVehicles`) | Causa provável: o Realtime Database devolvia o array `vehicles` como objeto `{0:…,1:…}`, e `Array.isArray()` falhava → o app caía no fallback de 1 veículo (`primaryVehicle`) em 3 telas. Novo helper `_profileVehicles(profile)` aceita **array ou objeto** (e só cai no `primaryVehicle` quando não há lista), usado nas 3 leituras (resumo da conta, form de dados cadastrais, prefill do agendamento). Validado (6 casos). |
 | 12 | **Destacar pacotes/combos na seleção de serviços** | `index.html` (`renderBookingStep`, step 1) | No passo 1 do agendamento (só carro — combos usam porte pq/gr), um bloco destacado **"🎁 Pacotes com desconto"** lista os combos públicos ativos com preço regular vs. combo + economia e um botão **"Escolher pacote"** que adiciona os serviços do combo ao agendamento (`applyComboSuggestion`). Estimula a compra de pacotes no momento da escolha. |
+| 13 | **Pesquisa + indicação por WhatsApp ao concluir (manual, na hora)** | `index.html` (`markCompleted`; deep-link `?indicar=1`) | Ao marcar como **concluído**, além do e-mail automático da pesquisa, o admin recebe a opção de **abrir o WhatsApp já preenchido** com a **pesquisa** (`?avaliar=CODE`) + o **convite de indicação** (link `?indicar=1`) num texto só, citando o desconto de 15%. O `?indicar=1` é o novo **link de indicação compartilhável** que abre o modal "Indique um amigo" (programa de indicação que já existia — cupom 15% para amigo e para quem indica). |
 
 ### ⚪ Descartado (por design)
 
 | # | Item | Decisão |
 |---|---|---|
 | 3c | **Tornar `adminNotes` um campo só-admin** | Descartado: o `adminNotes` é, por design, uma observação que o admin **compartilha com o cliente** (aparece como "Nota" na consulta de status e como "Obs" no WhatsApp de aprovação). Não é um segredo interno, então não há o que esconder. Com o item 3b, quem lê já é só o dono verificado (não mais qualquer um com o código). |
-
-### 🟢 Produto / UX
-
-| # | Item | Onde | Observação |
-|---|---|---|---|
-| 13 | **Ao concluir o serviço, enviar pesquisa + link de indicação por WhatsApp (manual, na hora)** | `index.html` (fluxo "Concluído" do admin; survey `?avaliar=CODE`; combos/indicação) | Quando o admin marca o agendamento como **concluído**, abrir uma ação para **enviar por WhatsApp, na hora e manualmente**, a **pesquisa de satisfação** (link `?avaliar=CODE`) **junto com um link de indicação** (indique-um-amigo). Requer criar o conceito de **link de indicação** (hoje não existe) — definir o incentivo (ex.: cupom para quem indica e/ou para o indicado) e a mensagem pré-formatada de WhatsApp. |
 
 ### 🟡 Débito técnico / organização
 
