@@ -658,7 +658,7 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 
 | # | Item | Onde | Observação |
 |---|---|---|---|
-| 10 | **`index.html` monolítico (~540 KB)** | `index.html` | Site público + painel admin no mesmo arquivo dificultam manutenção e revisão. Avaliar separação/módulos a médio prazo. |
+| 10 | **`index.html` monolítico** | `index.html`, `styles.css`, `build.js` | **Fase 1 concluída:** o CSS principal (~72 KB, ~680 linhas) foi extraído do `<style>` inline para `styles.css` (referenciado por `<link>` e copiado ao `dist/` pelo `build.js`); o `index.html` caiu de ~580 KB para ~508 KB, sem impacto em JS nem nos placeholders de env (que ficam só no bloco `<script>`). **Pendente (fases futuras):** separar o `<script>` da aplicação (~8.400 linhas) em módulos por área (site público vs. painel admin) — refator maior, avaliado a médio prazo. |
 
 ---
 
