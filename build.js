@@ -25,7 +25,7 @@ let fcmSw = fs.readFileSync('firebase-messaging-sw.js', 'utf8');
 fcmSw = fcmSw.replace('%%FIREBASE_API_KEY%%', key);
 fs.writeFileSync(path.join('dist', 'firebase-messaging-sw.js'), fcmSw);
 
-for (const f of ['sw.js', 'manifest.webmanifest']) {
+for (const f of ['sw.js', 'manifest.webmanifest', 'styles.css']) {
   if (fs.existsSync(f)) fs.copyFileSync(f, path.join('dist', f));
 }
 
