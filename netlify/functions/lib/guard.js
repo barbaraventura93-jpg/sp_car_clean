@@ -4,7 +4,7 @@
 // rate-limit por IP (em memória — reseta a cada cold start e é por instância,
 // mas corta o grosso do abuso) e checagem de origem (CORS) para reduzir chamadas
 // de fora do site. Não substitui autenticação, mas evita geração de links de
-// pagamento e disparo de notificações/WhatsApp em massa por terceiros.
+// pagamento e disparo de notificações em massa por terceiros.
 
 const ALLOWED_ORIGINS = [
   'https://www.spcarclean.com.br',

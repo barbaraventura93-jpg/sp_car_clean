@@ -176,23 +176,11 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
   - Círculos de raio 5 km / 10 km / 15 km a partir do centro de São Paulo
   - Ranking de bairros com barra de participação percentual
 
-### Notificações automáticas por WhatsApp (Cloud API)
-> ⏸️ **Pausado — em backlog** (item M1 do [Backlog](#-backlog--integrações-meta-pausadas)).
-> O código segue no projeto, mas a integração com a Meta não está em uso. O link `wa.me`
-> manual continua funcionando normalmente.
-
-Além do link `wa.me` manual, a loja envia **mensagens oficiais pelo WhatsApp Cloud API
-da Meta**, saindo do número comercial, via `notify-booking.js` (helper `lib/core/whatsapp.js`).
-
-- **Mensagens de template ao cliente** a cada evento: novo agendamento, reagendamento
-  aprovado/recusado, cancelamento e correção de valor (best-effort — não bloqueia o fluxo)
-- **Lembrete automático D-1**: `reminder-check.js` (cron diário na AWS, 10h00 BRT)
-  varre os agendamentos de amanhã com status ativo e dispara o template `lembrete_agendamento`,
-  marcando `reminderSentAt` para não repetir
-- **Webhook de entrada** (`whatsapp-webhook.js`): responde o handshake de verificação da Meta
-  e encaminha as mensagens recebidas dos clientes para o **Telegram** do admin
-- Nomes dos templates e idioma são configuráveis por variáveis de ambiente (`WA_TPL_*`,
-  `WHATSAPP_TEMPLATE_LANG`). Passo a passo completo em **[`WHATSAPP_SETUP.md`](WHATSAPP_SETUP.md)**
+### Lembrete automático D-1 (e-mail)
+`reminder-check.js` (cron diário na AWS, 10h00 BRT) varre os agendamentos de amanhã com
+status ativo e envia um lembrete por e-mail (EmailJS), marcando `reminderSentAt` para não
+repetir. As mensagens ao cliente por WhatsApp são enviadas pelo admin via link `wa.me`
+(integrações com a API da Meta foram removidas — ver [Backlog](#-backlog--integrações-meta-removidas)).
 
 ### Central de IA (Admin + Site)
 Camada de agentes de IA (Claude / Anthropic) orquestrada pela função `ai.js`
@@ -251,7 +239,7 @@ auto-desliga ao estourar o teto (avisa via Telegram).
 | Domínio | www.spcarclean.com.br (Registro.br + Netlify DNS) |
 | Pagamento | InfinitePay (PIX + cartão) via Netlify Function |
 | Inteligência Artificial | Claude API (Anthropic) via Netlify Functions (`ai` + `ai-dispatcher`) |
-| Notificações | Netlify Functions + EmailJS + Telegram Bot API + WhatsApp Cloud API (Meta) |
+| Notificações | AWS Lambda + EmailJS + Telegram Bot API + Firebase Cloud Messaging |
 | E-mail automático de aniversário | Cron diário na AWS (EventBridge Scheduler → Lambda) + EmailJS REST API |
 | Mapa | Leaflet.js + OpenStreetMap + Nominatim (geocoding) |
 | Fontes | Google Fonts (Montserrat + Open Sans) |
@@ -300,12 +288,6 @@ const CFG = {
 | `EMAILJS_GIFT_TEMPLATE` | ID do template de e-mail de ativação de gift card (opcional; usa `template_update` como fallback) |
 | `TELEGRAM_BOT_TOKEN` | Token do bot de notificações via Telegram. **Secreto** |
 | `TELEGRAM_CHAT_ID` | ID do chat para receber as notificações |
-| `WHATSAPP_TOKEN` | Token de acesso do WhatsApp Cloud API (Meta). **Secreto** — ver [`WHATSAPP_SETUP.md`](WHATSAPP_SETUP.md) |
-| `WHATSAPP_PHONE_NUMBER_ID` | ID do número comercial do WhatsApp Cloud API |
-| `WHATSAPP_VERIFY_TOKEN` | String que você inventa para o handshake do webhook da Meta. **Secreto** |
-| `WHATSAPP_GRAPH_VERSION` | Versão da Graph API (opcional; ex.: `v21.0`) |
-| `WHATSAPP_TEMPLATE_LANG` | Idioma dos templates (opcional; ex.: `pt_BR`) |
-| `WA_TPL_NEW_BOOKING`, `WA_TPL_RESCHEDULE_APPROVED`, `WA_TPL_RESCHEDULE_REJECTED`, `WA_TPL_CANCEL`, `WA_TPL_PRICE`, `WA_TPL_REMINDER` | Nomes dos templates aprovados na Meta para cada evento (opcionais; têm padrão) |
 | `INFINITEPAY_HANDLE` | InfiniteTag (usuário InfinitePay) para geração de links de pagamento |
 | `INFINITEPAY_FEE_RATE` | Taxa a embutir no preço (padrão: `0.0315` = 3,15% crédito à vista) |
 | `ANTHROPIC_API_KEY` | Chave da API Claude (Anthropic) — usada server-side pelos agentes da Central de IA. **Secreto** |
@@ -320,7 +302,7 @@ const CFG = {
 > exclusivamente dentro das Netlify Functions. Apenas as chaves realmente públicas
 > (`FIREBASE_API_KEY`, `FIREBASE_VAPID_KEY`, `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`)
 > são injetadas no HTML — por isso constam no `SECRETS_SCAN_OMIT_KEYS` do `netlify.toml`.
-> Os arquivos de documentação (`WHATSAPP_SETUP.md`, `DEPLOY_GUIDE.md`, etc.) citam nomes
+> Os arquivos de documentação (`DEPLOY_GUIDE.md`, etc.) citam nomes
 > de variáveis em exemplos e **não** são publicados no site, então ficam em
 > `SECRETS_SCAN_OMIT_PATHS` para não quebrarem o build.
 
@@ -553,25 +535,23 @@ sp-car-clean/
 │   └── portfolio/               # Imagens e vídeos do carrossel hero
 └── netlify/
     └── functions/
-        ├── notify-booking.js        # Notifica admin (Telegram + push FCM) e cliente (WhatsApp)
+        ├── notify-booking.js        # Notifica o admin (Telegram + push FCM)
         ├── create-payment.js        # Gera link de pagamento InfinitePay (agendamento)
         ├── create-gift-payment.js   # Gera link de pagamento InfinitePay (gift card)
         ├── infinitepay-webhook.js   # Confirma pagamento/ativa gift card e atualiza Firebase
         ├── booking-status.js        # Consulta de status por código + e-mail (leitura server-side)
-        ├── whatsapp-webhook.js      # Webhook do WhatsApp Cloud API (verificação + mensagens → Telegram)
         ├── birthday-check.js        # Cron diário: detecta aniversariantes, cria cupom e envia e-mail
-        ├── reminder-check.js        # Cron diário: lembrete D-1 por WhatsApp ao cliente
+        ├── reminder-check.js        # Cron diário: lembrete D-1 por e-mail ao cliente
         ├── ai.js                    # Orquestrador HTTP dos agentes de IA (admin + públicos)
         ├── ai-dispatcher.js         # Cron diário: dispara agentes de IA agendados
         └── lib/
             ├── fcm.js               # Helper de envio de push (OAuth2 + FCM HTTP v1)
             ├── guard.js             # Rate-limit por IP + checagem de origem (CORS) das funções públicas
             ├── agents/              # Agentes de IA (concierge, relatorio, upsell, orcamento, …)
-            └── core/                # Núcleo (claude, firebase, telegram, email, whatsapp, config, logger)
+            └── core/                # Núcleo (claude, firebase, telegram, email, config, logger)
 ```
 
-> Docs de setup complementares na raiz: **`WHATSAPP_SETUP.md`** (WhatsApp Cloud API),
-> `DEPLOY_GUIDE.md`, `INSTAGRAM_SETUP.md`.
+> Infra na AWS (Terraform, passo a passo): **`infra/README.md`**. Guia antigo: `DEPLOY_GUIDE.md`.
 
 ---
 
@@ -623,10 +603,10 @@ sp-car-clean/
 | Gift cards (compra online + ativação por webhook) | ✅ |
 | Avaliações do cliente + depoimentos aprovados na vitrine | ✅ |
 | Controle de estoque/insumos com previsão de reposição (IA) | ✅ |
-| Notificações automáticas ao cliente por WhatsApp Cloud API | ⏸️ Backlog (M1) |
-| Lembrete automático D-1 do agendamento por WhatsApp (o de e-mail segue ativo) | ⏸️ Backlog (M1) |
-| Webhook de WhatsApp (mensagens do cliente → Telegram do admin) | ⏸️ Backlog (M2) |
-| Feed do Instagram no site (Instagram Graph API) | ⏸️ Backlog (M3) |
+| Lembrete automático D-1 do agendamento por e-mail | ✅ |
+| Notificações automáticas ao cliente por WhatsApp Cloud API (Meta) | ⏸️ Removido — backlog M1 |
+| Webhook de WhatsApp (mensagens do cliente → Telegram do admin) | ⏸️ Removido — backlog M2 |
+| Feed do Instagram no site (Instagram Graph API) | ⏸️ Removido — backlog M3 |
 
 ---
 
@@ -653,16 +633,22 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 | 12 | **Destacar pacotes/combos na seleção de serviços** | `index.html` (`renderBookingStep`, step 1) | No passo 1 do agendamento (só carro — combos usam porte pq/gr), um bloco destacado **"🎁 Pacotes com desconto"** lista os combos públicos ativos com preço regular vs. combo + economia e um botão **"Escolher pacote"** que adiciona os serviços do combo ao agendamento (`applyComboSuggestion`). Estimula a compra de pacotes no momento da escolha. |
 | 13 | **Pesquisa + indicação por WhatsApp ao concluir (manual, na hora)** | `index.html` (`markCompleted`; deep-link `?indicar=1`) | Ao marcar como **concluído**, além do e-mail automático da pesquisa, o admin recebe a opção de **abrir o WhatsApp já preenchido** com a **pesquisa** (`?avaliar=CODE`) + o **convite de indicação** (link `?indicar=1`) num texto só, citando o desconto de 15%. O `?indicar=1` é o novo **link de indicação compartilhável** que abre o modal "Indique um amigo" (programa de indicação que já existia — cupom 15% para amigo e para quem indica). |
 
-### 🔵 Backlog — Integrações Meta (pausadas)
+### 🔵 Backlog — Integrações Meta (removidas)
 
-Integrações com a Meta (WhatsApp Cloud API, Instagram/Facebook Graph API) **não estão em
-uso**. O código foi mantido e já roda na AWS, pronto para ser retomado.
+As integrações com APIs da Meta (WhatsApp Cloud API, Instagram/Facebook Graph API) **não
+estavam ligadas** e foram **removidas do código** — o sistema não depende mais da Meta.
+Continuam funcionando, por não usarem API da Meta: os links `wa.me` que o admin usa para
+falar com o cliente, o link do perfil do Instagram no rodapé e a legenda de Instagram gerada
+pela IA (texto para copiar).
 
-| # | Item | Onde | O que falta para retomar |
+Para retomar, o código está no histórico do git no commit `53db58d` (último antes da
+remoção) — ex.: `git show 53db58d:netlify/functions/lib/core/whatsapp.js`.
+
+| # | Item | Arquivos no `53db58d` | O que falta para retomar |
 |---|---|---|---|
-| M1 | **Mensagens automáticas por WhatsApp Cloud API** (novo agendamento, reagendamento, cancelamento, correção de valor e lembrete D-1) | `lib/core/whatsapp.js`, `notify-booking.js`, `reminder-check.js`, [`WHATSAPP_SETUP.md`](WHATSAPP_SETUP.md) | Número comercial ativo na Cloud API, templates aprovados pela Meta e token permanente (System User) válido em `/sp-car-clean/WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID` no SSM. Os envios são best-effort: sem isso, as tentativas falham sem afetar o fluxo, e o lembrete por e-mail continua saindo. |
-| M2 | **Webhook de entrada do WhatsApp** (mensagens do cliente → Telegram do admin) | `whatsapp-webhook.js` | No painel da Meta, cadastrar a URL `https://spcarclean.com.br/api/whatsapp-webhook` (a URL antiga do Netlify deixa de funcionar quando o Netlify for desligado), com o mesmo `WHATSAPP_VERIFY_TOKEN`. |
-| M3 | **Feed do Instagram no site** | [`INSTAGRAM_SETUP.md`](INSTAGRAM_SETUP.md) | App na Meta com Instagram Graph API e token de longa duração (renovação a cada 60 dias). Sem token, o site mostra "Siga-nos no Instagram". `FB_APP_ID`/`FB_APP_SECRET` estão no SSM, mas não são usados pelas funções. |
+| M1 | **Mensagens automáticas por WhatsApp Cloud API** (novo agendamento, reagendamento, cancelamento, correção de valor e lembrete D-1) | `netlify/functions/lib/core/whatsapp.js`, trechos de `notify-booking.js` e `reminder-check.js`, `WHATSAPP_SETUP.md` | Número comercial ativo na Cloud API, templates aprovados pela Meta e token permanente (System User) no SSM (`/sp-car-clean/WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`). |
+| M2 | **Webhook de entrada do WhatsApp** (mensagens do cliente → Telegram do admin) | `netlify/functions/whatsapp-webhook.js` | Restaurar a função, incluir `whatsapp-webhook` em `http_functions` (`infra/api.tf`) e cadastrar `https://spcarclean.com.br/api/whatsapp-webhook` no painel da Meta. |
+| M3 | **Feed do Instagram no site** | `INSTAGRAM_SETUP.md` | App na Meta com Instagram Graph API e token de longa duração (renovação a cada 60 dias). |
 
 ### ⚪ Descartado (por design)
 

@@ -15,7 +15,6 @@ locals {
     "create-referral",
     "infinitepay-webhook",
     "notify-booking",
-    "whatsapp-webhook",
   ]
 
   # Mesmos horários (UTC) do netlify.toml.

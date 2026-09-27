@@ -2,18 +2,13 @@
 // Roda todo dia às 10:00 BRT (13:00 UTC) — EventBridge Scheduler, infra/api.tf.
 //
 // Varre /bookings no Firebase, encontra agendamentos marcados para AMANHÃ
-// (horário de Brasília) com status ativo e avisa o cliente por:
-//   - E-mail (EmailJS), quando o agendamento tem e-mail; e
-//   - WhatsApp (template `lembrete_agendamento`), quando configurado e há telefone.
+// (horário de Brasília) com status ativo e avisa o cliente por e-mail (EmailJS).
 // Marca `reminderSentAt` para não enviar o mesmo lembrete duas vezes.
 //
-// Reaproveita variáveis já existentes:
-//   FIREBASE_DATABASE_URL, FIREBASE_DATABASE_SECRET   (como o birthday-check)
-//   EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY (como o birthday-check)
-//   WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID          (como o notify-booking)
+// Variáveis: FIREBASE_DATABASE_URL, FIREBASE_DATABASE_SECRET,
+//            EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY (opcional)
 
 const { dbGet, dbPatch } = require('./lib/core/firebase');
-const { sendWhatsAppTemplate, isConfigured: whatsappConfigured } = require('./lib/core/whatsapp');
 const { sendEmail } = require('./lib/core/email');
 
 // Status que ainda merecem lembrete (agendamento de pé).
@@ -61,10 +56,8 @@ async function sendReminderEmail(b, dataFmt) {
 }
 
 exports.handler = async () => {
-  const waReady    = whatsappConfigured();
-  const mailReady  = emailConfigured();
-  if (!waReady && !mailReady) {
-    console.log('reminder-check: nem WhatsApp nem e-mail configurados — nada a enviar');
+  if (!emailConfigured()) {
+    console.log('reminder-check: e-mail não configurado — nada a enviar');
     return { statusCode: 200, body: JSON.stringify({ ok: true, skipped: 'no_channel_configured' }) };
   }
 
@@ -92,30 +85,19 @@ exports.handler = async () => {
     if (!ACTIVE_STATUSES.includes(b.status)) { continue; }
     if (b.reminderSentAt === target)         { skipped++; continue; } // já lembrado
 
-    const dataFmt = fmtBR(bookingDate);
-    let anySent = false;
+    if (!b.email) { skipped++; continue; }
 
-    // WhatsApp (best-effort, só se configurado e houver telefone).
-    if (waReady && b.phone) {
-      const res = await sendWhatsAppTemplate('reminder', { name: b.name || 'Cliente', phone: b.phone, date: dataFmt });
-      if (res.ok) anySent = true;
-      else errors.push({ id: b.id || key, canal: 'whatsapp', reason: res.error || res.skipped });
+    try {
+      await sendReminderEmail(b, fmtBR(bookingDate));
+    } catch (e) {
+      errors.push({ id: b.id || key, canal: 'email', reason: e.message });
+      continue;
     }
 
-    // E-mail (best-effort, só se configurado e houver e-mail).
-    if (mailReady && b.email) {
-      try { await sendReminderEmail(b, dataFmt); anySent = true; }
-      catch (e) { errors.push({ id: b.id || key, canal: 'email', reason: e.message }); }
-    }
-
-    if (anySent) {
-      sent++;
-      // Marca para dedupe (best-effort; não falha o fluxo se o patch der erro).
-      try { await dbPatch(`/bookings/${b.id || key}`, { reminderSentAt: target }); }
-      catch (e) { console.warn('reminder-check: falha ao marcar reminderSentAt:', e.message); }
-    } else if (!b.phone && !b.email) {
-      skipped++;
-    }
+    sent++;
+    // Marca para dedupe (best-effort; não falha o fluxo se o patch der erro).
+    try { await dbPatch(`/bookings/${b.id || key}`, { reminderSentAt: target }); }
+    catch (e) { console.warn('reminder-check: falha ao marcar reminderSentAt:', e.message); }
   }
 
   console.log(`reminder-check: ${sent} lembrete(s) para ${target} (skipped ${skipped})`);
