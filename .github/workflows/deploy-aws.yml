@@ -1,11 +1,11 @@
 name: Deploy to AWS (S3 + CloudFront)
 
-# Começa só manual (Run workflow). Depois de validar o primeiro deploy,
-# descomente o bloco "push" abaixo para publicar automaticamente a cada merge.
+# Publica automaticamente a cada push/merge na main, e também
+# permite disparo manual pela aba Actions (Run workflow).
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [ main ]
+  push:
+    branches: [ main ]
 
 permissions:
   id-token: write   # necessário para autenticar via OIDC (sem chave estática)
