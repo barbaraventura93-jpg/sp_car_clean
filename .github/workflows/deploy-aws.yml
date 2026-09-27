@@ -41,6 +41,19 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region:     ${{ secrets.AWS_REGION }}
 
+      # Antes do site: o front novo nunca chama uma API desatualizada.
+      # Uma função nova em netlify/functions precisa existir no Terraform
+      # (infra/api.tf) antes do merge — senão este passo falha de propósito.
+      - name: Publicar funções (Lambda)
+        run: |
+          (cd netlify/functions && zip -qr "$GITHUB_WORKSPACE/functions.zip" .)
+          for f in netlify/functions/*.js; do
+            fn="sp-car-clean-$(basename "$f" .js)"
+            echo "→ $fn"
+            aws lambda update-function-code --function-name "$fn" \
+              --zip-file "fileb://functions.zip" --output text --query LastUpdateStatus
+          done
+
       - name: Sync para o S3
         run: |
           # Sobe tudo com cache longo por padrão...

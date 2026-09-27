@@ -1,3 +1,5 @@
+> ⚠️ **Documento histórico.** A hospedagem do site foi migrada para a **AWS (S3 + CloudFront)** — ver `docs/aws-migration-runbook.md` e `infra/README.md`. O **Firebase Hosting foi desativado** (bloco `hosting` removido do `firebase.json` e workflow `deploy.yml` apagado). O Firebase segue em uso apenas para **Realtime Database, Storage, Auth e FCM**. As seções abaixo sobre deploy no Firebase Hosting **não valem mais**.
+
 # Guia Completo: Configurar Netlify + Firebase + GitHub Actions
 
 ## PARTE 1: NETLIFY

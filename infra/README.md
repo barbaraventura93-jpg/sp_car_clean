@@ -1,20 +1,89 @@
-# Infra — Fase 1 (Hospedagem estática na AWS)
+# Infra — Hospedagem e backend na AWS
 
-Terraform que cria a hospedagem do site na AWS e a esteira de deploy:
+Terraform que cria o site e o backend na AWS e a esteira de deploy:
 
 - **S3** (bucket privado) — guarda os arquivos do site
-- **CloudFront** — CDN + HTTPS (usa o certificado ACM)
-- **Route 53** — registros do domínio apontando para o CloudFront (dormentes até o cutover)
-- **GitHub OIDC** — Identity Provider + Role para o GitHub Actions publicar sem chave estática
+- **CloudFront** — CDN + HTTPS; serve o site e roteia `/api/*` para a API
+- **Route 53** — registros do domínio apontando para o CloudFront
+- **GitHub OIDC** — Role para o GitHub Actions publicar site e funções sem chave estática
+- **Fase 2 (`api.tf`)** — as funções de `netlify/functions` em **AWS Lambda**, atrás de um **API Gateway (HTTP API)**, com segredos no **SSM Parameter Store** e crons no **EventBridge Scheduler**
 
-> Esta fase **não mexe** no site atual (Netlify). O domínio só passa para a AWS no cutover (Bloco 7 do runbook), quando os nameservers forem trocados no Registro.br.
+```
+visitante ──▶ CloudFront ──┬── /*                     ──▶ S3 (site)
+                           ├── /api/*                 ──▶ API Gateway ──▶ Lambda (11 funções)
+                           └── /.netlify/functions/*  ──▶ (reescrito p/ /api/*)
+EventBridge Scheduler ──(3 crons, desligados por padrão)──▶ Lambda
+Lambda ──(na inicialização)──▶ SSM Parameter Store /sp-car-clean/* (segredos)
+```
+
+---
+
+## Fase 2 — Backend no Lambda (passo a passo)
+
+> **Ordem importa:** segredos → Terraform → teste → merge. Aplicar o Terraform já conserta a produção (o CloudFront passa a atender `/.netlify/functions/*` com as Lambdas), mesmo antes do merge.
+
+### 1. Segredos: Netlify → SSM Parameter Store
+No **CloudShell** (região `sa-east-1`), dentro do clone do repositório:
+
+```bash
+cd ~/sp_car_clean && git fetch origin && git checkout claude/laughing-mendel-2gx8nx && git pull
+npx netlify-cli login                       # abre um link para autorizar
+npx netlify-cli link                        # escolha o site sp-car-clean
+npx netlify-cli env:list --context production --json > netlify-env.json
+bash scripts/aws-put-secrets.sh netlify-env.json
+rm netlify-env.json
+```
+
+- **Espaço:** o `netlify-cli` é grande; se o CloudShell (1 GB) reclamar, rode os três comandos `netlify-cli` no seu computador e envie o `netlify-env.json` pelo menu **Actions → Upload file** do CloudShell.
+- **Variáveis "secretas" do Netlify** não saem no export (vêm vazias ou mascaradas). Grave-as à mão:
+  `aws ssm put-parameter --name /sp-car-clean/NOME --type SecureString --overwrite --value 'valor'`
+
+Confira: `aws ssm get-parameters-by-path --path /sp-car-clean/ --query 'Parameters[].Name'`
+(ANTHROPIC_API_KEY, FIREBASE_DATABASE_URL, FIREBASE_DATABASE_SECRET, WHATSAPP_*, TELEGRAM_*, INFINITEPAY_*, EMAILJS_*, FCM_SERVICE_ACCOUNT…).
+
+### 2. Aplicar o Terraform
+```bash
+cd ~/sp_car_clean/infra
+terraform init -upgrade      # baixa os providers novos (archive, random)
+terraform plan               # esperado: Lambdas, API, crons e mudanças no CloudFront
+terraform apply
+```
+O CloudFront leva ~5–10 min para propagar a mudança.
+
+### 3. Testar em produção
+```bash
+# Deve responder JSON 400 ("code e email são obrigatórios"), não HTML:
+curl -s -X POST https://spcarclean.com.br/api/booking-status -H 'Content-Type: application/json' -d '{}'
+# Caminho legado também:
+curl -s -X POST https://spcarclean.com.br/.netlify/functions/booking-status -H 'Content-Type: application/json' -d '{}'
+```
+Depois, no site: um agendamento de teste, o concierge de IA e o painel admin.
+Logs: CloudWatch → Log groups → `/aws/lambda/sp-car-clean-<função>`.
+
+### 4. Merge do PR
+A partir daí, cada merge na `main` publica **funções e site** (`deploy-aws.yml`). Uma função nova em `netlify/functions/` precisa ser adicionada em `api.tf` (listas `http_functions`/`scheduled_functions`) e aplicada **antes** do merge.
+
+### 5. Desligar o Netlify (quando tudo estiver estável)
+1. **WhatsApp (Meta):** trocar a URL do webhook para a saída `whatsapp_webhook_url` (`https://spcarclean.com.br/api/whatsapp-webhook`), mesmo verify token.
+2. **InfinitePay:** nada a fazer — a URL de retorno é gerada a cada pagamento a partir do domínio.
+3. **Crons:** remova os blocos `[functions."…"] schedule` do `netlify.toml`, faça o deploy no Netlify e só então rode `terraform apply -var schedules_enabled=true` (ou fixe no `terraform.tfvars`). Com os dois ligados, lembretes e cupons saem em dobro.
+4. Desativar o site no Netlify.
+
+### Segurança embutida
+- O endpoint direto do API Gateway recusa requisições que não vêm do CloudFront (cabeçalho secreto `x-origin-verify`).
+- O IP usado no rate-limit vem da borda do CloudFront (`x-viewer-ip`), não de um cabeçalho que o cliente possa forjar.
+- Throttling da API (25 req/s, rajada 50) como teto de custo; logs com retenção de 14 dias.
+
+---
+
+# Fase 1 — Hospedagem estática (referência)
 
 ---
 
 ## Pré-requisitos
 
 1. Hosted Zone criada no Route 53 (Bloco 3) ✅
-2. Certificado ACM em **us-east-1** com status **Issued** (Bloco 4) — você precisa do **ARN**.
+2. Certificado HTTPS: **não precisa criar à mão** — `certificate.tf` emite e valida no ACM (us-east-1) um certificado para `spcarclean.com.br` **e** `*.spcarclean.com.br` (um curinga sozinho não cobre o domínio raiz).
 
 ---
 
@@ -36,11 +105,7 @@ Terraform que cria a hospedagem do site na AWS e a esteira de deploy:
    cd sp_car_clean/infra
    ```
 
-4. Crie o `terraform.tfvars` com o ARN do certificado:
-   ```bash
-   cp terraform.tfvars.example terraform.tfvars
-   nano terraform.tfvars    # cole o ARN do certificado ACM (us-east-1) e salve
-   ```
+4. (Opcional) `terraform.tfvars` só é necessário para mudar algum padrão — veja `terraform.tfvars.example`.
 
 5. Rode:
    ```bash

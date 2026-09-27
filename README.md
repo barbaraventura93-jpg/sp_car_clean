@@ -541,7 +541,7 @@ sp-car-clean/
 ├── firebase-messaging-sw.js     # Service worker de push (Firebase Cloud Messaging)
 ├── package.json
 ├── netlify.toml                 # Config Netlify (build, publish, functions, cron)
-├── firebase.json                # Config Firebase (hosting + regras de Database e Storage)
+├── firebase.json                # Config Firebase (regras de Database e Storage; hosting migrado p/ AWS)
 ├── database.rules.json          # Regras de segurança do Realtime Database (versionadas)
 ├── storage.rules                # Regras de segurança do Firebase Storage (versionadas)
 ├── assets/

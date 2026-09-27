@@ -33,12 +33,13 @@ resource "aws_s3_bucket_versioning" "site" {
   }
 }
 
-# Só o CloudFront (via OAC) pode ler os objetos do bucket.
+# Só o CloudFront (via OAC) pode ler os objetos do bucket. ListBucket faz um
+# arquivo inexistente responder 404 (e não 403 AccessDenied).
 data "aws_iam_policy_document" "site_bucket" {
   statement {
     sid       = "AllowCloudFrontOAC"
-    actions   = ["s3:GetObject"]
-    resources = ["${aws_s3_bucket.site.arn}/*"]
+    actions   = ["s3:GetObject", "s3:ListBucket"]
+    resources = [aws_s3_bucket.site.arn, "${aws_s3_bucket.site.arn}/*"]
 
     principals {
       type        = "Service"
@@ -78,6 +79,35 @@ data "aws_cloudfront_cache_policy" "disabled" {
   name = "Managed-CachingDisabled"
 }
 
+# Repassa à API tudo do visitante (headers, query, cookies, corpo) exceto o
+# Host — o API Gateway só aceita o próprio hostname.
+data "aws_cloudfront_origin_request_policy" "all_except_host" {
+  name = "Managed-AllViewerExceptHostHeader"
+}
+
+# Roda na borda antes de ir para a API:
+#  - /.netlify/functions/<fn> → /api/<fn> (clientes com app.js antigo em cache
+#    e webhooks cadastrados com o caminho do Netlify continuam funcionando);
+#  - grava o IP real do visitante em x-viewer-ip, sobrescrevendo qualquer valor
+#    enviado pelo cliente (base do rate-limit por IP das funções).
+resource "aws_cloudfront_function" "api_router" {
+  name    = "sp-car-clean-api-router"
+  runtime = "cloudfront-js-2.0"
+  comment = "Reescreve /.netlify/functions/* para /api/* e grava o IP do visitante"
+  publish = true
+  code    = <<-EOT
+    function handler(event) {
+      var req = event.request;
+      var legacy = '/.netlify/functions/';
+      if (req.uri.indexOf(legacy) === 0) {
+        req.uri = '/api/' + req.uri.substring(legacy.length);
+      }
+      req.headers['x-viewer-ip'] = { value: event.viewer.ip };
+      return req;
+    }
+  EOT
+}
+
 resource "aws_cloudfront_distribution" "site" {
   enabled             = true
   is_ipv6_enabled     = true
@@ -90,6 +120,57 @@ resource "aws_cloudfront_distribution" "site" {
     domain_name              = aws_s3_bucket.site.bucket_regional_domain_name
     origin_id                = "s3-site"
     origin_access_control_id = aws_cloudfront_origin_access_control.site.id
+  }
+
+  origin {
+    domain_name = replace(aws_apigatewayv2_api.api.api_endpoint, "https://", "")
+    origin_id   = "api"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+
+    custom_header {
+      name  = "x-origin-verify"
+      value = random_password.origin_verify.result
+    }
+  }
+
+  # API (Lambda) — nunca cacheada.
+  ordered_cache_behavior {
+    path_pattern             = "/api/*"
+    target_origin_id         = "api"
+    viewer_protocol_policy   = "redirect-to-https"
+    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods           = ["GET", "HEAD"]
+    compress                 = true
+    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_except_host.id
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.api_router.arn
+    }
+  }
+
+  # Caminho legado do Netlify → mesma API (reescrito pela CloudFront Function).
+  ordered_cache_behavior {
+    path_pattern             = "/.netlify/functions/*"
+    target_origin_id         = "api"
+    viewer_protocol_policy   = "redirect-to-https"
+    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods           = ["GET", "HEAD"]
+    compress                 = true
+    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_except_host.id
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.api_router.arn
+    }
   }
 
   # Estáticos (assets, css, js): cache otimizado.
@@ -114,20 +195,9 @@ resource "aws_cloudfront_distribution" "site" {
     cache_policy_id        = data.aws_cloudfront_cache_policy.disabled.id
   }
 
-  # PWA/SPA: rota desconhecida cai no index.html.
-  custom_error_response {
-    error_code            = 403
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
-  }
-
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
-  }
+  # Sem custom_error_response: ela vale para a distribuição inteira e trocaria
+  # os 403/404 legítimos da API por index.html com status 200. O app não usa
+  # rotas por caminho (só "/" e "?admin"), então não precisa de fallback SPA.
 
   restrictions {
     geo_restriction {
@@ -136,7 +206,7 @@ resource "aws_cloudfront_distribution" "site" {
   }
 
   viewer_certificate {
-    acm_certificate_arn      = var.acm_certificate_arn
+    acm_certificate_arn      = aws_acm_certificate_validation.site.certificate_arn
     ssl_support_method       = "sni-only"
     minimum_protocol_version = "TLSv1.2_2021"
   }
@@ -179,8 +249,8 @@ resource "aws_route53_record" "ipv6" {
 # (cria o Identity Provider E a Role; não precisa fazer nada manual)
 # =====================================================================
 resource "aws_iam_openid_connect_provider" "github" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
   thumbprint_list = [
     "6938fd4d98bab03faadb97b34396831e3780aea1",
     "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
@@ -234,6 +304,12 @@ data "aws_iam_policy_document" "deploy_permissions" {
     sid       = "CloudFrontInvalidation"
     actions   = ["cloudfront:CreateInvalidation", "cloudfront:GetInvalidation", "cloudfront:ListInvalidations"]
     resources = [aws_cloudfront_distribution.site.arn]
+  }
+
+  statement {
+    sid       = "LambdaCodeDeploy"
+    actions   = ["lambda:UpdateFunctionCode", "lambda:GetFunctionConfiguration"]
+    resources = ["arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:sp-car-clean-*"]
   }
 }
 

@@ -6,6 +6,14 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 }
 
@@ -16,7 +24,19 @@ provider "aws" {
     tags = {
       Project   = "sp-car-clean"
       ManagedBy = "terraform"
-      Phase     = "fase-1-hosting"
+    }
+  }
+}
+
+# O CloudFront só aceita certificados emitidos em us-east-1.
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
+  default_tags {
+    tags = {
+      Project   = "sp-car-clean"
+      ManagedBy = "terraform"
     }
   }
 }

@@ -10,3 +10,8 @@ infra/.terraform.lock.hcl
 *.tfstate.*
 terraform.tfvars
 crash.log
+infra/.build/
+
+# Exports de variáveis/segredos (ex.: netlify-env.json)
+*.env
+*-env.json
