@@ -13,19 +13,19 @@
   "categories": ["business", "productivity"],
   "icons": [
     {
-      "src": "assets/favicon.png",
+      "src": "assets/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "assets/favicon.png",
+      "src": "assets/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "assets/favicon.png",
+      "src": "assets/icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -37,14 +37,14 @@
       "short_name": "Admin",
       "description": "Abrir o painel de gestão",
       "url": "/?admin",
-      "icons": [{ "src": "assets/favicon.png", "sizes": "192x192", "type": "image/png" }]
+      "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
       "name": "Agendar serviço",
       "short_name": "Agendar",
       "description": "Iniciar um novo agendamento",
       "url": "/?agendar",
-      "icons": [{ "src": "assets/favicon.png", "sizes": "192x192", "type": "image/png" }]
+      "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]
 }
