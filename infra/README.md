@@ -83,7 +83,7 @@ A partir daí, cada merge na `main` publica **funções e site** (`deploy-aws.ym
 ## Pré-requisitos
 
 1. Hosted Zone criada no Route 53 (Bloco 3) ✅
-2. Certificado ACM em **us-east-1** com status **Issued** (Bloco 4) — você precisa do **ARN**.
+2. Certificado HTTPS: **não precisa criar à mão** — `certificate.tf` emite e valida no ACM (us-east-1) um certificado para `spcarclean.com.br` **e** `*.spcarclean.com.br` (um curinga sozinho não cobre o domínio raiz).
 
 ---
 
@@ -105,11 +105,7 @@ A partir daí, cada merge na `main` publica **funções e site** (`deploy-aws.ym
    cd sp_car_clean/infra
    ```
 
-4. Crie o `terraform.tfvars` com o ARN do certificado:
-   ```bash
-   cp terraform.tfvars.example terraform.tfvars
-   nano terraform.tfvars    # cole o ARN do certificado ACM (us-east-1) e salve
-   ```
+4. (Opcional) `terraform.tfvars` só é necessário para mudar algum padrão — veja `terraform.tfvars.example`.
 
 5. Rode:
    ```bash

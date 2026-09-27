@@ -10,13 +10,8 @@ variable "domain_name" {
   default     = "spcarclean.com.br"
 }
 
-variable "acm_certificate_arn" {
-  description = "ARN do certificado ACM emitido em us-east-1 (obrigatório para o CloudFront). Preencha após o certificado ficar 'Issued'."
-  type        = string
-}
-
 variable "site_aliases" {
-  description = "Domínios servidos pelo CloudFront. TODOS precisam estar cobertos pelo certificado ACM. Ex.: [\"spcarclean.com.br\"] se o certificado cobrir só o domínio raiz."
+  description = "Domínios servidos pelo CloudFront. Precisam ser o domínio raiz ou um subdomínio de primeiro nível (cobertos pelo certificado de certificate.tf)."
   type        = list(string)
   default     = ["spcarclean.com.br", "www.spcarclean.com.br"]
 }

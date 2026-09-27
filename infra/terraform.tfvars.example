@@ -1,10 +1,7 @@
-# Copie para terraform.tfvars e preencha o ARN do certificado.
+# Opcional: copie para terraform.tfvars só se quiser mudar algum padrão.
 # (o terraform.tfvars real NÃO deve ser versionado — veja .gitignore)
+# O certificado HTTPS é criado e validado pelo próprio Terraform (certificate.tf).
 
-# ARN do certificado ACM emitido em us-east-1 (status "Issued").
-acm_certificate_arn = "arn:aws:acm:us-east-1:000000000000:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-
-# Os demais valores já têm padrão em variables.tf; descomente só se quiser mudar:
 # aws_region             = "sa-east-1"
 # domain_name            = "spcarclean.com.br"
 # cloudfront_price_class = "PriceClass_All"
