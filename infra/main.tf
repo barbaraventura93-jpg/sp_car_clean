@@ -174,18 +174,11 @@ resource "aws_route53_record" "ipv6" {
   }
 }
 
-# Registro de validação do certificado ACM. Mantido no Route 53 para que
-# a RENOVAÇÃO AUTOMÁTICA do certificado continue funcionando depois do cutover
-# (quando o Route 53 passa a ser o DNS oficial do domínio). É determinístico
-# por domínio, então é o mesmo par name/value usado na emissão manual.
-resource "aws_route53_record" "acm_validation" {
-  zone_id         = data.aws_route53_zone.primary.zone_id
-  name            = "_60a28eb510a2ba6389a0227d4c061c35.spcarclean.com.br"
-  type            = "CNAME"
-  ttl             = 300
-  records         = ["_0f76893929e8f48bc948d57dd14fe89c.wzccmgtwzk.acm-validations.aws."]
-  allow_overwrite = true # o registro já existe na zona (criado pelo console); adota em vez de falhar
-}
+# NOTA: o registro de validação do certificado ACM
+# (_60a28eb510a2ba6389a0227d4c061c35.spcarclean.com.br) já existe na zona,
+# criado manualmente pelo console ("Create records in Route 53"). Ele garante
+# a renovação automática do certificado após o cutover e é mantido fora do
+# Terraform de propósito, para não conflitar com o registro já existente.
 
 # =====================================================================
 # GitHub OIDC — deixa o GitHub Actions publicar sem chave estática
