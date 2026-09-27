@@ -1,5 +1,15 @@
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.10.0"
+
+  # Estado no S3 (versionado, com trava nativa). O nome do bucket fica em
+  # backend.hcl, gerado por scripts/aws-bootstrap-tfstate.sh:
+  #   terraform init -backend-config=backend.hcl
+  backend "s3" {
+    key          = "sp-car-clean/terraform.tfstate"
+    region       = "sa-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
 
   required_providers {
     aws = {

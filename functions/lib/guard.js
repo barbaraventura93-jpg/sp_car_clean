@@ -8,8 +8,7 @@
 
 const ALLOWED_ORIGINS = [
   'https://www.spcarclean.com.br',
-  'https://spcarclean.com.br',
-  'https://sp-car-clean.netlify.app'
+  'https://spcarclean.com.br'
 ];
 
 const stores = {}; // { bucket: { ip: { count, start } } }
@@ -34,13 +33,11 @@ function _origin(event) {
   return (event.headers && (event.headers.origin || event.headers.Origin)) || '';
 }
 
-// Aceita: sem Origin (alguns clientes não enviam), localhost, domínios oficiais
-// e os previews *.netlify.app do projeto.
+// Aceita: sem Origin (alguns clientes não enviam), localhost e os domínios oficiais.
 function originAllowed(event) {
   const origin = _origin(event);
   if (!origin) return true;
   if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true;
-  if (/^https:\/\/([a-z0-9-]+--)?sp-car-clean\.netlify\.app$/.test(origin)) return true;
   return ALLOWED_ORIGINS.includes(origin);
 }
 

@@ -138,7 +138,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - O amigo entra na base de clientes numa categoria **🌱 Oportunidade** (visível na aba **Clientes**, com origem "indicado por…")
 - Quando o amigo **fecha o primeiro serviço** (booking `confirmed`/`completed`), quem indicou recebe **automaticamente** um **cupom de agradecimento** (padrão 15%) por e-mail
 - Aba **🤝 Indicações** no painel admin: lista todas as indicações, status (aguardando/convertida), cupons gerados e **taxa de conversão**
-- A criação do cupom do amigo + registro da indicação + e-mails rodam **server-side** na Netlify Function `create-referral` (usa o `FIREBASE_DATABASE_SECRET`, como o `birthday-check`), sem depender das regras de escrita do cliente
+- A criação do cupom do amigo + registro da indicação + e-mails rodam **server-side** na função `create-referral` (usa o `FIREBASE_DATABASE_SECRET`, como o `birthday-check`), sem depender das regras de escrita do cliente
 - Percentuais e validade configuráveis por variáveis de ambiente: `REFERRAL_FRIEND_PCT`, `REFERRAL_REFERRER_PCT`, `REFERRAL_VALID_DAYS` (padrões: 15 / 15 / 90 dias)
 
 > **Regras do Realtime Database.** O nó `/referrals` deve ser **legível apenas pelo admin** (contém dados de contato de terceiros). O front carrega `/referrals` só no painel administrativo; a escrita é feita pela função server-side com o token do banco.
@@ -235,10 +235,12 @@ auto-desliga ao estourar o teto (avisa via Telegram).
 | Banco de dados | Firebase Realtime Database |
 | Armazenamento de imagens | Firebase Storage (galeria antes/depois) |
 | Autenticação | Firebase Auth (e-mail + senha) |
-| Hosting | Netlify |
-| Domínio | www.spcarclean.com.br (Registro.br + Netlify DNS) |
-| Pagamento | InfinitePay (PIX + cartão) via Netlify Function |
-| Inteligência Artificial | Claude API (Anthropic) via Netlify Functions (`ai` + `ai-dispatcher`) |
+| Hosting | AWS S3 + CloudFront |
+| Backend | AWS Lambda + API Gateway (HTTP API), segredos no SSM Parameter Store, crons no EventBridge Scheduler |
+| Infra como código | Terraform (`infra/`), estado em S3 versionado |
+| Domínio | spcarclean.com.br (Registro.br + Route 53, certificado ACM) |
+| Pagamento | InfinitePay (PIX + cartão) via funções no Lambda |
+| Inteligência Artificial | Claude API (Anthropic) via funções no Lambda (`ai` + `ai-dispatcher`) |
 | Notificações | AWS Lambda + EmailJS + Telegram Bot API + Firebase Cloud Messaging |
 | E-mail automático de aniversário | Cron diário na AWS (EventBridge Scheduler → Lambda) + EmailJS REST API |
 | Mapa | Leaflet.js + OpenStreetMap + Nominatim (geocoding) |
@@ -269,11 +271,18 @@ const CFG = {
 ## Deploy
 
 ### Pré-requisitos
-- Conta [Netlify](https://netlify.com) com repositório conectado
+- Conta AWS com a infraestrutura de `infra/` aplicada (passo a passo em **[`infra/README.md`](infra/README.md)**)
 - Projeto [Firebase](https://console.firebase.google.com) com Realtime Database, Auth e Storage habilitados (plano Blaze)
-- Domínio configurado no Registro.br apontando para o Netlify
+- Domínio no Registro.br com os nameservers do Route 53
 
-### Variáveis de ambiente (Netlify)
+Cada merge na `main` publica **funções e site** pelo GitHub Actions (`.github/workflows/deploy-aws.yml`).
+
+### Variáveis de ambiente (SSM Parameter Store)
+
+Os segredos das funções ficam em `/sp-car-clean/<NOME>` no SSM (região `sa-east-1`) e são
+gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
+(`FIREBASE_API_KEY`, `FIREBASE_VAPID_KEY`, `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`) ficam nos
+**Secrets do GitHub Actions**.
 
 | Variável | Descrição |
 |---|---|
@@ -298,13 +307,10 @@ const CFG = {
 | `REFERRAL_VALID_DAYS` | (Opcional) Validade em dias dos cupons de indicação (padrão: `90`) |
 
 > As variáveis marcadas **Secreto** nunca podem aparecer no front-end nem ser
-> commitadas — só existem como variáveis de ambiente do Netlify e são lidas
-> exclusivamente dentro das Netlify Functions. Apenas as chaves realmente públicas
+> commitadas — só existem no SSM Parameter Store (criptografadas) e são lidas
+> exclusivamente pelas funções no Lambda. Apenas as chaves realmente públicas
 > (`FIREBASE_API_KEY`, `FIREBASE_VAPID_KEY`, `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`)
-> são injetadas no HTML — por isso constam no `SECRETS_SCAN_OMIT_KEYS` do `netlify.toml`.
-> Os arquivos de documentação (`DEPLOY_GUIDE.md`, etc.) citam nomes
-> de variáveis em exemplos e **não** são publicados no site, então ficam em
-> `SECRETS_SCAN_OMIT_PATHS` para não quebrarem o build.
+> são injetadas no HTML pelo `build.js`.
 
 ### Firebase Realtime Database — regras de segurança
 
@@ -417,7 +423,7 @@ const CFG = {
 > admin (config dos agentes, consumo mensal e logs). Sem elas o painel quebra com
 > `permission_denied at /aiConfig`. A exceção `aiConfig/concierge/enabled` fica com
 > leitura pública porque o **widget concierge** do site consulta esse caminho sem login.
-> As funções Netlify escrevem esses nós via Admin SDK (ignoram estas regras).
+> As funções do backend escrevem esses nós via Admin SDK (ignoram estas regras).
 
 ### Firebase Storage — regras de segurança
 
@@ -459,7 +465,7 @@ Arquivos que compõem o PWA:
 chegam direto no celular, além do Telegram. Para habilitar:
 
 1. No **Firebase Console → Cloud Messaging**, gere um **par de chaves Web Push** e copie
-   a chave pública para a env `FIREBASE_VAPID_KEY` (Netlify). Sem ela, o app funciona
+   a chave pública para o Secret `FIREBASE_VAPID_KEY` (GitHub Actions). Sem ela, o app funciona
    normalmente, apenas sem push.
 2. Baixe uma **service account** (Configurações do projeto → Contas de serviço → Gerar
    nova chave privada) e cole o JSON na env `FCM_SERVICE_ACCOUNT` (aceita JSON puro ou
@@ -526,15 +532,15 @@ sp-car-clean/
 ├── sw.js                        # Service worker de cache offline
 ├── firebase-messaging-sw.js     # Service worker de push (Firebase Cloud Messaging)
 ├── package.json
-├── netlify.toml                 # Config Netlify (legado; crons e hosting já estão na AWS)
 ├── firebase.json                # Config Firebase (regras de Database e Storage; hosting migrado p/ AWS)
 ├── database.rules.json          # Regras de segurança do Realtime Database (versionadas)
 ├── storage.rules                # Regras de segurança do Firebase Storage (versionadas)
 ├── assets/
 │   ├── logo.png                 # Logo oficial (PNG com fundo transparente)
 │   └── portfolio/               # Imagens e vídeos do carrossel hero
-└── netlify/
-    └── functions/
+├── infra/                       # Terraform: S3, CloudFront, Route 53, ACM, Lambda, API Gateway, crons
+├── scripts/                     # aws-put-secrets.sh (SSM) e aws-bootstrap-tfstate.sh (estado do Terraform)
+└── functions/                   # Backend (AWS Lambda; entrada: lib/aws-adapter.js)
         ├── notify-booking.js        # Notifica o admin (Telegram + push FCM)
         ├── create-payment.js        # Gera link de pagamento InfinitePay (agendamento)
         ├── create-gift-payment.js   # Gera link de pagamento InfinitePay (gift card)
@@ -545,13 +551,14 @@ sp-car-clean/
         ├── ai.js                    # Orquestrador HTTP dos agentes de IA (admin + públicos)
         ├── ai-dispatcher.js         # Cron diário: dispara agentes de IA agendados
         └── lib/
+            ├── aws-adapter.js       # Entrada no Lambda: segredos do SSM + normalização do evento
             ├── fcm.js               # Helper de envio de push (OAuth2 + FCM HTTP v1)
             ├── guard.js             # Rate-limit por IP + checagem de origem (CORS) das funções públicas
             ├── agents/              # Agentes de IA (concierge, relatorio, upsell, orcamento, …)
             └── core/                # Núcleo (claude, firebase, telegram, email, config, logger)
 ```
 
-> Infra na AWS (Terraform, passo a passo): **`infra/README.md`**. Guia antigo: `DEPLOY_GUIDE.md`.
+> Infra na AWS (Terraform, passo a passo): **`infra/README.md`**.
 
 ---
 
@@ -619,15 +626,15 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 
 | # | Item | Onde | O que foi feito |
 |---|---|---|---|
-| 1 | **Webhook de pagamento sem verificação** | `netlify/functions/infinitepay-webhook.js` | O corpo do webhook deixou de ser confiável: antes de confirmar um agendamento ou ativar um gift card, a função consulta o endpoint oficial `POST payment_check` do InfinitePay (autenticado pelo nosso `handle`) e só prossegue se `paid === true`. Confere também o valor pago contra o valor esperado do pedido (`priceWithFee`/`amount`) e faz **fail-closed** — se não conseguir verificar, devolve erro para o InfinitePay reenviar em vez de confirmar às cegas. |
+| 1 | **Webhook de pagamento sem verificação** | `functions/infinitepay-webhook.js` | O corpo do webhook deixou de ser confiável: antes de confirmar um agendamento ou ativar um gift card, a função consulta o endpoint oficial `POST payment_check` do InfinitePay (autenticado pelo nosso `handle`) e só prossegue se `paid === true`. Confere também o valor pago contra o valor esperado do pedido (`priceWithFee`/`amount`) e faz **fail-closed** — se não conseguir verificar, devolve erro para o InfinitePay reenviar em vez de confirmar às cegas. |
 | 2 | **Regra RTDB permitia sobrescrever qualquer agendamento** | `database.rules.json` (`bookings/$id`) | A escrita pública passou de `newData.exists()` (qualquer alteração) para: **criar** um agendamento, ou fazer só as alterações self-service (reagendar/cancelar/feedback). Campos de valor, pagamento e identidade (`price`, `finalPrice`, `priceWithFee`, `paidAmount`, `paymentTransactionId`, `email`, `name`, `phone`, `createdAt`, `id`) ficaram imutáveis sem login, e o `status` só pode ir para `cancelled` — nunca para `approved`/`confirmed`/`completed`. Regra validada com 15 casos (targaryen). |
 | 4 | **Regras de segurança não versionadas** | `database.rules.json`, `storage.rules`, `firebase.json` | As regras do Realtime Database e do Storage viviam só neste README (colar manual no Console, sem histórico nem revisão). Agora são **versionadas** em `database.rules.json` e `storage.rules`, referenciadas no `firebase.json`, e publicáveis com `firebase deploy --only database,storage`. (As regras do Storage foram versionadas sem alterar comportamento na época; a leitura de `checkin/**` foi endurecida depois, no item 7.) |
 | 3 | **Códigos de reserva/gift card curtos e previsíveis** | `index.html` (`genId`, `genGiftId`) | Os códigos passaram de 6 caracteres gerados com `Math.random()` (`SPC-` ≈ 10⁹, não-criptográfico) para **10 caracteres via CSPRNG** (`crypto.getRandomValues`), num alfabeto de 32 sem ambíguos → **32¹⁰ ≈ 1,1×10¹⁵** combinações. Inviabiliza enumeração/brute force para os **novos** agendamentos e gift cards. Mesma correção aplicada ao `genGiftId`. |
-| 3b | **Leitura pública expunha o agendamento inteiro (inclui enumeração de códigos antigos)** | `database.rules.json` (`bookings/$id .read`), `netlify/functions/booking-status.js`, `index.html` | `bookings/$id .read` deixou de ser `true`: agora exige login e só o dono (`clientUid == auth.uid` ou `email == auth.token.email`) ou o admin leem — fecha a enumeração, **inclusive dos códigos antigos**. A consulta sem login passou para a função server-side `booking-status` (exige **código + e-mail**, devolve só ao dono verificado, com rate-limit por IP e resposta genérica anti-oráculo). Regra e função validadas (8 + 7 casos). |
+| 3b | **Leitura pública expunha o agendamento inteiro (inclui enumeração de códigos antigos)** | `database.rules.json` (`bookings/$id .read`), `functions/booking-status.js`, `index.html` | `bookings/$id .read` deixou de ser `true`: agora exige login e só o dono (`clientUid == auth.uid` ou `email == auth.token.email`) ou o admin leem — fecha a enumeração, **inclusive dos códigos antigos**. A consulta sem login passou para a função server-side `booking-status` (exige **código + e-mail**, devolve só ao dono verificado, com rate-limit por IP e resposta genérica anti-oráculo). Regra e função validadas (8 + 7 casos). |
 | 7 | **Fotos de check-in com leitura pública** | `storage.rules` (`checkin/**`) | A leitura de `checkin/**` passou de `if true` para `if request.auth != null`: o acesso por **caminho bruto** deixou de ser público (bloqueia raspagem/enumeração do bucket). As miniaturas continuam abrindo para o cliente porque o app usa a URL de download com `?token=` (gerada pelo admin no upload) — esse token funciona independentemente das regras, inclusive para o cliente deslogado (link por e-mail/WhatsApp). `gallery/` segue pública (vitrine). |
-| 5 | **Funções de pagamento/notificação sem auth nem rate-limit** | `netlify/functions/lib/guard.js` (novo), `create-payment.js`, `create-gift-payment.js`, `notify-booking.js` | Helper `guard.js` adiciona **rate-limit por IP** + **checagem de origem (CORS)** às três funções públicas (corta geração de links e disparo de notificações/WhatsApp em massa por terceiros — incluindo abuso do número oficial de WhatsApp). Além disso, `create-payment` e `create-gift-payment` passaram a ler o **valor no Firebase** (preço do agendamento / valor do gift card) em vez de confiar no valor enviado pelo cliente; o webhook (item 1) ainda revalida o valor pago. Validado (8 casos). |
+| 5 | **Funções de pagamento/notificação sem auth nem rate-limit** | `functions/lib/guard.js` (novo), `create-payment.js`, `create-gift-payment.js`, `notify-booking.js` | Helper `guard.js` adiciona **rate-limit por IP** + **checagem de origem (CORS)** às três funções públicas (corta geração de links e disparo de notificações/WhatsApp em massa por terceiros — incluindo abuso do número oficial de WhatsApp). Além disso, `create-payment` e `create-gift-payment` passaram a ler o **valor no Firebase** (preço do agendamento / valor do gift card) em vez de confiar no valor enviado pelo cliente; o webhook (item 1) ainda revalida o valor pago. Validado (8 casos). |
 | 6 | **Rate-limit dos agentes de IA públicos era só em memória** | `ai.js`, `ai-dispatcher.js`, `database.rules.json` (`aiRateLimit`) | Além do rate-limit em memória (por instância), o `ai.js` agora faz um rate-limit **persistente e compartilhado** entre instâncias: contador por hora e por IP no Realtime Database via **incremento atômico** (`{".sv":{"increment":1}}`), escrito com o Database Secret. **Fail-open** se o DB não responder (os tetos de orçamento por agente seguem valendo). O `ai-dispatcher` limpa diariamente os buckets antigos. Validado (21ª chamada do mesmo IP → 429). |
-| 8 | **Código Firestore legado removido** | `functions/`, `firestore.rules`, `functions/lib/syncClient.js` | O conjunto Firestore (Cloud Function `syncClientFromBooking` + regras) não correspondia à arquitetura atual (Realtime Database) e não era referenciado por `firebase.json`/`netlify.toml`/app — código morto. **Removido** para eliminar a confusão (regras que não eram aplicadas, etc.). |
+| 8 | **Código Firestore legado removido** | antiga pasta `functions/` do Firestore, `firestore.rules`, `functions/lib/syncClient.js` | O conjunto Firestore (Cloud Function `syncClientFromBooking` + regras) não correspondia à arquitetura atual (Realtime Database) e não era referenciado por `firebase.json`/`netlify.toml`/app — código morto. **Removido** para eliminar a confusão (regras que não eram aplicadas, etc.). |
 | 9 | **Log de debug versionado** | `firebase-debug.log`, `.gitignore` | `firebase-debug.log` (artefato do `firebase init`) **removido** do repositório e adicionado ao `.gitignore`. |
 | 11 | **Cliente só conseguia cadastrar 1 veículo em "Minha Conta"** | `index.html` (`_profileVehicles`) | Causa provável: o Realtime Database devolvia o array `vehicles` como objeto `{0:…,1:…}`, e `Array.isArray()` falhava → o app caía no fallback de 1 veículo (`primaryVehicle`) em 3 telas. Novo helper `_profileVehicles(profile)` aceita **array ou objeto** (e só cai no `primaryVehicle` quando não há lista), usado nas 3 leituras (resumo da conta, form de dados cadastrais, prefill do agendamento). Validado (6 casos). |
 | 12 | **Destacar pacotes/combos na seleção de serviços** | `index.html` (`renderBookingStep`, step 1) | No passo 1 do agendamento (só carro — combos usam porte pq/gr), um bloco destacado **"🎁 Pacotes com desconto"** lista os combos públicos ativos com preço regular vs. combo + economia e um botão **"Escolher pacote"** que adiciona os serviços do combo ao agendamento (`applyComboSuggestion`). Estimula a compra de pacotes no momento da escolha. |
@@ -642,7 +649,8 @@ falar com o cliente, o link do perfil do Instagram no rodapé e a legenda de Ins
 pela IA (texto para copiar).
 
 Para retomar, o código está no histórico do git no commit `53db58d` (último antes da
-remoção) — ex.: `git show 53db58d:netlify/functions/lib/core/whatsapp.js`.
+remoção; naquele commit as funções ficavam em `netlify/functions/`, hoje em `functions/`) — ex.:
+`git show 53db58d:netlify/functions/lib/core/whatsapp.js`.
 
 | # | Item | Arquivos no `53db58d` | O que falta para retomar |
 |---|---|---|---|
@@ -661,6 +669,7 @@ remoção) — ex.: `git show 53db58d:netlify/functions/lib/core/whatsapp.js`.
 | # | Item | Onde | Observação |
 |---|---|---|---|
 | 10 | **`index.html` monolítico** | `index.html`, `styles.css`, `build.js` | **Fase 1 concluída:** o CSS principal (~72 KB, ~680 linhas) foi extraído do `<style>` inline para `styles.css` (referenciado por `<link>` e copiado ao `dist/` pelo `build.js`); o `index.html` caiu de ~580 KB para ~508 KB, sem impacto em JS nem nos placeholders de env (que ficam só no bloco `<script>`). **Pendente (fases futuras):** separar o `<script>` da aplicação (~8.400 linhas) em módulos por área (site público vs. painel admin) — refator maior, avaliado a médio prazo. |
+| L1 | **Caminho legado `/.netlify/functions/*`** | `infra/main.tf` (CloudFront Function `api_router` + comportamento), `sw.js` | Mantido para app.js antigo em cache e links de pagamento InfinitePay emitidos antes de 28/09/2026 (webhook no caminho antigo). **Remover a partir de dez/2026**: tirar o comportamento `/.netlify/functions/*` e o rewrite da CloudFront Function, e a exceção `/.netlify/` do `sw.js`. |
 
 ---
 
