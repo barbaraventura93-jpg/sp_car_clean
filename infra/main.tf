@@ -7,7 +7,7 @@ data "aws_route53_zone" "primary" {
 }
 
 locals {
-  aliases     = [var.domain_name, "www.${var.domain_name}"]
+  aliases     = var.site_aliases
   bucket_name = "sp-car-clean-site-${data.aws_caller_identity.current.account_id}"
 }
 

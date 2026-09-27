@@ -15,6 +15,12 @@ variable "acm_certificate_arn" {
   type        = string
 }
 
+variable "site_aliases" {
+  description = "Domínios servidos pelo CloudFront. TODOS precisam estar cobertos pelo certificado ACM. Ex.: [\"spcarclean.com.br\"] se o certificado cobrir só o domínio raiz."
+  type        = list(string)
+  default     = ["spcarclean.com.br", "www.spcarclean.com.br"]
+}
+
 variable "cloudfront_price_class" {
   description = "PriceClass_All inclui edges na América do Sul (melhor latência para o público no Brasil). Troque para PriceClass_100 se quiser economizar abrindo mão do edge BR."
   type        = string
