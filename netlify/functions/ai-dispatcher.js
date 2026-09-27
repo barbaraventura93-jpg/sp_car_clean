@@ -1,7 +1,6 @@
 'use strict';
 
-// Netlify Scheduled Function — executa diariamente às 08:00 BRT (11:00 UTC)
-// Configurado em netlify.toml: schedule = "0 11 * * *"
+// Cron diário às 08:00 BRT (11:00 UTC) — EventBridge Scheduler, infra/api.tf.
 
 exports.handler = async () => {
   const config = require('./lib/core/config');

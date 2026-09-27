@@ -1,5 +1,10 @@
 # WhatsApp Cloud API — Guia de Contratação e Configuração
 
+> ⏸️ **Integração pausada — em backlog** (itens M1 e M2 do Backlog no `README.md`).
+> Se for retomar: as funções rodam na **AWS**, então as variáveis citadas abaixo como
+> "do Netlify" vão no **SSM Parameter Store** (`/sp-car-clean/NOME`, ver `infra/README.md`),
+> e a URL do webhook é `https://spcarclean.com.br/api/whatsapp-webhook`.
+
 Este guia ativa o envio automático de mensagens **ao cliente**, saindo do
 **número oficial da loja**, via **WhatsApp Cloud API (Meta)** — o caminho
 oficial e mais barato (sem intermediário/BSP).

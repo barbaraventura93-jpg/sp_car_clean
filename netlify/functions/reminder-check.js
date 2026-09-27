@@ -1,6 +1,5 @@
-// Netlify Scheduled Function — lembrete do dia anterior.
-// Roda todo dia às 10:00 BRT (13:00 UTC). Config em netlify.toml:
-//   [functions."reminder-check"] schedule = "0 13 * * *"
+// Cron diário — lembrete do dia anterior.
+// Roda todo dia às 10:00 BRT (13:00 UTC) — EventBridge Scheduler, infra/api.tf.
 //
 // Varre /bookings no Firebase, encontra agendamentos marcados para AMANHÃ
 // (horário de Brasília) com status ativo e avisa o cliente por:

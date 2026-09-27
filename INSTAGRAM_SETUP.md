@@ -1,5 +1,7 @@
 # Configuração do Instagram Feed
 
+> ⏸️ **Integração pausada — em backlog** (item M3 do Backlog no `README.md`).
+
 ## O que foi feito
 - ✅ Link do Instagram adicionado no footer
 - ✅ Carrossel de posts do Instagram substituindo o quadrado azul

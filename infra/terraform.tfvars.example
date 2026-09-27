@@ -12,4 +12,4 @@
 # Fase 2 (backend):
 # site_url          = "https://spcarclean.com.br"
 # ssm_param_path    = "/sp-car-clean/"
-# schedules_enabled = false   # true só depois de tirar os crons do netlify.toml
+# schedules_enabled = true    # false pausa os 3 crons na AWS

@@ -124,7 +124,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - Validação em tempo real no step 3 do agendamento; desconto aplicado antes de salvar
 - Cupom marcado como **usado** após aplicação (uso único ou múltiplo configurável)
 - **Cupom de aniversário manual**: gerado com 1 clique na ficha do cliente (10% de desconto, válido até o dia 28 do mês seguinte) — envio automático via WhatsApp ao gerar
-- **Cupom de aniversário automático**: Netlify Scheduled Function (`birthday-check.js`) roda todo dia às 09h00 BRT, detecta aniversariantes do dia, cria cupom no Firebase e envia e-mail personalizado via EmailJS
+- **Cupom de aniversário automático**: cron diário na AWS (`birthday-check.js`, EventBridge Scheduler) roda todo dia às 09h00 BRT, detecta aniversariantes do dia, cria cupom no Firebase e envia e-mail personalizado via EmailJS
 
 **Reativação de clientes inativos**
 - Painel de inativos (>60 dias sem visita confirmada) com contagem de dias desde o último atendimento
@@ -177,12 +177,16 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
   - Ranking de bairros com barra de participação percentual
 
 ### Notificações automáticas por WhatsApp (Cloud API)
+> ⏸️ **Pausado — em backlog** (item M1 do [Backlog](#-backlog--integrações-meta-pausadas)).
+> O código segue no projeto, mas a integração com a Meta não está em uso. O link `wa.me`
+> manual continua funcionando normalmente.
+
 Além do link `wa.me` manual, a loja envia **mensagens oficiais pelo WhatsApp Cloud API
 da Meta**, saindo do número comercial, via `notify-booking.js` (helper `lib/core/whatsapp.js`).
 
 - **Mensagens de template ao cliente** a cada evento: novo agendamento, reagendamento
   aprovado/recusado, cancelamento e correção de valor (best-effort — não bloqueia o fluxo)
-- **Lembrete automático D-1**: `reminder-check.js` (Netlify Scheduled Function, 10h00 BRT)
+- **Lembrete automático D-1**: `reminder-check.js` (cron diário na AWS, 10h00 BRT)
   varre os agendamentos de amanhã com status ativo e dispara o template `lembrete_agendamento`,
   marcando `reminderSentAt` para não repetir
 - **Webhook de entrada** (`whatsapp-webhook.js`): responde o handshake de verificação da Meta
@@ -191,8 +195,8 @@ da Meta**, saindo do número comercial, via `notify-booking.js` (helper `lib/cor
   `WHATSAPP_TEMPLATE_LANG`). Passo a passo completo em **[`WHATSAPP_SETUP.md`](WHATSAPP_SETUP.md)**
 
 ### Central de IA (Admin + Site)
-Camada de agentes de IA (Claude / Anthropic) orquestrada pela Netlify Function `ai.js`
-(gatilho HTTP) e pela Scheduled Function `ai-dispatcher.js` (gatilho cron diário). Cada
+Camada de agentes de IA (Claude / Anthropic) orquestrada pela função `ai.js`
+(gatilho HTTP) e pela função `ai-dispatcher.js` (cron diário na AWS). Cada
 agente tem **orçamento mensal de chamadas** e limite de tokens configuráveis, e
 auto-desliga ao estourar o teto (avisa via Telegram).
 
@@ -248,7 +252,7 @@ auto-desliga ao estourar o teto (avisa via Telegram).
 | Pagamento | InfinitePay (PIX + cartão) via Netlify Function |
 | Inteligência Artificial | Claude API (Anthropic) via Netlify Functions (`ai` + `ai-dispatcher`) |
 | Notificações | Netlify Functions + EmailJS + Telegram Bot API + WhatsApp Cloud API (Meta) |
-| E-mail automático de aniversário | Netlify Scheduled Function (cron diário) + EmailJS REST API |
+| E-mail automático de aniversário | Cron diário na AWS (EventBridge Scheduler → Lambda) + EmailJS REST API |
 | Mapa | Leaflet.js + OpenStreetMap + Nominatim (geocoding) |
 | Fontes | Google Fonts (Montserrat + Open Sans) |
 
@@ -540,7 +544,7 @@ sp-car-clean/
 ├── sw.js                        # Service worker de cache offline
 ├── firebase-messaging-sw.js     # Service worker de push (Firebase Cloud Messaging)
 ├── package.json
-├── netlify.toml                 # Config Netlify (build, publish, functions, cron)
+├── netlify.toml                 # Config Netlify (legado; crons e hosting já estão na AWS)
 ├── firebase.json                # Config Firebase (regras de Database e Storage; hosting migrado p/ AWS)
 ├── database.rules.json          # Regras de segurança do Realtime Database (versionadas)
 ├── storage.rules                # Regras de segurança do Firebase Storage (versionadas)
@@ -619,9 +623,10 @@ sp-car-clean/
 | Gift cards (compra online + ativação por webhook) | ✅ |
 | Avaliações do cliente + depoimentos aprovados na vitrine | ✅ |
 | Controle de estoque/insumos com previsão de reposição (IA) | ✅ |
-| Notificações automáticas ao cliente por WhatsApp Cloud API | ✅ |
-| Lembrete automático D-1 do agendamento por WhatsApp | ✅ |
-| Webhook de WhatsApp (mensagens do cliente → Telegram do admin) | ✅ |
+| Notificações automáticas ao cliente por WhatsApp Cloud API | ⏸️ Backlog (M1) |
+| Lembrete automático D-1 do agendamento por WhatsApp (o de e-mail segue ativo) | ⏸️ Backlog (M1) |
+| Webhook de WhatsApp (mensagens do cliente → Telegram do admin) | ⏸️ Backlog (M2) |
+| Feed do Instagram no site (Instagram Graph API) | ⏸️ Backlog (M3) |
 
 ---
 
@@ -647,6 +652,17 @@ Itens abaixo estão **em aberto** — priorizados por impacto. A ênfase atual �
 | 11 | **Cliente só conseguia cadastrar 1 veículo em "Minha Conta"** | `index.html` (`_profileVehicles`) | Causa provável: o Realtime Database devolvia o array `vehicles` como objeto `{0:…,1:…}`, e `Array.isArray()` falhava → o app caía no fallback de 1 veículo (`primaryVehicle`) em 3 telas. Novo helper `_profileVehicles(profile)` aceita **array ou objeto** (e só cai no `primaryVehicle` quando não há lista), usado nas 3 leituras (resumo da conta, form de dados cadastrais, prefill do agendamento). Validado (6 casos). |
 | 12 | **Destacar pacotes/combos na seleção de serviços** | `index.html` (`renderBookingStep`, step 1) | No passo 1 do agendamento (só carro — combos usam porte pq/gr), um bloco destacado **"🎁 Pacotes com desconto"** lista os combos públicos ativos com preço regular vs. combo + economia e um botão **"Escolher pacote"** que adiciona os serviços do combo ao agendamento (`applyComboSuggestion`). Estimula a compra de pacotes no momento da escolha. |
 | 13 | **Pesquisa + indicação por WhatsApp ao concluir (manual, na hora)** | `index.html` (`markCompleted`; deep-link `?indicar=1`) | Ao marcar como **concluído**, além do e-mail automático da pesquisa, o admin recebe a opção de **abrir o WhatsApp já preenchido** com a **pesquisa** (`?avaliar=CODE`) + o **convite de indicação** (link `?indicar=1`) num texto só, citando o desconto de 15%. O `?indicar=1` é o novo **link de indicação compartilhável** que abre o modal "Indique um amigo" (programa de indicação que já existia — cupom 15% para amigo e para quem indica). |
+
+### 🔵 Backlog — Integrações Meta (pausadas)
+
+Integrações com a Meta (WhatsApp Cloud API, Instagram/Facebook Graph API) **não estão em
+uso**. O código foi mantido e já roda na AWS, pronto para ser retomado.
+
+| # | Item | Onde | O que falta para retomar |
+|---|---|---|---|
+| M1 | **Mensagens automáticas por WhatsApp Cloud API** (novo agendamento, reagendamento, cancelamento, correção de valor e lembrete D-1) | `lib/core/whatsapp.js`, `notify-booking.js`, `reminder-check.js`, [`WHATSAPP_SETUP.md`](WHATSAPP_SETUP.md) | Número comercial ativo na Cloud API, templates aprovados pela Meta e token permanente (System User) válido em `/sp-car-clean/WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID` no SSM. Os envios são best-effort: sem isso, as tentativas falham sem afetar o fluxo, e o lembrete por e-mail continua saindo. |
+| M2 | **Webhook de entrada do WhatsApp** (mensagens do cliente → Telegram do admin) | `whatsapp-webhook.js` | No painel da Meta, cadastrar a URL `https://spcarclean.com.br/api/whatsapp-webhook` (a URL antiga do Netlify deixa de funcionar quando o Netlify for desligado), com o mesmo `WHATSAPP_VERIFY_TOKEN`. |
+| M3 | **Feed do Instagram no site** | [`INSTAGRAM_SETUP.md`](INSTAGRAM_SETUP.md) | App na Meta com Instagram Graph API e token de longa duração (renovação a cada 60 dias). Sem token, o site mostra "Siga-nos no Instagram". `FB_APP_ID`/`FB_APP_SECRET` estão no SSM, mas não são usados pelas funções. |
 
 ### ⚪ Descartado (por design)
 
