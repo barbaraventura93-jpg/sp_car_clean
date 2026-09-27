@@ -1,0 +1,13 @@
+# Copie para terraform.tfvars e preencha o ARN do certificado.
+# (o terraform.tfvars real NÃO deve ser versionado — veja .gitignore)
+
+# ARN do certificado ACM emitido em us-east-1 (status "Issued").
+acm_certificate_arn = "arn:aws:acm:us-east-1:000000000000:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Os demais valores já têm padrão em variables.tf; descomente só se quiser mudar:
+# aws_region             = "sa-east-1"
+# domain_name            = "spcarclean.com.br"
+# cloudfront_price_class = "PriceClass_All"
+# github_owner           = "barbaraventura93-jpg"
+# github_repo            = "sp_car_clean"
+# github_branch          = "main"

@@ -1,0 +1,60 @@
+name: Deploy to AWS (S3 + CloudFront)
+
+# Começa só manual (Run workflow). Depois de validar o primeiro deploy,
+# descomente o bloco "push" abaixo para publicar automaticamente a cada merge.
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [ main ]
+
+permissions:
+  id-token: write   # necessário para autenticar via OIDC (sem chave estática)
+  contents: read
+
+concurrency:
+  group: deploy-aws
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build (gera dist/)
+        env:
+          FIREBASE_API_KEY:   ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_VAPID_KEY: ${{ secrets.FIREBASE_VAPID_KEY }}
+          EMAILJS_SERVICE_ID: ${{ secrets.EMAILJS_SERVICE_ID }}
+          EMAILJS_PUBLIC_KEY: ${{ secrets.EMAILJS_PUBLIC_KEY }}
+        run: node build.js
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region:     ${{ secrets.AWS_REGION }}
+
+      - name: Sync para o S3
+        run: |
+          # Sobe tudo com cache longo por padrão...
+          aws s3 sync dist/ "s3://${{ secrets.S3_BUCKET }}/" \
+            --delete \
+            --cache-control "public, max-age=604800"
+
+          # ...mas o index.html sempre revalida (nunca fica preso a versão antiga).
+          aws s3 cp dist/index.html "s3://${{ secrets.S3_BUCKET }}/index.html" \
+            --cache-control "public, max-age=0, must-revalidate" \
+            --content-type "text/html"
+
+      - name: Invalidar cache do CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets.CF_DISTRIBUTION_ID }}" \
+            --paths "/*"
