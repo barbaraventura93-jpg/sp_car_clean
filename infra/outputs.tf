@@ -18,11 +18,6 @@ output "api_base_url" {
   value       = "${local.site_url}/api"
 }
 
-output "whatsapp_webhook_url" {
-  description = "URL para cadastrar no painel da Meta (WhatsApp Cloud API → Webhook)."
-  value       = "${local.site_url}/api/whatsapp-webhook"
-}
-
 output "github_role_arn" {
   description = "ARN da role que o GitHub Actions assume."
   value       = aws_iam_role.github_deploy.arn

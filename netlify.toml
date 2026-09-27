@@ -13,16 +13,10 @@
   # Docs de setup mencionam nomes de variáveis e exemplos; não são publicados
   # no site (o build.js não os copia para dist/). Isentamos do secret scanning
   # para exemplos de configuração não quebrarem o build.
-  SECRETS_SCAN_OMIT_PATHS = "WHATSAPP_SETUP.md,DEPLOY_GUIDE.md,INSTAGRAM_SETUP.md,README.md,PORTFOLIO_README.md"
+  SECRETS_SCAN_OMIT_PATHS = "DEPLOY_GUIDE.md,README.md,PORTFOLIO_README.md"
 
-[functions."birthday-check"]
-  schedule = "0 12 * * *"
-
-[functions."reminder-check"]
-  schedule = "0 13 * * *"
-
-[functions."ai-dispatcher"]
-  schedule = "0 11 * * *"
+# Crons (birthday-check, reminder-check, ai-dispatcher) rodam na AWS
+# (EventBridge Scheduler, infra/api.tf). Não reative aqui: os envios sairiam em dobro.
 
 # O front chama /api/<fn> (caminho da AWS). Enquanto o Netlify seguir no ar,
 # o mesmo caminho aponta para as funções daqui.

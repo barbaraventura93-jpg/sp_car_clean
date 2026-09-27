@@ -12,7 +12,7 @@ Terraform que cria o site e o backend na AWS e a esteira de deploy:
 visitante ──▶ CloudFront ──┬── /*                     ──▶ S3 (site)
                            ├── /api/*                 ──▶ API Gateway ──▶ Lambda (11 funções)
                            └── /.netlify/functions/*  ──▶ (reescrito p/ /api/*)
-EventBridge Scheduler ──(3 crons, desligados por padrão)──▶ Lambda
+EventBridge Scheduler ──(3 crons diários)──▶ Lambda
 Lambda ──(na inicialização)──▶ SSM Parameter Store /sp-car-clean/* (segredos)
 ```
 
@@ -39,7 +39,7 @@ rm netlify-env.json
   `aws ssm put-parameter --name /sp-car-clean/NOME --type SecureString --overwrite --value 'valor'`
 
 Confira: `aws ssm get-parameters-by-path --path /sp-car-clean/ --query 'Parameters[].Name'`
-(ANTHROPIC_API_KEY, FIREBASE_DATABASE_URL, FIREBASE_DATABASE_SECRET, WHATSAPP_*, TELEGRAM_*, INFINITEPAY_*, EMAILJS_*, FCM_SERVICE_ACCOUNT…).
+(ANTHROPIC_API_KEY, FIREBASE_DATABASE_URL, FIREBASE_DATABASE_SECRET, TELEGRAM_*, INFINITEPAY_*, EMAILJS_*, FCM_SERVICE_ACCOUNT…).
 
 ### 2. Aplicar o Terraform
 ```bash
@@ -63,11 +63,17 @@ Logs: CloudWatch → Log groups → `/aws/lambda/sp-car-clean-<função>`.
 ### 4. Merge do PR
 A partir daí, cada merge na `main` publica **funções e site** (`deploy-aws.yml`). Uma função nova em `netlify/functions/` precisa ser adicionada em `api.tf` (listas `http_functions`/`scheduled_functions`) e aplicada **antes** do merge.
 
-### 5. Desligar o Netlify (quando tudo estiver estável)
-1. **WhatsApp (Meta):** trocar a URL do webhook para a saída `whatsapp_webhook_url` (`https://spcarclean.com.br/api/whatsapp-webhook`), mesmo verify token.
-2. **InfinitePay:** nada a fazer — a URL de retorno é gerada a cada pagamento a partir do domínio.
-3. **Crons:** remova os blocos `[functions."…"] schedule` do `netlify.toml`, faça o deploy no Netlify e só então rode `terraform apply -var schedules_enabled=true` (ou fixe no `terraform.tfvars`). Com os dois ligados, lembretes e cupons saem em dobro.
-4. Desativar o site no Netlify.
+### 5. Crons na AWS (troca sem envio em dobro)
+Os 3 crons (`ai-dispatcher` 08h, `birthday-check` 09h, `reminder-check` 10h — horário de Brasília) saíram do `netlify.toml` e ficam ligados por padrão na AWS (`schedules_enabled = true`). A ordem importa: se os dois lados rodarem no mesmo dia, o e-mail de aniversário e os agentes de IA saem em dobro.
+1. Merge na `main` → o Netlify publica sem os crons. Confira em **Netlify → Deploys** que o último deploy está **Published**.
+2. Só então, no CloudShell: `git checkout main && git pull && cd infra && terraform apply` (liga os 3 agendamentos e remove a função `whatsapp-webhook`, que saiu junto com as integrações da Meta).
+3. Conferir: `aws scheduler list-schedules --query 'Schedules[].[Name,State]' --output table`.
+
+Faça os passos 1 e 2 antes das 08h (horário de Brasília) para não pular nenhum dia. Logs de cada execução: `/aws/lambda/sp-car-clean-<cron>` no CloudWatch.
+
+### 6. Desligar o Netlify (quando tudo estiver estável)
+1. **InfinitePay:** nada a fazer — a URL de retorno é gerada a cada pagamento a partir do domínio.
+2. Desativar o site no Netlify.
 
 ### Segurança embutida
 - O endpoint direto do API Gateway recusa requisições que não vêm do CloudFront (cabeçalho secreto `x-origin-verify`).

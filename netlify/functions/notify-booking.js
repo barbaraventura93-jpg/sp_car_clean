@@ -1,5 +1,4 @@
 const { sendAdminPush } = require('./lib/fcm');
-const { sendWhatsAppTemplate } = require('./lib/core/whatsapp');
 const { clientIp, rateLimit, originAllowed, corsHeaders } = require('./lib/guard');
 
 // Título/corpo curtos da notificação push por tipo de evento.
@@ -27,8 +26,7 @@ exports.handler = async (event) => {
     return { statusCode: 405, headers: cors, body: 'Method Not Allowed' };
   }
   // Sem auth (visitante cria agendamento), mas com origem + rate-limit: evita
-  // spam ao Telegram/push e, sobretudo, disparo de WhatsApp (número oficial da
-  // loja) para telefones arbitrários por terceiros.
+  // spam ao Telegram/push por terceiros.
   if (!originAllowed(event)) return { statusCode: 403, headers: cors, body: JSON.stringify({ ok: false, error: 'origem não permitida' }) };
   if (!rateLimit('notify-booking', clientIp(event), { max: 30 })) {
     return { statusCode: 429, headers: cors, body: JSON.stringify({ ok: false, error: 'muitas requisições — tente mais tarde' }) };
@@ -52,15 +50,10 @@ exports.handler = async (event) => {
     }
   })();
 
-  // WhatsApp para o CLIENTE (best-effort), saindo do número oficial da loja.
-  // 'new-booking' cobre o agendamento recém-solicitado (payload sem `type`).
-  const waType = data.type || 'new-booking';
-  const whatsappPromise = sendWhatsAppTemplate(waType, data);
-
   if (!botToken || !chatId) {
-    // Sem Telegram configurado ainda tentamos entregar push e WhatsApp antes de sair.
-    const [push, whatsapp] = await Promise.all([pushPromise, whatsappPromise]);
-    return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, telegram: false, push, whatsapp }) };
+    // Sem Telegram configurado ainda tentamos entregar o push antes de sair.
+    const push = await pushPromise;
+    return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, telegram: false, push }) };
   }
 
   const portalUrl = `${process.env.URL || 'https://sp-car-clean.web.app'}/?admin`;
@@ -148,16 +141,13 @@ exports.handler = async (event) => {
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
     });
     const body = await resp.json();
-    const [push, whatsapp] = await Promise.all([pushPromise, whatsappPromise]);
+    const push = await pushPromise;
     if (!body.ok) {
-      return { statusCode: 502, headers: cors, body: JSON.stringify({ ok: false, error: body, push, whatsapp }) };
+      return { statusCode: 502, headers: cors, body: JSON.stringify({ ok: false, error: body, push }) };
     }
-    return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, push, whatsapp }) };
+    return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, push }) };
   } catch (err) {
-    const [push, whatsapp] = await Promise.all([
-      pushPromise.catch(() => ({ ok: false })),
-      whatsappPromise.catch(() => ({ ok: false }))
-    ]);
-    return { statusCode: 500, headers: cors, body: JSON.stringify({ ok: false, error: err.message, push, whatsapp }) };
+    const push = await pushPromise;
+    return { statusCode: 500, headers: cors, body: JSON.stringify({ ok: false, error: err.message, push }) };
   }
 };

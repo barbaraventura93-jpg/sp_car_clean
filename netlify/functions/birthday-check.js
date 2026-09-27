@@ -1,5 +1,4 @@
-// Netlify Scheduled Function — roda todo dia às 09:00 BRT (12:00 UTC)
-// Configurado em netlify.toml: schedule = "0 12 * * *"
+// Cron diário às 09:00 BRT (12:00 UTC) — EventBridge Scheduler, infra/api.tf.
 
 exports.handler = async () => {
   const dbUrl      = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
