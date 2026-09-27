@@ -41,10 +41,11 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
 
-  // Só lida com GET same-origin. Firebase/Netlify Functions/APIs externas passam direto.
+  // Só lida com GET same-origin. Firebase/API (/api, /.netlify)/APIs externas passam direto.
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/.netlify/')) return;
 
   // Navegação (documento HTML) → network-first com fallback ao cache offline.
   if (req.mode === 'navigate') {

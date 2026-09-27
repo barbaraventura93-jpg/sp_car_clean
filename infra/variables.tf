@@ -27,6 +27,24 @@ variable "cloudfront_price_class" {
   default     = "PriceClass_All"
 }
 
+variable "site_url" {
+  description = "URL pública canônica do site (links em e-mails/WhatsApp e URL de retorno dos webhooks de pagamento). Vazio = https://<primeiro item de site_aliases>."
+  type        = string
+  default     = ""
+}
+
+variable "ssm_param_path" {
+  description = "Prefixo no SSM Parameter Store onde ficam os segredos das funções (ex.: /sp-car-clean/ANTHROPIC_API_KEY)."
+  type        = string
+  default     = "/sp-car-clean/"
+}
+
+variable "schedules_enabled" {
+  description = "Liga os crons na AWS (ai-dispatcher, birthday-check, reminder-check). Deixe false enquanto os crons do Netlify estiverem ativos, senão os envios (lembretes, cupons de aniversário) saem em dobro."
+  type        = bool
+  default     = false
+}
+
 variable "github_owner" {
   description = "Dono do repositório no GitHub."
   type        = string

@@ -11,3 +11,8 @@ acm_certificate_arn = "arn:aws:acm:us-east-1:000000000000:certificate/xxxxxxxx-x
 # github_owner           = "barbaraventura93-jpg"
 # github_repo            = "sp_car_clean"
 # github_branch          = "main"
+#
+# Fase 2 (backend):
+# site_url          = "https://spcarclean.com.br"
+# ssm_param_path    = "/sp-car-clean/"
+# schedules_enabled = false   # true só depois de tirar os crons do netlify.toml

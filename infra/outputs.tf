@@ -13,6 +13,16 @@ output "cloudfront_domain" {
   value       = aws_cloudfront_distribution.site.domain_name
 }
 
+output "api_base_url" {
+  description = "Base pública da API (via CloudFront, mesmo domínio do site)."
+  value       = "${local.site_url}/api"
+}
+
+output "whatsapp_webhook_url" {
+  description = "URL para cadastrar no painel da Meta (WhatsApp Cloud API → Webhook)."
+  value       = "${local.site_url}/api/whatsapp-webhook"
+}
+
 output "github_role_arn" {
   description = "ARN da role que o GitHub Actions assume."
   value       = aws_iam_role.github_deploy.arn

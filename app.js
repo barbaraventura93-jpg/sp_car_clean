@@ -1070,7 +1070,7 @@ async function submitBooking() {
   }
 
   // Notificar negócio via Netlify Function
-  fetch('/.netlify/functions/notify-booking', {
+  fetch('/api/notify-booking', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1111,7 +1111,7 @@ async function checkStatus() {
   // código + e-mail e devolve só os campos seguros (sem notas internas).
   res.innerHTML = `<p style="color:var(--muted);font-size:.85rem;padding:.5rem">Consultando...</p>`;
   try {
-    const resp = await fetch('/.netlify/functions/booking-status', {
+    const resp = await fetch('/api/booking-status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code, email })
@@ -1282,7 +1282,7 @@ function submitClientCancel(id, tier) {
     : tier === 'partial'
     ? 'Reembolso de 50% do valor pago será processado em breve.'
     : 'Conforme nossa política, não haverá reembolso (cancelamento dentro de 1 dia útil do serviço).';
-  fetch('/.netlify/functions/notify-booking', {
+  fetch('/api/notify-booking', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1330,7 +1330,7 @@ function submitReschedule() {
   b.rescheduleRequest = { date: newDate, note, requestedAt: new Date().toISOString() };
   updateBooking(b);
 
-  fetch('/.netlify/functions/notify-booking', {
+  fetch('/api/notify-booking', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1572,7 +1572,7 @@ async function buyGiftCard() {
   }
 
   try {
-    const resp = await fetch('/.netlify/functions/create-gift-payment', {
+    const resp = await fetch('/api/create-gift-payment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code, amount, buyerName, buyerEmail, buyerPhone })
@@ -1849,7 +1849,7 @@ async function submitReferral() {
   try {
     // A criação do cupom + registro da indicação + e-mails roda server-side
     // (Netlify Function) para não depender das regras de escrita do cliente.
-    const resp = await fetch('/.netlify/functions/create-referral', {
+    const resp = await fetch('/api/create-referral', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         referrerName: fromName, referrerEmail: fromEmail, referrerPhone: fromPhone,
@@ -3594,7 +3594,7 @@ function savePriceCorrection(id) {
   b.lastPriceCorrectionAt = correction.correctedAt;
   updateBooking(b);
 
-  fetch('/.netlify/functions/notify-booking', {
+  fetch('/api/notify-booking', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -3785,7 +3785,7 @@ async function doApprove(id) {
   let paymentUrl = '';
   let priceWithFee = b.finalPrice;
   try {
-    const payResp = await fetch('/.netlify/functions/create-payment', {
+    const payResp = await fetch('/api/create-payment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3829,7 +3829,7 @@ async function doApprove(id) {
     (b.adminNotes ? `\n📝 *Obs:* ${b.adminNotes}` : '') +
     (paymentUrl
       ? `\n\n💳 *Para confirmar sua reserva, efetue o pagamento:*\n${paymentUrl}\n\n⚠️ _Se o link não abrir, pressione e segure → "Abrir no navegador"_\n_Aceita PIX e cartão · Ambiente seguro InfinitePay_`
-      : `\n\n⚠️ *Para confirmar, acesse o site e informe o código ${b.id}.*\n👉 https://sp-car-clean.netlify.app`) +
+      : `\n\n⚠️ *Para confirmar, acesse o site e informe o código ${b.id}.*\n👉 https://spcarclean.com.br`) +
     `\n\n📋 *Política de cancelamento:* Em até 7 dias corridos do pagamento: reembolso integral (CDC Art. 49). Após 7 dias com mais de 1 dia útil de antecedência: reembolso de 50%. Dentro de 1 dia útil: sem reembolso.`
   );
   window.open(`https://wa.me/${_waPhone}?text=${_waMsg}`, '_blank');
@@ -3844,7 +3844,7 @@ function approveReschedule(id) {
   if(b.startDate) b.startDate = newDate;
   delete b.rescheduleRequest;
   setBookings(bookings);
-  fetch('/.netlify/functions/notify-booking', {
+  fetch('/api/notify-booking', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: 'reschedule-approved', id: b.id, name: b.name, phone: b.phone, newDate: fmtDateShort(newDate) })
@@ -3866,7 +3866,7 @@ function rejectReschedule(id) {
   if(!b) return;
   delete b.rescheduleRequest;
   setBookings(bookings);
-  fetch('/.netlify/functions/notify-booking', {
+  fetch('/api/notify-booking', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: 'reschedule-rejected', id: b.id, name: b.name, phone: b.phone })
@@ -7708,7 +7708,7 @@ async function iaTriggerRelatorio(btn) {
     const user = firebase.auth().currentUser;
     if (!user) throw new Error('Sessão expirada — faça login novamente');
     const token = await user.getIdToken();
-    const resp = await fetch('/.netlify/functions/ai', {
+    const resp = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ agentId: 'relatorio' })
@@ -7771,7 +7771,7 @@ async function iaGerarReativacao() {
   document.body.appendChild(overlay);
 
   try {
-    const resp = await fetch('/.netlify/functions/ai', {
+    const resp = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ agentId: 'reativacao', payload: { clients, coupon: coupon || null } })
@@ -7838,7 +7838,7 @@ function iaDispatchAgenda(freedDate, cancelledService, cancelledCarSize) {
     const user = firebase.auth().currentUser;
     if (!user) return;
     user.getIdToken().then(token => {
-      fetch('/.netlify/functions/ai', {
+      fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ agentId: 'agenda', payload: { freedDate, cancelledService: cancelledService||null, cancelledCarSize: cancelledCarSize||null } })
@@ -7860,7 +7860,7 @@ async function iaUpsellSuggest(email, serviceId, lastBooking) {
       ? Math.floor((Date.now() - new Date(lastBooking.date).getTime()) / 86400000)
       : null;
 
-    const resp = await fetch('/.netlify/functions/ai', {
+    const resp = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -8098,7 +8098,7 @@ async function iaPingTest() {
     const user = firebase.auth().currentUser;
     if (!user) { res.style.color = '#f87171'; res.textContent = 'Faça login primeiro.'; return; }
     const token = await user.getIdToken();
-    const resp  = await fetch('/.netlify/functions/ai', {
+    const resp  = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ agentId: 'ping' })
@@ -8133,7 +8133,7 @@ async function iaTriggerInsumos(btn) {
     const user = firebase.auth().currentUser;
     if (!user) throw new Error('Sessão expirada — faça login novamente');
     const token = await user.getIdToken();
-    const resp = await fetch('/.netlify/functions/ai', {
+    const resp = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ agentId: 'insumos' })
@@ -8178,7 +8178,7 @@ async function iaGerarLegenda(btn) {
 
     const imageType = fileBefore.type === 'image/png' ? 'image/png' : 'image/jpeg';
 
-    const resp = await fetch('/.netlify/functions/ai', {
+    const resp = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({
@@ -8240,7 +8240,7 @@ async function iaDescreveCheckin(btn) {
       carSize: b?.carSize || null
     };
 
-    const resp = await fetch('/.netlify/functions/ai', {
+    const resp = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ agentId: 'checkin', payload: { photoUrls, bookingInfo } })
@@ -8321,7 +8321,7 @@ async function conciergeSend() {
   document.getElementById('concierge-messages').appendChild(typing);
 
   try {
-    const resp = await fetch('/.netlify/functions/ai', {
+    const resp = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -8362,7 +8362,7 @@ async function conciergeAttachPhoto(input) {
   document.getElementById('concierge-messages').appendChild(typing);
 
   try {
-    const resp = await fetch('/.netlify/functions/ai', {
+    const resp = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -6,6 +6,14 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 }
 
@@ -16,7 +24,6 @@ provider "aws" {
     tags = {
       Project   = "sp-car-clean"
       ManagedBy = "terraform"
-      Phase     = "fase-1-hosting"
     }
   }
 }
