@@ -2,12 +2,11 @@
 # Copia as variáveis de ambiente das funções para o AWS SSM Parameter Store
 # (SecureString, criptografadas), onde as Lambdas as leem ao iniciar.
 #
-# Entrada: JSON {"CHAVE": "valor", ...} — o formato de
-#   npx netlify-cli env:list --context production --json > netlify-env.json
+# Entrada: arquivo JSON {"CHAVE": "valor", ...}.
 #
 # Uso (no AWS CloudShell, região sa-east-1):
-#   bash scripts/aws-put-secrets.sh netlify-env.json
-#   rm netlify-env.json      # não deixe o arquivo com segredos para trás
+#   bash scripts/aws-put-secrets.sh segredos.json
+#   rm segredos.json      # não deixe o arquivo com segredos para trás
 #
 # Pode rodar de novo quando quiser: sobrescreve os valores existentes.
 set -euo pipefail

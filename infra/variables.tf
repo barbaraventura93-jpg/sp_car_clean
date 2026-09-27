@@ -35,7 +35,7 @@ variable "ssm_param_path" {
 }
 
 variable "schedules_enabled" {
-  description = "Liga os crons na AWS (ai-dispatcher, birthday-check, reminder-check). Os crons do Netlify foram removidos do netlify.toml; só use false para pausar temporariamente."
+  description = "Liga os crons na AWS (ai-dispatcher, birthday-check, reminder-check). Use false só para pausar temporariamente."
   type        = bool
   default     = true
 }

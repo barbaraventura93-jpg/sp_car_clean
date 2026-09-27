@@ -56,7 +56,7 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: cors, body: JSON.stringify({ ok: true, telegram: false, push }) };
   }
 
-  const portalUrl = `${process.env.URL || 'https://sp-car-clean.web.app'}/?admin`;
+  const portalUrl = `${(process.env.URL || 'https://www.spcarclean.com.br').replace(/\/$/, '')}/?admin`;
   let text;
 
   if (data.type === 'reschedule') {

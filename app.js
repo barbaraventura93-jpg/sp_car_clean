@@ -1069,7 +1069,7 @@ async function submitBooking() {
     });
   }
 
-  // Notificar negócio via Netlify Function
+  // Notificar negócio (função notify-booking)
   fetch('/api/notify-booking', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1848,7 +1848,7 @@ async function submitReferral() {
 
   try {
     // A criação do cupom + registro da indicação + e-mails roda server-side
-    // (Netlify Function) para não depender das regras de escrita do cliente.
+    // (função create-referral) para não depender das regras de escrita do cliente.
     const resp = await fetch('/api/create-referral', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

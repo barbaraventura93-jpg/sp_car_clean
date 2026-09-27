@@ -7,7 +7,7 @@ const ejsPublicKey  = process.env.EMAILJS_PUBLIC_KEY  || '';
 const vapidKey      = process.env.FIREBASE_VAPID_KEY  || '';   // chave pública Web Push (não secreta)
 
 if (!key) {
-  console.error('Erro: variável FIREBASE_API_KEY não configurada no Netlify.');
+  console.error('Erro: variável FIREBASE_API_KEY não definida (no CI vem dos Secrets do GitHub).');
   process.exit(1);
 }
 

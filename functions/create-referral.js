@@ -1,4 +1,4 @@
-// Netlify Function — "Indique um Amigo"
+// Função "Indique um Amigo"
 // Recebe a indicação feita pelo cliente (nome/e-mail/telefone do amigo),
 // cria o cupom de boas-vindas do amigo no Firebase e registra a indicação.
 // Roda server-side com o FIREBASE_DATABASE_SECRET para não depender das regras

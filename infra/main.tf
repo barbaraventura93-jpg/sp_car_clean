@@ -86,8 +86,8 @@ data "aws_cloudfront_origin_request_policy" "all_except_host" {
 }
 
 # Roda na borda antes de ir para a API:
-#  - /.netlify/functions/<fn> → /api/<fn> (clientes com app.js antigo em cache
-#    e webhooks cadastrados com o caminho do Netlify continuam funcionando);
+#  - /.netlify/functions/<fn> → /api/<fn>: caminho legado, mantido para app.js
+#    antigo em cache e links de pagamento emitidos antes da troca (ver backlog L1);
 #  - grava o IP real do visitante em x-viewer-ip, sobrescrevendo qualquer valor
 #    enviado pelo cliente (base do rate-limit por IP das funções).
 resource "aws_cloudfront_function" "api_router" {
@@ -183,7 +183,7 @@ resource "aws_cloudfront_distribution" "site" {
     cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
   }
 
-  # index.html sempre revalida (equivalente à regra do netlify.toml):
+  # index.html sempre revalida:
   # após um deploy ninguém fica preso a uma versão antiga do app.
   ordered_cache_behavior {
     path_pattern           = "/index.html"
@@ -214,7 +214,6 @@ resource "aws_cloudfront_distribution" "site" {
 
 # =====================================================================
 # Route 53 — registros do domínio apontando para o CloudFront
-# (ficam DORMENTES até o cutover: os nameservers ainda são do Netlify)
 # =====================================================================
 resource "aws_route53_record" "ipv4" {
   for_each = toset(local.aliases)

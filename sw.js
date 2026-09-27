@@ -41,7 +41,7 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
 
-  // Só lida com GET same-origin. Firebase/API (/api, /.netlify)/APIs externas passam direto.
+  // Só lida com GET same-origin. Firebase/API (/api e o legado /.netlify)/APIs externas passam direto.
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;

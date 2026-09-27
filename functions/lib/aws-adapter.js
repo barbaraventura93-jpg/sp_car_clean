@@ -1,9 +1,8 @@
 'use strict';
 
-// Ponto de entrada das funções no AWS Lambda. O mesmo código roda no Netlify e
-// na AWS: este adaptador carrega os segredos do SSM Parameter Store para
-// process.env (uma vez por container) e entrega ao handler original um evento
-// no formato que o Netlify entregaria.
+// Ponto de entrada das funções no AWS Lambda: carrega os segredos do SSM
+// Parameter Store para process.env (uma vez por container) e entrega ao handler
+// o evento no formato 1.0 do API Gateway (httpMethod, headers, body…).
 //
 // Variáveis definidas pelo Terraform:
 //   FN_NAME               → arquivo da função (ex.: "ai" → ../ai.js)

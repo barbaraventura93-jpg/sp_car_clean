@@ -15,3 +15,6 @@ infra/.build/
 # Exports de variáveis/segredos (ex.: netlify-env.json)
 *.env
 *-env.json
+
+# Config local do backend do Terraform (gerada por scripts/aws-bootstrap-tfstate.sh)
+infra/backend.hcl

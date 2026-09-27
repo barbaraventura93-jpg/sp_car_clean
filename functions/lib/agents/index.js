@@ -1,8 +1,8 @@
 'use strict';
 
 // Barrel file: mapeia agentId → módulo do agente.
-// Requires estáticos (em vez de require(`./lib/agents/${agentId}`) dinâmico) para que o
-// empacotador de Netlify Functions consiga resolver as dependências no build.
+// Requires estáticos (em vez de require(`./lib/agents/${agentId}`) dinâmico): o mapa
+// de agentes disponíveis fica explícito e verificável ao carregar o módulo.
 // Agentes ainda não implementados (ver DEFAULTS em lib/core/config.js) simplesmente
 // não aparecem aqui — os chamadores tratam isso como "módulo não encontrado".
 module.exports = {

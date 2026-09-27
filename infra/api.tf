@@ -1,5 +1,5 @@
 # =====================================================================
-# Fase 2 — Backend: as funções de netlify/functions rodando em AWS Lambda,
+# Backend: as funções de functions/ rodando em AWS Lambda,
 # expostas por um API Gateway (HTTP API) atrás do mesmo CloudFront do site.
 # =====================================================================
 
@@ -17,7 +17,7 @@ locals {
     "notify-booking",
   ]
 
-  # Mesmos horários (UTC) do netlify.toml.
+  # Horários em UTC (08h, 09h e 10h em Brasília).
   scheduled_functions = {
     "ai-dispatcher"  = "cron(0 11 * * ? *)"
     "birthday-check" = "cron(0 12 * * ? *)"
@@ -32,7 +32,7 @@ locals {
 # GitHub Actions (deploy-aws.yml) — por isso o Terraform ignora o código.
 data "archive_file" "functions" {
   type        = "zip"
-  source_dir  = "${path.module}/../netlify/functions"
+  source_dir  = "${path.module}/../functions"
   output_path = "${path.module}/.build/functions.zip"
 }
 
@@ -135,7 +135,7 @@ resource "aws_lambda_function" "fn" {
 }
 
 # ---------------------------------------------------------------------
-# API Gateway (HTTP API) — payload 1.0 = mesmo formato de evento do Netlify
+# API Gateway (HTTP API) — payload 1.0 (httpMethod/headers/body, formato que as funções usam)
 # ---------------------------------------------------------------------
 resource "aws_apigatewayv2_api" "api" {
   name          = "sp-car-clean-api"
