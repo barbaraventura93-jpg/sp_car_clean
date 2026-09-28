@@ -10,3 +10,7 @@ infra/.terraform.lock.hcl
 *.tfstate.*
 terraform.tfvars
 crash.log
+
+# Segredos locais (não versionar)
+infra/scripts/secrets.env
+*.auto.tfvars
