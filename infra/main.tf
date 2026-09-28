@@ -78,6 +78,11 @@ data "aws_cloudfront_cache_policy" "disabled" {
   name = "Managed-CachingDisabled"
 }
 
+# Encaminha método, querystring, corpo e cabeçalhos (menos o Host) para a API.
+data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
+  name = "Managed-AllViewerExceptHostHeader"
+}
+
 resource "aws_cloudfront_distribution" "site" {
   enabled             = true
   is_ipv6_enabled     = true
@@ -90,6 +95,18 @@ resource "aws_cloudfront_distribution" "site" {
     domain_name              = aws_s3_bucket.site.bucket_regional_domain_name
     origin_id                = "s3-site"
     origin_access_control_id = aws_cloudfront_origin_access_control.site.id
+  }
+
+  # Origem da API (API Gateway HTTP) para as rotas /api/*.
+  origin {
+    domain_name = "${aws_apigatewayv2_api.http.id}.execute-api.${var.aws_region}.amazonaws.com"
+    origin_id   = "api-gateway"
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
   }
 
   # Estáticos (assets, css, js): cache otimizado.
@@ -112,6 +129,18 @@ resource "aws_cloudfront_distribution" "site" {
     cached_methods         = ["GET", "HEAD"]
     compress               = true
     cache_policy_id        = data.aws_cloudfront_cache_policy.disabled.id
+  }
+
+  # Rotas dinâmicas: /api/* vai para o API Gateway (Lambdas), sem cache.
+  ordered_cache_behavior {
+    path_pattern             = "/api/*"
+    target_origin_id         = "api-gateway"
+    viewer_protocol_policy   = "redirect-to-https"
+    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods           = ["GET", "HEAD"]
+    compress                 = true
+    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
   }
 
   # PWA/SPA: rota desconhecida cai no index.html.
