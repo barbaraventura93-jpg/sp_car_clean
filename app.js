@@ -767,7 +767,8 @@ function renderBookingStep() {
       const sz = booking.carSize;
       let best = null;
       Object.entries(_COMBOS).forEach(([cid, combo]) => {
-        if (combo.active === false) return;
+        // Combos internos (🔒) são só para o agendamento manual do admin — nunca sugerir ao cliente
+        if (combo.active === false || combo.internal) return;
         const ids = combo.serviceIds || [];
         const matched = ids.filter(s => booking.services.includes(s));
         const missing = ids.filter(s => !booking.services.includes(s) && SVCS[s]?.active !== false);
@@ -965,7 +966,7 @@ function selectService(id) {
 }
 function applyComboSuggestion(comboId) {
   const combo = _COMBOS[comboId];
-  if (!combo) return;
+  if (!combo || combo.internal) return;
   (combo.serviceIds || []).forEach(id => { if (!booking.services.includes(id)) booking.services.push(id); });
   renderBookingStep();
 }
