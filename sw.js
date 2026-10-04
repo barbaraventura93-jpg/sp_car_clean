@@ -38,6 +38,34 @@ self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
 });
 
+// Push do admin (Web Push padrão, enviado pela função notify-booking).
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch (_) { d = { body: event.data && event.data.text() }; }
+  event.waitUntil(self.registration.showNotification(d.title || '🔔 SP Car Clean', {
+    body: d.body || 'Nova atividade no painel.',
+    icon: '/assets/favicon.png',
+    badge: '/assets/favicon.png',
+    tag: d.tag || 'spcc-admin',
+    renotify: true,
+    data: { link: d.link || '/?admin' }
+  }));
+});
+
+// Clique na notificação → foca uma aba aberta do portal ou abre o painel admin.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const link = (event.notification.data && event.notification.data.link) || '/?admin';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      for (const w of wins) {
+        if ('focus' in w) { if (w.navigate) w.navigate(link); return w.focus(); }
+      }
+      return self.clients.openWindow(link);
+    })
+  );
+});
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
 

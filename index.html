@@ -63,12 +63,11 @@
 <script>
 // Variáveis de ambiente injetadas em build (build.js). Ficam num único bloco
 // inline para que os scripts externos (app.js etc.) sejam assets estáticos,
-// sem placeholders a processar. Não são segredos — apiKey/VAPID são públicas.
+// sem placeholders a processar. Não são segredos — essas chaves são públicas.
 window.__ENV = {
   FIREBASE_API_KEY:   "%%FIREBASE_API_KEY%%",
   EMAILJS_SERVICE_ID: "%%EMAILJS_SERVICE_ID%%",
-  EMAILJS_PUBLIC_KEY: "%%EMAILJS_PUBLIC_KEY%%",
-  FIREBASE_VAPID_KEY: "%%FIREBASE_VAPID_KEY%%"
+  EMAILJS_PUBLIC_KEY: "%%EMAILJS_PUBLIC_KEY%%"
 };
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
@@ -76,7 +75,6 @@ window.__ENV = {
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js"></script>
 </head>
 <body>
 
@@ -930,7 +928,6 @@ window.__ENV = {
 <!-- ===== PWA: app instalável + notificações push do admin ===== -->
 <script>
 (function initPWA() {
-  const VAPID_KEY = (window.__ENV && window.__ENV.FIREBASE_VAPID_KEY) || '';
   let _deferredInstall = null;
 
   // ── 1. Service worker de cache offline ──
@@ -969,16 +966,22 @@ window.__ENV = {
   const _isStandalone = () =>
     window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
-  // ── 3. Notificações push do admin (Firebase Cloud Messaging) ──
-  // Só registra token quando: SDK presente, VAPID configurada, SW suportado e usuário é o admin.
+  // ── 3. Notificações push do admin (Web Push padrão, via /sw.js) ──
+  // Só inscreve quando o navegador suporta push e o usuário logado é o admin.
   let _pushRegistered = false;
+
+  const _keyBytes = (b64url) => {
+    const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - b64url.length % 4) % 4);
+    return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  };
+  const _sameKey = (a, b) => !!a && a.byteLength === b.byteLength &&
+    new Uint8Array(a).every((v, i) => v === b[i]);
 
   async function registerAdminPush() {
     if (_pushRegistered) return;
-    if (!VAPID_KEY || VAPID_KEY.indexOf('%%') === 0) return;      // VAPID não configurada
-    if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
-    if (typeof firebase === 'undefined' || !firebase.messaging) return;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
     if (Notification.permission === 'denied') return;
+    if (typeof firebase === 'undefined' || !firebase.auth().currentUser) return;
 
     try {
       const perm = Notification.permission === 'granted'
@@ -986,35 +989,29 @@ window.__ENV = {
         : await Notification.requestPermission();
       if (perm !== 'granted') return;
 
-      // Escopo próprio para não conflitar com o service worker de cache (/sw.js em '/').
-      const swReg = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
-        scope: '/firebase-cloud-messaging-push-scope'
-      });
-      const messaging = firebase.messaging();
-      const token = await messaging.getToken({
-        vapidKey: VAPID_KEY,
-        serviceWorkerRegistration: swReg
-      });
-      if (!token) return;
+      // Remove o service worker antigo do Firebase Cloud Messaging, se ainda existir.
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs
+        .filter(r => r.scope.indexOf('firebase-cloud-messaging-push-scope') !== -1)
+        .map(r => r.unregister()));
 
-      // Salva o token do dispositivo admin. Chave = token (não contém caracteres proibidos no RTDB).
-      firebase.database().ref('adminPushTokens/' + token).set({
-        createdAt: new Date().toISOString(),
-        ua: (navigator.userAgent || '').slice(0, 180)
-      }).catch(() => {});
-      _pushRegistered = true;
+      const cfg = await fetch('/api/push-subscription').then(r => r.json());
+      if (!cfg.publicKey) return;
+      const appKey = _keyBytes(cfg.publicKey);
 
-      // Push com o app aberto → mostra uma notificação local também.
-      messaging.onMessage((payload) => {
-        const d = (payload && (payload.data || payload.notification)) || {};
-        const title = d.title || '🔔 SP Car Clean';
-        const body  = d.body  || 'Nova atividade no painel.';
-        try {
-          new Notification(title, { body, icon: '/assets/favicon.png' });
-        } catch (_) {
-          if (window.toast) window.toast(title + ' — ' + body);
-        }
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (sub && !_sameKey(sub.options.applicationServerKey, appKey)) { await sub.unsubscribe(); sub = null; }
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
+
+      const token = await firebase.auth().currentUser.getIdToken();
+      const resp = await fetch('/api/push-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ subscription: sub.toJSON(), ua: (navigator.userAgent || '').slice(0, 180) })
       });
+      if (resp.ok) _pushRegistered = true;
     } catch (err) {
       console.warn('PWA: push do admin indisponível', err);
     }

@@ -7,11 +7,12 @@ Terraform de toda a infraestrutura do site e do backend (região `sa-east-1`, ce
 | `main.tf` | **S3** (arquivos do site, privado), **CloudFront** (CDN + HTTPS, roteia `/api/*` para a API), registros **Route 53**, **OIDC do GitHub** (deploy sem chave estática) |
 | `certificate.tf` | Certificado **ACM** para `spcarclean.com.br` e `*.spcarclean.com.br`, validado por DNS |
 | `api.tf` | **Lambda** (uma por arquivo de `functions/`), **API Gateway HTTP API**, crons no **EventBridge Scheduler**, permissões |
+| `push.tf` | Push do admin: chave **VAPID** (gerada aqui, guardada no SSM) e tabela **DynamoDB** dos aparelhos inscritos |
 | `versions.tf` | Providers e **backend S3** do estado |
 
 ```
 visitante ──▶ CloudFront ──┬── /*                     ──▶ S3 (site)
-                           ├── /api/*                 ──▶ API Gateway ──▶ Lambda (10 funções)
+                           ├── /api/*                 ──▶ API Gateway ──▶ Lambda (11 funções)
                            └── /.netlify/functions/*  ──▶ (legado, reescrito p/ /api/* — backlog L1)
 EventBridge Scheduler ──(3 crons diários)──▶ Lambda
 Lambda ──(na inicialização)──▶ SSM Parameter Store /sp-car-clean/* (segredos)
@@ -56,7 +57,7 @@ Mudanças no CloudFront levam ~5–10 min para propagar.
 Cada merge na `main` roda `.github/workflows/deploy-aws.yml`: publica as **funções** (Lambda) e depois o **site** (S3 + invalidação do CloudFront).
 
 - Uma função **nova** em `functions/` precisa entrar nas listas `http_functions` ou `scheduled_functions` de `api.tf` e ser aplicada **antes** do merge (senão o deploy falha de propósito).
-- Secrets do GitHub usados pelo workflow: `AWS_ROLE_ARN`, `AWS_REGION`, `S3_BUCKET`, `CF_DISTRIBUTION_ID` (saídas do Terraform) e as chaves públicas do build `FIREBASE_API_KEY`, `FIREBASE_VAPID_KEY`, `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`.
+- Secrets do GitHub usados pelo workflow: `AWS_ROLE_ARN`, `AWS_REGION`, `S3_BUCKET`, `CF_DISTRIBUTION_ID` (saídas do Terraform) e as chaves públicas do build `FIREBASE_API_KEY`, `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`.
 
 ## Segredos das funções (SSM Parameter Store)
 
