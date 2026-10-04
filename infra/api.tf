@@ -15,6 +15,7 @@ locals {
     "create-referral",
     "infinitepay-webhook",
     "notify-booking",
+    "push-subscription",
   ]
 
   # Horários em UTC (08h, 09h e 10h em Brasília).
@@ -120,6 +121,7 @@ resource "aws_lambda_function" "fn" {
       SSM_PARAM_PATH       = var.ssm_param_path
       URL                  = local.site_url
       ORIGIN_VERIFY_SECRET = random_password.origin_verify.result
+      PUSH_TABLE           = aws_dynamodb_table.push.name
     }
   }
 
@@ -131,6 +133,8 @@ resource "aws_lambda_function" "fn" {
     aws_cloudwatch_log_group.fn,
     aws_iam_role_policy_attachment.lambda_logs,
     aws_iam_role_policy.lambda_ssm,
+    aws_iam_role_policy.lambda_push,
+    aws_ssm_parameter.vapid_private_key,
   ]
 }
 

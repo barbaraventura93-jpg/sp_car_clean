@@ -30,7 +30,6 @@ jobs:
       - name: Build (gera dist/)
         env:
           FIREBASE_API_KEY:   ${{ secrets.FIREBASE_API_KEY }}
-          FIREBASE_VAPID_KEY: ${{ secrets.FIREBASE_VAPID_KEY }}
           EMAILJS_SERVICE_ID: ${{ secrets.EMAILJS_SERVICE_ID }}
           EMAILJS_PUBLIC_KEY: ${{ secrets.EMAILJS_PUBLIC_KEY }}
         run: node build.js

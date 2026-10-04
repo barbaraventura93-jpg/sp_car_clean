@@ -241,7 +241,7 @@ auto-desliga ao estourar o teto (avisa via Telegram).
 | Domínio | spcarclean.com.br (Registro.br + Route 53, certificado ACM) |
 | Pagamento | InfinitePay (PIX + cartão) via funções no Lambda |
 | Inteligência Artificial | Claude API (Anthropic) via funções no Lambda (`ai` + `ai-dispatcher`) |
-| Notificações | AWS Lambda + EmailJS + Telegram Bot API + Firebase Cloud Messaging |
+| Notificações | AWS Lambda + EmailJS + Telegram Bot API + Web Push padrão (VAPID, sem Firebase) |
 | E-mail automático de aniversário | Cron diário na AWS (EventBridge Scheduler → Lambda) + EmailJS REST API |
 | Mapa | Leaflet.js + OpenStreetMap + Nominatim (geocoding) |
 | Fontes | Google Fonts (Montserrat + Open Sans) |
@@ -281,7 +281,7 @@ Cada merge na `main` publica **funções e site** pelo GitHub Actions (`.github/
 
 Os segredos das funções ficam em `/sp-car-clean/<NOME>` no SSM (região `sa-east-1`) e são
 gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
-(`FIREBASE_API_KEY`, `FIREBASE_VAPID_KEY`, `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`) ficam nos
+(`FIREBASE_API_KEY`, `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`) ficam nos
 **Secrets do GitHub Actions**.
 
 | Variável | Descrição |
@@ -300,8 +300,7 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
 | `INFINITEPAY_HANDLE` | InfiniteTag (usuário InfinitePay) para geração de links de pagamento |
 | `INFINITEPAY_FEE_RATE` | Taxa a embutir no preço (padrão: `0.0315` = 3,15% crédito à vista) |
 | `ANTHROPIC_API_KEY` | Chave da API Claude (Anthropic) — usada server-side pelos agentes da Central de IA. **Secreto** |
-| `FIREBASE_VAPID_KEY` | Chave pública Web Push (certificado do Firebase Cloud Messaging) — injetada no build; habilita o registro de push no celular do admin |
-| `FCM_SERVICE_ACCOUNT` | JSON (ou base64 do JSON) da service account do Firebase — usado **apenas server-side** pela função `notify-booking` para enviar os pushes. **Secreto: nunca commitar** |
+| `WEB_PUSH_VAPID_PRIVATE_KEY` | Chave privada VAPID do push do admin. **Criada pelo Terraform** (`infra/push.tf`) — não gravar à mão. **Secreto** |
 | `REFERRAL_FRIEND_PCT` | (Opcional) % de desconto do cupom do amigo indicado no programa Indique um Amigo (padrão: `15`) |
 | `REFERRAL_REFERRER_PCT` | (Opcional) % de desconto do cupom de recompensa para quem indicou (padrão: `15`) |
 | `REFERRAL_VALID_DAYS` | (Opcional) Validade em dias dos cupons de indicação (padrão: `90`) |
@@ -309,7 +308,7 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
 > As variáveis marcadas **Secreto** nunca podem aparecer no front-end nem ser
 > commitadas — só existem no SSM Parameter Store (criptografadas) e são lidas
 > exclusivamente pelas funções no Lambda. Apenas as chaves realmente públicas
-> (`FIREBASE_API_KEY`, `FIREBASE_VAPID_KEY`, `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`)
+> (`FIREBASE_API_KEY`, `EMAILJS_SERVICE_ID`, `EMAILJS_PUBLIC_KEY`)
 > são injetadas no HTML pelo `build.js`.
 
 ### Firebase Realtime Database — regras de segurança
@@ -415,7 +414,7 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
 
 > As coleções `feedback` (envio de avaliação pelo cliente por código + vitrine pública
 > de depoimentos aprovados), `giftcards` (compra/uso por código, gestão admin),
-> `stock`/`stockRecipes` (estoque, admin) e `adminPushTokens` (push do painel) fazem
+> `stock`/`stockRecipes` (estoque, admin) e `adminPushTokens` (push antigo, sem uso desde a troca para Web Push) fazem
 > parte do conjunto — **o Console nega qualquer caminho sem regra**, então o bloco
 > acima deve ser aplicado sempre completo, nunca por partes.
 >
@@ -458,30 +457,22 @@ Arquivos que compõem o PWA:
 | Arquivo | Papel |
 |---|---|
 | `manifest.webmanifest` | Nome, ícones, cor de tema, `display: standalone` e atalhos (Admin / Agendar) |
-| `sw.js` | Service worker de cache offline (network-first no HTML, stale-while-revalidate nos assets) |
-| `firebase-messaging-sw.js` | Service worker do Firebase Cloud Messaging — recebe push com o app fechado |
+| `sw.js` | Service worker: cache offline (network-first no HTML, stale-while-revalidate nos assets) e recebimento do push do admin |
 
 **Notificações push do admin** (novo agendamento, reagendamento, cancelamento, etc.)
-chegam direto no celular, além do Telegram. Para habilitar:
+chegam direto no celular, além do Telegram. É **Web Push padrão**, sem Firebase:
 
-1. No **Firebase Console → Cloud Messaging**, gere um **par de chaves Web Push** e copie
-   a chave pública para o Secret `FIREBASE_VAPID_KEY` (GitHub Actions). Sem ela, o app funciona
-   normalmente, apenas sem push.
-2. Baixe uma **service account** (Configurações do projeto → Contas de serviço → Gerar
-   nova chave privada) e cole o JSON na env `FCM_SERVICE_ACCOUNT` (aceita JSON puro ou
-   base64). Essa chave é **secreta** — só é lida server-side pela função `notify-booking`.
-3. Adicione a regra do Realtime Database abaixo. O admin registra o token do dispositivo
-   ao fazer login; a função lê os tokens via REST (Database Secret) e envia o push.
-
-```json
-"adminPushTokens": {
-  ".read":  "auth != null && auth.token.email == 'ADMIN_EMAIL'",
-  ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'"
-}
-```
+- A chave VAPID é criada pelo Terraform (`infra/push.tf`) e fica no SSM; a função
+  `push-subscription` entrega a chave pública ao navegador (`GET /api/push-subscription`).
+- No login do admin, o painel inscreve o aparelho no `sw.js` e envia a inscrição para
+  `POST /api/push-subscription` (só com login de admin). Os aparelhos ficam na tabela DynamoDB
+  `sp-car-clean-push-subscriptions`.
+- A função `notify-booking` envia o push criptografado (`lib/webpush.js`) para todos os
+  aparelhos e remove sozinha os que o navegador invalidou.
 
 O admin ativa o push tocando em **📲 Instalar app** e aceitando as notificações no
-primeiro login pelo celular.
+primeiro login pelo celular. No iPhone, o push só funciona com o app **instalado** na tela
+de início (iOS 16.4+).
 
 #### O app do admin abre direto na tela de senha
 
@@ -529,8 +520,7 @@ sp-car-clean/
 ├── index.html                   # Aplicação completa (site público + painel admin)
 ├── build.js                     # Script de build — injeta variáveis de ambiente
 ├── manifest.webmanifest         # Manifesto do PWA (app instalável)
-├── sw.js                        # Service worker de cache offline
-├── firebase-messaging-sw.js     # Service worker de push (Firebase Cloud Messaging)
+├── sw.js                        # Service worker: cache offline + push do admin
 ├── package.json
 ├── firebase.json                # Config Firebase (regras de Database e Storage; hosting migrado p/ AWS)
 ├── database.rules.json          # Regras de segurança do Realtime Database (versionadas)
@@ -541,7 +531,8 @@ sp-car-clean/
 ├── infra/                       # Terraform: S3, CloudFront, Route 53, ACM, Lambda, API Gateway, crons
 ├── scripts/                     # aws-put-secrets.sh (SSM) e aws-bootstrap-tfstate.sh (estado do Terraform)
 └── functions/                   # Backend (AWS Lambda; entrada: lib/aws-adapter.js)
-        ├── notify-booking.js        # Notifica o admin (Telegram + push FCM)
+        ├── notify-booking.js        # Notifica o admin (Telegram + push)
+        ├── push-subscription.js     # Chave pública VAPID (GET) e inscrição do aparelho do admin (POST)
         ├── create-payment.js        # Gera link de pagamento InfinitePay (agendamento)
         ├── create-gift-payment.js   # Gera link de pagamento InfinitePay (gift card)
         ├── infinitepay-webhook.js   # Confirma pagamento/ativa gift card e atualiza Firebase
@@ -552,7 +543,8 @@ sp-car-clean/
         ├── ai-dispatcher.js         # Cron diário: dispara agentes de IA agendados
         └── lib/
             ├── aws-adapter.js       # Entrada no Lambda: segredos do SSM + normalização do evento
-            ├── fcm.js               # Helper de envio de push (OAuth2 + FCM HTTP v1)
+            ├── webpush.js           # Web Push: VAPID, criptografia aes128gcm, inscrições no DynamoDB
+            ├── admin-auth.js        # Confere se o login é do admin (único ponto a trocar na Fase 4)
             ├── guard.js             # Rate-limit por IP + checagem de origem (CORS) das funções públicas
             ├── agents/              # Agentes de IA (concierge, relatorio, upsell, orcamento, …)
             └── core/                # Núcleo (claude, firebase, telegram, email, config, logger)
@@ -602,7 +594,7 @@ sp-car-clean/
 | Múltiplos serviços por agendamento manual com total calculado automaticamente | ✅ |
 | Registro histórico com data retroativa e status "Concluído" direto | ✅ |
 | App instalável na tela inicial (PWA) — admin e cliente | ✅ |
-| Notificações push no celular do admin (Firebase Cloud Messaging) | ✅ |
+| Notificações push no celular do admin (Web Push padrão, sem Firebase) | ✅ |
 | App do admin abrindo direto na tela de senha do painel (sem passar pelo site) | ✅ |
 | Central de IA com agentes (concierge, relatório, reativação, upsell, etc.) | ✅ |
 | Chat Concierge público no site | ✅ |

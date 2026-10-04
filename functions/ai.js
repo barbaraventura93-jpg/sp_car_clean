@@ -4,6 +4,8 @@
 // Agentes admin: exigem Authorization: Bearer <Firebase ID token>
 // Agentes públicos: rate-limit por IP (20 req/hora)
 
+const { verifyAdmin } = require('./lib/admin-auth');
+
 const CORS_ORIGINS  = ['https://www.spcarclean.com.br'];
 const ADMIN_AGENTS  = new Set(['ping', 'relatorio', 'reativacao', 'agenda', 'satisfacao', 'checkin', 'conteudo']);
 const RL_WINDOW_MS  = 3_600_000; // 1 hora
@@ -100,21 +102,6 @@ function buildCore() {
   };
 
   return { core, getUsage: () => ({ ...usage }) };
-}
-
-async function verifyAdmin(token) {
-  const apiKey     = process.env.FIREBASE_API_KEY;
-  const adminEmail = process.env.ADMIN_EMAIL || 'spcarclean0@gmail.com';
-  if (!apiKey) return false;
-  try {
-    const resp = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken: token }) }
-    );
-    if (!resp.ok) return false;
-    const data = await resp.json();
-    return data.users?.[0]?.email === adminEmail;
-  } catch { return false; }
 }
 
 function checkRL(ip) {

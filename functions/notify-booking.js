@@ -1,4 +1,4 @@
-const { sendAdminPush } = require('./lib/fcm');
+const { sendAdminPush } = require('./lib/webpush');
 const { clientIp, rateLimit, originAllowed, corsHeaders } = require('./lib/guard');
 
 // Título/corpo curtos da notificação push por tipo de evento.
