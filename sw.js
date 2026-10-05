@@ -2,7 +2,8 @@
  * Estratégia:
  *   - Navegação/HTML  → network-first (nunca prende o app numa versão antiga após deploy)
  *   - Assets estáticos → stale-while-revalidate (rápido offline, atualiza em segundo plano)
- * Bump em CACHE_VERSION invalida caches antigos a cada deploy relevante.
+ * CACHE_VERSION é trocado pelo build.js a cada deploy (hash de app.js + styles.css),
+ * o que invalida os caches antigos.
  */
 const CACHE_VERSION = 'spcc-v1';
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
