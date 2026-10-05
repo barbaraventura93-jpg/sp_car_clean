@@ -8,7 +8,7 @@
 #
 # Upload: o painel admin pede uma URL pré-assinada à função upload-url e envia
 # o arquivo direto ao bucket (PUT). Migração do que estava no Firebase:
-# scripts/migrate-storage-to-s3.js.
+# scripts/migrate-media.js.
 # =====================================================================
 locals {
   media_bucket_name = "sp-car-clean-media-${data.aws_caller_identity.current.account_id}"

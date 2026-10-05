@@ -120,7 +120,7 @@ No repositório → **Settings** → **Secrets and variables** → **Actions** �
 
 ### 6.3 Storage / fotos (Fase 5) — ✅ pronto para rodar
 1. `terraform apply` (cria o bucket de mídia e a rota `/media/*`).
-2. Rode `node scripts/migrate-storage-to-s3.js --dry-run` e depois sem `--dry-run`
+2. Rode `node scripts/migrate-media.js` (simulação) e depois `node scripts/migrate-media.js --apply`
    (variáveis e passo a passo no README → "Fotos e vídeos (S3)").
 3. Conferido o site, `firebase deploy --only storage` (regras só leitura) e apague os arquivos do Storage.
 

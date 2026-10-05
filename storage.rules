@@ -4,7 +4,7 @@ rules_version = '2';
 //
 // Fotos e vídeos novos vão para o bucket de mídia na AWS (infra/media.tf, função
 // upload-url). Estas regras deixam o Storage SÓ LEITURA durante a transição:
-// as URLs antigas continuam abrindo até o scripts/migrate-storage-to-s3.js
+// as URLs antigas continuam abrindo até o scripts/migrate-media.js
 // copiar tudo para o S3 e trocar os endereços no Realtime Database.
 // Antes, qualquer usuário logado (inclusive cliente) podia gravar aqui.
 //

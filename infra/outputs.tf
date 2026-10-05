@@ -4,7 +4,7 @@ output "s3_bucket" {
 }
 
 output "media_bucket" {
-  description = "Bucket S3 das fotos/vídeos (servido em /media/*). Usado pelo scripts/migrate-storage-to-s3.js."
+  description = "Bucket S3 das fotos/vídeos (servido em /media/*). Usado pelo scripts/migrate-media.js."
   value       = aws_s3_bucket.media.bucket
 }
 

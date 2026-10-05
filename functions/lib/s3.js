@@ -1,11 +1,10 @@
 'use strict';
 
 // S3 sem SDK: URL pré-assinada (AWS Signature V4, query string) para o
-// navegador enviar uma foto direto ao bucket de mídia, e um PUT assinado para
-// scripts (migração do Firebase Storage). Só usa o crypto nativo do Node.
+// navegador enviar uma foto direto ao bucket de mídia. Só usa o crypto nativo do Node.
 //
 // Credenciais: as do próprio Lambda (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
-// AWS_SESSION_TOKEN, AWS_REGION) — ou as exportadas no terminal, no script.
+// AWS_SESSION_TOKEN, AWS_REGION).
 
 const crypto = require('crypto');
 
@@ -68,44 +67,4 @@ function presignPut({ bucket, key, region = process.env.AWS_REGION, expires = 90
   return `https://${host}${path}?${query}&X-Amz-Signature=${signature}`;
 }
 
-/** PUT direto (assinado no header) — usado pelo script de migração. */
-async function putObject({ bucket, key, body, contentType, cacheControl, region = process.env.AWS_REGION }) {
-  const { accessKeyId, secretAccessKey, sessionToken } = credentials();
-  const host = `${bucket}.s3.${region}.amazonaws.com`;
-  const { amzDate, date } = amzDates();
-  const scope = `${date}/${region}/s3/aws4_request`;
-  const payloadHash = sha256(body);
-
-  const headers = {
-    host,
-    'x-amz-content-sha256': payloadHash,
-    'x-amz-date': amzDate,
-    'content-type': contentType || 'application/octet-stream'
-  };
-  if (cacheControl) headers['cache-control'] = cacheControl;
-  if (sessionToken) headers['x-amz-security-token'] = sessionToken;
-
-  const names = Object.keys(headers).sort();
-  const path = '/' + uriEncode(key, true);
-  const canonical = [
-    'PUT', path, '',
-    names.map((h) => `${h}:${String(headers[h]).trim()}`).join('\n') + '\n',
-    names.join(';'), payloadHash
-  ].join('\n');
-  const toSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256(canonical)].join('\n');
-  const signature = crypto.createHmac('sha256', signingKey(secretAccessKey, date, region))
-    .update(toSign).digest('hex');
-
-  const { host: _h, ...sendHeaders } = headers;
-  const resp = await fetch(`https://${host}${path}`, {
-    method: 'PUT',
-    headers: {
-      ...sendHeaders,
-      Authorization: `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${scope}, SignedHeaders=${names.join(';')}, Signature=${signature}`
-    },
-    body
-  });
-  if (!resp.ok) throw new Error(`S3 PUT ${key}: ${resp.status} ${await resp.text()}`);
-}
-
-module.exports = { presignPut, putObject };
+module.exports = { presignPut };

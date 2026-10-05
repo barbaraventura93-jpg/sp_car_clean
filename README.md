@@ -470,22 +470,19 @@ mais usado**.
 
 #### Migração do que estava no Firebase Storage
 
-Uma vez só, depois do `terraform apply` desta versão:
+Uma vez só, depois do deploy desta versão, no CloudShell (o script lê
+`FIREBASE_DATABASE_URL` e `FIREBASE_DATABASE_SECRET` do SSM e descobre o bucket sozinho):
 
 ```bash
-eval "$(aws configure export-credentials --format env)"    # credenciais AWS no terminal (CloudShell já tem)
-export AWS_REGION=sa-east-1
-export MEDIA_BUCKET=$(cd infra && terraform output -raw media_bucket)
-export MEDIA_BASE_URL=https://www.spcarclean.com.br/media
-export FIREBASE_DATABASE_URL=https://sp-car-clean-default-rtdb.firebaseio.com
-export FIREBASE_DATABASE_SECRET='...'                       # mesmo valor do SSM
-node scripts/migrate-storage-to-s3.js --dry-run             # lista o que vai migrar
-node scripts/migrate-storage-to-s3.js                       # copia para o S3 e troca as URLs no banco
+cd ~/sp_car_clean
+node scripts/migrate-media.js            # simulação: lista o que seria migrado
+node scripts/migrate-media.js --apply    # copia para o S3 e troca os links no banco
 ```
 
-O script procura URLs do Firebase Storage em `/portfolio`, `/gallery` e `/bookings`
-(fotos do check-in), copia cada arquivo para o S3 e grava a URL nova no mesmo lugar. Pode
-rodar de novo sem problema (o que já foi migrado é pulado).
+O script varre o banco inteiro atrás de links do Firebase Storage (carrossel, galeria e
+fotos do check-in), copia cada arquivo para o S3 e grava o endereço novo em `/media/...`.
+Fotos de check-in ganham nome aleatório. Pode rodar de novo com segurança: o que já foi
+migrado não é mais link do Firebase, e o que falhar continua com o link antigo.
 
 Depois de conferir o site (carrossel, galeria e um check-in antigo abrindo):
 
@@ -662,7 +659,7 @@ sp-car-clean/
 │   └── portfolio/               # Imagens e vídeos do carrossel hero
 ├── infra/                       # Terraform: S3 (site e mídia), CloudFront, Route 53, ACM, Lambda, API Gateway, crons
 ├── scripts/                     # aws-put-secrets.sh (SSM), aws-bootstrap-tfstate.sh (estado do Terraform),
-│                                # migrate-storage-to-s3.js (Firebase Storage → S3), google-calendar-auth.js
+│                                # migrate-media.js (fotos antigas do Firebase → S3), google-calendar-auth.js
 └── functions/                   # Backend (AWS Lambda; entrada: lib/aws-adapter.js)
         ├── notify-booking.js        # Notifica o admin (Telegram + push)
         ├── notify-client.js         # Push no celular do cliente quando o serviço muda (chamado pelo painel)
@@ -681,7 +678,7 @@ sp-car-clean/
         └── lib/
             ├── aws-adapter.js       # Entrada no Lambda: segredos do SSM + normalização do evento
             ├── webpush.js           # Web Push: VAPID, criptografia aes128gcm, inscrições (admin/cliente) no DynamoDB
-            ├── s3.js                # S3 sem SDK: URL pré-assinada (SigV4) e PUT assinado
+            ├── s3.js                # S3 sem SDK: URL pré-assinada (SigV4) para o upload do painel
             ├── google-calendar.js   # Google Calendar API: token OAuth e upsert/remoção de eventos
             ├── admin-auth.js        # Confere se o login é do admin (único ponto a trocar na Fase 4)
             ├── guard.js             # Rate-limit por IP + checagem de origem (CORS) das funções públicas
