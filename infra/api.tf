@@ -14,6 +14,7 @@ locals {
     "create-payment",
     "create-referral",
     "infinitepay-webhook",
+    "media-upload",
     "notify-booking",
     "push-subscription",
   ]
@@ -122,6 +123,7 @@ resource "aws_lambda_function" "fn" {
       URL                  = local.site_url
       ORIGIN_VERIFY_SECRET = random_password.origin_verify.result
       PUSH_TABLE           = aws_dynamodb_table.push.name
+      MEDIA_BUCKET         = aws_s3_bucket.media.bucket
     }
   }
 
@@ -134,6 +136,7 @@ resource "aws_lambda_function" "fn" {
     aws_iam_role_policy_attachment.lambda_logs,
     aws_iam_role_policy.lambda_ssm,
     aws_iam_role_policy.lambda_push,
+    aws_iam_role_policy.lambda_media,
     aws_ssm_parameter.vapid_private_key,
   ]
 }

@@ -67,7 +67,7 @@ let _checkinPhotos    = {};
 let _bookings = [];
 let _blocked  = [];
 let _dayLoad  = {};   // lotação pública por dia { 'YYYY-MM-DD': nº de vagas ocupadas } — sem dados pessoais
-let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _storage, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef, _stockRef, _stockRecipesRef, _dayLoadRef, _bookingIndexRef, _portfolioRef, _referralsRef;
+let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef, _stockRef, _stockRecipesRef, _dayLoadRef, _bookingIndexRef, _portfolioRef, _referralsRef;
 let _referrals = {};                 // referrals/{id} — programa "Indique um amigo" (carregado só no painel admin)
 const _COMBOS = {};
 let _authUser = null;
@@ -4404,14 +4404,30 @@ function _ciToggle(key) {
   det.style.display = isAv ? 'none' : 'block';
 }
 
+// Envia foto/vídeo do painel direto para o S3 (link assinado gerado pela função
+// media-upload, só para o admin) e devolve o endereço público em /media/...
+async function uploadMedia(kind, file, bookingId) {
+  const user = firebase.auth().currentUser;
+  if (!user) throw new Error('Sessão expirada — faça login novamente');
+  const contentType = file.type || 'application/octet-stream';
+  const prep = await fetch('/api/media-upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + await user.getIdToken() },
+    body: JSON.stringify({ kind, contentType, size: file.size, bookingId })
+  });
+  const data = await prep.json().catch(() => ({}));
+  if (!prep.ok || !data.uploadUrl) throw new Error(data.error || 'não foi possível preparar o envio');
+  const put = await fetch(data.uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: file });
+  if (!put.ok) throw new Error('falha no envio do arquivo (' + put.status + ')');
+  return data.url;
+}
+
 async function _ciUploadPhoto(key, input) {
-  if (!input.files?.[0] || !_storage || !_checkinBookingId) return;
+  if (!input.files?.[0] || !_checkinBookingId) return;
   const ps = document.getElementById('ci-ps-' + key);
   if (ps) ps.textContent = '⏳';
   try {
-    const ref = _storage.ref(`checkin/${_checkinBookingId}/${key}_${Date.now()}`);
-    await ref.put(input.files[0]);
-    const url = await ref.getDownloadURL();
+    const url = await uploadMedia('checkin', input.files[0], _checkinBookingId);
     _checkinPhotos[key] = url;
     if (ps) ps.textContent = '✅';
     const row = ps.closest('.ci-photo-row');
@@ -5954,7 +5970,7 @@ async function savePortfolioItem() {
   const isVideo = (file.type || '').startsWith('video');
   const maxMB = isVideo ? 30 : 5;
   if (file.size > maxMB * 1024 * 1024) { alert(`Arquivo muito grande. Máximo ${maxMB} MB.`); return; }
-  if (!_storage || !_portfolioRef) { alert('Firebase não conectado. Tente novamente.'); return; }
+  if (!_portfolioRef) { alert('Firebase não conectado. Tente novamente.'); return; }
 
   const bar  = document.getElementById('poProgressBar');
   const fill = document.getElementById('poProgressFill');
@@ -5963,12 +5979,8 @@ async function savePortfolioItem() {
 
   try {
     const ts = Date.now();
-    // Caminho de 1 nível dentro de gallery/ — coberto pela regra existente do Storage
-    const ref = _storage.ref('gallery').child(ts + '_portfolio_' + file.name);
     setP(10);
-    await ref.put(file);
-    setP(75);
-    const url = await ref.getDownloadURL();
+    const url = await uploadMedia('portfolio', file);
     setP(90);
     await _portfolioRef.push({ url, caption, type: isVideo ? 'video' : 'image', createdAt: ts });
     setP(100);
@@ -6064,7 +6076,7 @@ async function saveGalleryItem() {
   if (!fileAfter)  { alert('Selecione a foto DEPOIS.'); return; }
   if (fileBefore.size > 5 * 1024 * 1024) { alert('Foto ANTES muito grande. Máximo 5 MB.'); return; }
   if (fileAfter.size  > 5 * 1024 * 1024) { alert('Foto DEPOIS muito grande. Máximo 5 MB.'); return; }
-  if (!_storage || !_galleryRef) { alert('Firebase não conectado. Tente novamente.'); return; }
+  if (!_galleryRef) { alert('Firebase não conectado. Tente novamente.'); return; }
 
   const bar  = document.getElementById('gaProgressBar');
   const fill = document.getElementById('gaProgressFill');
@@ -6073,17 +6085,11 @@ async function saveGalleryItem() {
 
   try {
     const ts   = Date.now();
-    const root = _storage.ref('gallery');
-
     setP(5);
-    const refB = root.child(ts + '_before_' + fileBefore.name);
-    await refB.put(fileBefore);
-    const beforeUrl = await refB.getDownloadURL();
+    const beforeUrl = await uploadMedia('gallery', fileBefore);
 
     setP(55);
-    const refA = root.child(ts + '_after_' + fileAfter.name);
-    await refA.put(fileAfter);
-    const afterUrl = await refA.getDownloadURL();
+    const afterUrl = await uploadMedia('gallery', fileAfter);
 
     setP(90);
     await _galleryRef.push({ caption, beforeUrl, afterUrl, createdAt: ts });
@@ -7173,7 +7179,6 @@ _buildHeroCarousel(HERO_FALLBACK);
     _galleryRef  = _fbDB.ref('gallery');
     _servicesRef = _fbDB.ref('services');
     _combosRef   = _fbDB.ref('combos');
-    _storage     = firebase.storage();
     _clientNotesRef    = _fbDB.ref('clientNotes');
     _clientProfilesRef = _fbDB.ref('clientProfiles');
     _couponsRef        = _fbDB.ref('coupons');

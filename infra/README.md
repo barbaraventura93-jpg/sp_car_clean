@@ -8,11 +8,13 @@ Terraform de toda a infraestrutura do site e do backend (região `sa-east-1`, ce
 | `certificate.tf` | Certificado **ACM** para `spcarclean.com.br` e `*.spcarclean.com.br`, validado por DNS |
 | `api.tf` | **Lambda** (uma por arquivo de `functions/`), **API Gateway HTTP API**, crons no **EventBridge Scheduler**, permissões |
 | `push.tf` | Push do admin: chave **VAPID** (gerada aqui, guardada no SSM) e tabela **DynamoDB** dos aparelhos inscritos |
+| `media.tf` | Bucket **S3 de mídia** (fotos/vídeos do painel), privado, versionado, com CORS só para o domínio; servido pelo CloudFront em `/media/*` |
 | `versions.tf` | Providers e **backend S3** do estado |
 
 ```
 visitante ──▶ CloudFront ──┬── /*                     ──▶ S3 (site)
-                           ├── /api/*                 ──▶ API Gateway ──▶ Lambda (11 funções)
+                           ├── /media/*               ──▶ S3 (mídia)
+                           ├── /api/*                 ──▶ API Gateway ──▶ Lambda (12 funções)
                            └── /.netlify/functions/*  ──▶ (legado, reescrito p/ /api/* — backlog L1)
 EventBridge Scheduler ──(3 crons diários)──▶ Lambda
 Lambda ──(na inicialização)──▶ SSM Parameter Store /sp-car-clean/* (segredos)
@@ -34,6 +36,9 @@ terraform -version || (sudo yum install -y yum-utils \
 # Repositório
 [ -d ~/sp_car_clean ] || git clone https://github.com/barbaraventura93-jpg/sp_car_clean.git ~/sp_car_clean
 cd ~/sp_car_clean && git checkout main && git pull
+
+# Se o CloudShell tiver AWS_REGION de outro projeto (ex.: us-east-1), os comandos
+# `aws` abaixo levam --region sa-east-1 de propósito; o Terraform já fixa a região.
 
 # Estado do Terraform no S3 (cria o bucket se preciso, gera infra/backend.hcl e roda o init)
 bash scripts/aws-bootstrap-tfstate.sh
@@ -65,21 +70,36 @@ Ficam em `/sp-car-clean/<NOME>`, criptografados, e as Lambdas carregam ao inicia
 
 ```bash
 # Um valor
-aws ssm put-parameter --name /sp-car-clean/NOME --type SecureString --overwrite --value 'valor'
+aws ssm put-parameter --region sa-east-1 --name /sp-car-clean/NOME --type SecureString --overwrite --value 'valor'
 # Vários, a partir de um JSON {"NOME": "valor", ...}
 bash scripts/aws-put-secrets.sh segredos.json && rm segredos.json
 # Conferir os nomes gravados
-aws ssm get-parameters-by-path --path /sp-car-clean/ --query 'Parameters[].Name' --output text
+aws ssm get-parameters-by-path --region sa-east-1 --path /sp-car-clean/ --query 'Parameters[].Name' --output text
 ```
 
 Depois de mudar um segredo, as funções o leem quando reiniciam: no próximo deploy, ou rodando o workflow **Deploy to AWS** manualmente (aba Actions → Run workflow).
+
+## Fotos e vídeos (mídia)
+
+O painel pede um link de envio a `POST /api/media-upload` (só admin) e envia o arquivo direto ao
+bucket de mídia; o endereço público fica em `https://spcarclean.com.br/media/...`.
+
+Fotos antigas, ainda no Firebase Storage, são copiadas por um script que também troca os links no banco:
+
+```bash
+cd ~/sp_car_clean
+node scripts/migrate-media.js            # simulação: lista o que seria migrado
+node scripts/migrate-media.js --apply    # copia para o S3 e troca os links
+```
+
+Pode rodar de novo com segurança; o que falhar continua com o link antigo e é listado no fim.
 
 ## Crons
 
 `ai-dispatcher` (08h), `birthday-check` (09h) e `reminder-check` (10h), horário de Brasília. Para pausar todos: `terraform apply -var schedules_enabled=false`.
 
 ```bash
-aws scheduler list-schedules --query 'Schedules[].[Name,State]' --output table
+aws scheduler list-schedules --region sa-east-1 --query 'Schedules[].[Name,State]' --output table
 ```
 
 ## Diagnóstico

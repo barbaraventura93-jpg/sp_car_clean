@@ -37,6 +37,11 @@ output "github_secrets_para_configurar" {
     │ CF_DISTRIBUTION_ID  = ${aws_cloudfront_distribution.site.id}
     └─────────────────────────────────────────────────────────────
     Faltam ainda (chaves públicas de cliente, usadas no build.js):
-      FIREBASE_API_KEY, FIREBASE_VAPID_KEY, EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY
+      FIREBASE_API_KEY, EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY
   EOT
+}
+
+output "media_bucket" {
+  description = "Bucket S3 da mídia do painel (servida em /media/*)."
+  value       = aws_s3_bucket.media.bucket
 }
