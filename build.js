@@ -40,7 +40,7 @@ fs.writeFileSync(path.join('dist', 'index.html'), html);
 const sw = replaceOnce(fs.readFileSync('sw.js', 'utf8'), "'spcc-v1'", `'spcc-${version}'`, 'sw.js');
 fs.writeFileSync(path.join('dist', 'sw.js'), sw);
 
-for (const f of ['manifest.webmanifest', 'styles.css', 'app.js']) {
+for (const f of ['manifest.webmanifest', 'admin.webmanifest', 'styles.css', 'app.js']) {
   if (fs.existsSync(f)) fs.copyFileSync(f, path.join('dist', f));
 }
 

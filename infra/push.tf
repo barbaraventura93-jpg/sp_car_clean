@@ -1,6 +1,6 @@
 # =====================================================================
-# Push do admin (Web Push padrão, sem Firebase): chave VAPID e tabela com os
-# aparelhos inscritos. A chave privada fica só no SSM (e no estado, que é
+# Push (Web Push padrão, sem Firebase) do admin e dos clientes: chave VAPID e
+# tabela com os aparelhos inscritos. A chave privada fica só no SSM (e no estado, que é
 # criptografado no S3); a pública é derivada dela pela função push-subscription.
 # =====================================================================
 resource "tls_private_key" "vapid" {
@@ -28,7 +28,7 @@ resource "aws_dynamodb_table" "push" {
 data "aws_iam_policy_document" "lambda_push" {
   statement {
     sid       = "PushSubscriptions"
-    actions   = ["dynamodb:PutItem", "dynamodb:DeleteItem", "dynamodb:Scan"]
+    actions   = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:Scan"]
     resources = [aws_dynamodb_table.push.arn]
   }
 }

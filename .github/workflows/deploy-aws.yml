@@ -65,6 +65,17 @@ jobs:
             --cache-control "public, max-age=0, must-revalidate" \
             --content-type "text/html"
 
+          # PWA: o service worker e os manifestos dos apps também revalidam sempre
+          # (senão o app instalado demora a ver a versão nova), com o tipo certo.
+          aws s3 cp dist/sw.js "s3://${{ secrets.S3_BUCKET }}/sw.js" \
+            --cache-control "public, max-age=0, must-revalidate" \
+            --content-type "text/javascript"
+          for m in manifest.webmanifest admin.webmanifest; do
+            aws s3 cp "dist/$m" "s3://${{ secrets.S3_BUCKET }}/$m" \
+              --cache-control "public, max-age=0, must-revalidate" \
+              --content-type "application/manifest+json"
+          done
+
       - name: Invalidar cache do CloudFront
         run: |
           aws cloudfront create-invalidation \

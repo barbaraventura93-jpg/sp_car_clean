@@ -12,12 +12,26 @@
 <link rel="icon" type="image/png" sizes="512x512" href="assets/favicon.png"/>
 <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png"/>
 
-<!-- PWA — app instalável na tela inicial (admin e cliente) -->
-<link rel="manifest" href="manifest.webmanifest"/>
+<!-- PWA — dois apps instaláveis: o do cliente (manifest.webmanifest) e o da
+     gestão (admin.webmanifest). A página aberta com ?admin oferece o da gestão. -->
+<script>
+(function () {
+  var q = location.search, admin = /(^\?|&)(admin|app=admin)(=|&|$)/.test(q);
+  var link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = admin ? 'admin.webmanifest' : 'manifest.webmanifest';
+  document.head.appendChild(link);
+  var title = document.createElement('meta');
+  title.name = 'apple-mobile-web-app-title';
+  title.content = admin ? 'SPCC Gestão' : 'SP Car Clean';
+  document.head.appendChild(title);
+  window.__PWA_APP = admin ? 'admin' : 'cliente';
+})();
+</script>
+<noscript><link rel="manifest" href="manifest.webmanifest"/></noscript>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="SP Car Clean"/>
 
 <!-- Open Graph / compartilhamento (WhatsApp, Instagram, Facebook) -->
 <meta property="og:type" content="website"/>
@@ -96,9 +110,18 @@ window.__ENV = {
     <li><a href="#galeria">Galeria</a></li>
     <li><a href="#depoimentos">Clientes</a></li>
     <li><a href="#gift-card">Gift Card</a></li>
+    <li class="pwa-site-only"><a onclick="openInstallApp()" style="cursor:pointer">📲 Baixar app</a></li>
     <li><a onclick="openBooking()" class="cta" style="cursor:pointer">Agendar</a></li>
   </ul>
 </nav>
+
+<!-- Faixa "Baixe o app" (só no celular, fora do app instalado; some ao fechar) -->
+<div id="pwaBanner" class="pwa-banner" style="display:none">
+  <img src="assets/icon-192.png" alt="" width="36" height="36"/>
+  <div class="pwa-banner-txt"><strong>App SP Car Clean</strong><span>Acompanhe seu agendamento e receba avisos no celular.</span></div>
+  <button class="pwa-banner-btn" onclick="openInstallApp()">Baixar</button>
+  <button class="pwa-banner-x" onclick="pwaDismissBanner()" aria-label="Fechar">✕</button>
+</div>
 
 <!-- ===== HERO ===== -->
 <section id="hero">
@@ -305,6 +328,7 @@ window.__ENV = {
       Instagram
     </a>
     <a class="admin-link" onclick="document.getElementById('privacyModal').style.display='flex'">Política de Privacidade</a>
+    <a class="admin-link pwa-site-only" onclick="openInstallApp()">📲 Baixar o app</a>
     <a class="admin-link" onclick="openAdminLogin()">Área Restrita</a>
   </div>
 </footer>
@@ -466,6 +490,17 @@ window.__ENV = {
       <button class="modal-close" onclick="closeModal('clientAccountModal')">✕</button>
     </div>
     <div class="modal-body" id="clientAccountBody"></div>
+  </div>
+</div>
+
+<!-- ===== INSTALAR O APP (cliente / gestão) ===== -->
+<div id="installAppModal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:460px">
+    <div class="modal-hdr">
+      <div><h3>📲 Baixar o app</h3><div class="sub">Instale direto do site — sem loja de aplicativos</div></div>
+      <button class="modal-close" onclick="closeModal('installAppModal')">✕</button>
+    </div>
+    <div class="modal-body" id="installAppBody"></div>
   </div>
 </div>
 
@@ -825,7 +860,7 @@ window.__ENV = {
     <div class="brand">SP <span>Car</span> Clean <span style="font-weight:400;font-size:.75rem;opacity:.5;margin-left:.5rem">Painel Admin</span></div>
     <div class="admin-nav-actions">
       <span style="font-size:.72rem;color:rgba(255,255,255,.4)" id="adminDate"></span>
-      <button class="pwa-install-btn admin-logout" onclick="pwaInstall()" style="display:none;background:#0a84ff;border-color:#0a84ff" title="Instalar o painel como app no celular">📲 Instalar app</button>
+      <button class="pwa-install-btn pwa-site-only admin-logout" onclick="openInstallApp('admin')" style="background:#0a84ff;border-color:#0a84ff" title="Instalar o app da gestão no celular">📲 Instalar app</button>
       <button class="admin-logout" onclick="doAdminLogout()">Sair</button>
     </div>
   </div>
@@ -924,12 +959,13 @@ window.__ENV = {
   </div>
 </div>
 
-<!-- ===== PWA: app instalável + notificações push do admin ===== -->
+<!-- ===== PWA: apps instaláveis (cliente e gestão) + notificações push ===== -->
 <script>
 (function initPWA() {
   let _deferredInstall = null;
+  const APP = window.__PWA_APP || 'cliente'; // manifesto desta página (ver <head>)
 
-  // ── 1. Service worker de cache offline ──
+  // ── 1. Service worker (cache offline + push) ──
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js').catch(err =>
@@ -937,93 +973,211 @@ window.__ENV = {
     });
   }
 
-  // ── 2. Botão "Instalar app" (Android/desktop via beforeinstallprompt) ──
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    _deferredInstall = e;
-    document.querySelectorAll('.pwa-install-btn').forEach(b => { b.style.display = 'inline-flex'; });
-  });
-  window.addEventListener('appinstalled', () => {
-    _deferredInstall = null;
-    document.querySelectorAll('.pwa-install-btn').forEach(b => { b.style.display = 'none'; });
-  });
-
-  window.pwaInstall = async function () {
-    if (!_deferredInstall) {
-      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-      alert(isIOS
-        ? 'Para instalar no iPhone/iPad: toque em Compartilhar (⬆️) e depois em "Adicionar à Tela de Início".'
-        : 'Abra o menu do navegador e escolha "Instalar app" / "Adicionar à tela inicial".');
-      return;
-    }
-    _deferredInstall.prompt();
-    try { await _deferredInstall.userChoice; } catch (_) {}
-    _deferredInstall = null;
-    document.querySelectorAll('.pwa-install-btn').forEach(b => { b.style.display = 'none'; });
-  };
-
+  const ua = navigator.userAgent || '';
+  const isIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /android/i.test(ua);
+  const isMobile = isIOS || isAndroid;
+  // Navegador embutido do Instagram/Facebook/WhatsApp etc.: não instala app.
+  const isInAppBrowser = /Instagram|FBAN|FBAV|FB_IAB|WhatsApp|Line\/|; wv\)|GSA\//i.test(ua);
+  const isIOSSafari = isIOS && /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua) && !isInAppBrowser;
   const _isStandalone = () =>
     window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
-  // ── 3. Notificações push do admin (Web Push padrão, via /sw.js) ──
-  // Só inscreve quando o navegador suporta push e o usuário logado é o admin.
-  let _pushRegistered = false;
+  // Dentro do app instalado não há o que baixar.
+  if (_isStandalone()) document.documentElement.classList.add('pwa-standalone');
 
+  // ── 2. Instalação ──
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    _deferredInstall = e;
+    const body = document.getElementById('installAppBody');
+    if (body && document.getElementById('installAppModal').style.display === 'flex') renderInstall(body.dataset.want || APP);
+  });
+  window.addEventListener('appinstalled', () => {
+    _deferredInstall = null;
+    document.documentElement.classList.add('pwa-installed');
+    const body = document.getElementById('installAppBody');
+    if (body) body.innerHTML = '<p style="text-align:center;font-size:.9rem;line-height:1.6">✅ App instalado! Procure o ícone da SP Car Clean na tela inicial.</p>';
+  });
+
+  const step = (n, html) =>
+    `<div style="display:flex;gap:.7rem;align-items:flex-start;margin:.55rem 0;font-size:.85rem;line-height:1.5">
+       <span style="flex:0 0 24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.75rem">${n}</span>
+       <span>${html}</span></div>`;
+
+  // Passo a passo do aparelho atual (quando o navegador não oferece o botão nativo).
+  function manualSteps() {
+    if (isInAppBrowser) {
+      return `<div style="background:var(--orange-lt,rgba(245,158,11,.12));border-radius:8px;padding:.8rem;font-size:.84rem;line-height:1.5">
+        ⚠️ Você abriu o link dentro de outro app (Instagram, WhatsApp...). Por ele não dá para instalar.</div>` +
+        step(1, `Toque nos <strong>três pontinhos</strong> (⋮ ou ⋯) no canto da tela`) +
+        step(2, `Escolha <strong>${isIOS ? 'Abrir no Safari' : 'Abrir no Chrome'}</strong> (ou "Abrir no navegador")`) +
+        step(3, `No navegador, toque de novo em <strong>📲 Baixar app</strong>`);
+    }
+    if (isIOS) {
+      return (isIOSSafari ? '' : `<p style="font-size:.8rem;color:var(--muted);margin-bottom:.4rem">No iPhone, a instalação é pelo <strong>Safari</strong> (ou pelo botão Compartilhar do Chrome).</p>`) +
+        step(1, `Toque em <strong>Compartilhar</strong> <span style="font-size:1rem">⬆️</span> na barra do navegador`) +
+        step(2, `Role e toque em <strong>Adicionar à Tela de Início</strong> ➕`) +
+        step(3, `Toque em <strong>Adicionar</strong>. O ícone aparece na tela inicial.`) +
+        `<p style="font-size:.75rem;color:var(--muted);margin-top:.5rem">As notificações no iPhone funcionam com o app instalado (iOS 16.4 ou mais recente).</p>`;
+    }
+    if (isAndroid) {
+      return step(1, `Abra o menu <strong>⋮</strong> do Chrome (canto superior direito)`) +
+        step(2, `Toque em <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>`) +
+        step(3, `Confirme em <strong>Instalar</strong>.`);
+    }
+    return step(1, `No Chrome ou Edge, clique no ícone <strong>Instalar</strong> (🖥️⬇) na barra de endereço`) +
+      step(2, `Ou abra o menu <strong>⋮</strong> → <strong>Instalar SP Car Clean</strong>`) +
+      `<p style="font-size:.75rem;color:var(--muted);margin-top:.5rem">No celular a experiência é melhor: abra ${location.host} no celular.</p>`;
+  }
+
+  function renderInstall(want) {
+    const body = document.getElementById('installAppBody');
+    body.dataset.want = want;
+    const isAdminApp = want === 'admin';
+    const title = isAdminApp ? 'App da Gestão' : 'App do Cliente';
+    const desc = isAdminApp
+      ? 'Painel de gestão em tela cheia, com aviso no celular de novo agendamento, cancelamento, entregas dos próximos dias e estoque em falta.'
+      : 'Agende, acompanhe o andamento do seu serviço e receba aviso no celular quando ele mudar (aprovação, check-in, conclusão...).';
+
+    let action;
+    if (want !== APP) {
+      // O app da gestão é instalado a partir da página ?admin (e vice-versa).
+      const url = isAdminApp ? '/?admin&instalar=1' : '/?instalar=1';
+      action = `<a class="btn-primary" href="${url}" style="width:100%;justify-content:center;text-decoration:none">Continuar para instalar →</a>`;
+    } else if (_deferredInstall) {
+      action = `<button class="btn-primary" onclick="pwaInstall()" style="width:100%;justify-content:center">📲 Instalar agora</button>`;
+    } else {
+      action = manualSteps();
+    }
+
+    const other = isAdminApp
+      ? `<p style="font-size:.75rem;color:var(--muted);margin-top:1rem;text-align:center">É cliente? <a href="/?instalar=1" style="color:var(--blue)">Baixe o app do cliente</a></p>`
+      : `<p style="font-size:.75rem;color:var(--muted);margin-top:1rem;text-align:center">Equipe SP Car Clean? <a href="/?admin&instalar=1" style="color:var(--blue)">Baixe o app da gestão</a></p>`;
+
+    body.innerHTML = `
+      <div style="display:flex;gap:.8rem;align-items:center;margin-bottom:.9rem">
+        <img src="assets/icon-192.png" alt="" width="52" height="52" style="border-radius:12px"/>
+        <div><div style="font-family:Montserrat,sans-serif;font-weight:800">${title}</div>
+        <div style="font-size:.78rem;color:var(--muted);line-height:1.45">${desc}</div></div>
+      </div>
+      ${action}
+      ${other}`;
+  }
+
+  window.openInstallApp = function (want) {
+    if (_isStandalone()) { alert('Você já está usando o app instalado. 👍'); return; }
+    renderInstall(want === 'admin' || want === 'cliente' ? want : APP);
+    document.getElementById('installAppModal').style.display = 'flex';
+  };
+
+  window.pwaInstall = async function () {
+    if (!_deferredInstall) { window.openInstallApp(APP); return; }
+    _deferredInstall.prompt();
+    try { await _deferredInstall.userChoice; } catch (_) {}
+    _deferredInstall = null;
+  };
+
+  // Faixa "Baixe o app" para quem visita o site pelo celular.
+  const BANNER_OFF = 'spcc.installBannerOff';
+  window.pwaDismissBanner = function () {
+    try { localStorage.setItem(BANNER_OFF, '1'); } catch (_) {}
+    const b = document.getElementById('pwaBanner');
+    if (b) b.style.display = 'none';
+  };
+  window.addEventListener('load', () => {
+    let off = false;
+    try { off = localStorage.getItem(BANNER_OFF) === '1'; } catch (_) {}
+    if (isMobile && !_isStandalone() && APP === 'cliente' && !off) {
+      const b = document.getElementById('pwaBanner');
+      if (b) b.style.display = 'flex';
+    }
+    // ?instalar=1 → abre a instrução de instalação já ao carregar.
+    if (/(^\?|&)instalar(=|&|$)/.test(location.search) && !_isStandalone()) window.openInstallApp(APP);
+  });
+
+  // ── 3. Notificações push (Web Push padrão, via /sw.js) ──
   const _keyBytes = (b64url) => {
     const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - b64url.length % 4) % 4);
     return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
   };
   const _sameKey = (a, b) => !!a && a.byteLength === b.byteLength &&
     new Uint8Array(a).every((v, i) => v === b[i]);
+  const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 
-  async function registerAdminPush() {
-    if (_pushRegistered) return;
-    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
-    if (Notification.permission === 'denied') return;
+  // Inscreve este aparelho no push e devolve a inscrição (ou null).
+  async function subscribeDevice(askPermission) {
+    if (!pushSupported() || Notification.permission === 'denied') return null;
+    if (Notification.permission !== 'granted') {
+      if (!askPermission) return null;
+      if (await Notification.requestPermission() !== 'granted') return null;
+    }
+    // Remove o service worker antigo do Firebase Cloud Messaging, se ainda existir.
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs
+      .filter(r => r.scope.indexOf('firebase-cloud-messaging-push-scope') !== -1)
+      .map(r => r.unregister()));
+
+    const cfg = await fetch('/api/push-subscription').then(r => r.json());
+    if (!cfg.publicKey) return null;
+    const appKey = _keyBytes(cfg.publicKey);
+
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (sub && !_sameKey(sub.options.applicationServerKey, appKey)) { await sub.unsubscribe(); sub = null; }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
+    return sub;
+  }
+
+  async function sendSubscription(sub, extra) {
+    const headers = { 'Content-Type': 'application/json' };
+    const user = typeof firebase !== 'undefined' && firebase.auth().currentUser;
+    if (user) headers.Authorization = 'Bearer ' + await user.getIdToken();
+    const resp = await fetch('/api/push-subscription', {
+      method: 'POST', headers,
+      body: JSON.stringify({ subscription: sub.toJSON(), ua: ua.slice(0, 180), ...extra })
+    });
+    return resp.ok;
+  }
+
+  // Admin: chamado pelo app ao confirmar que o usuário logado é o admin.
+  let _adminPushRegistered = false;
+  window.pwaRegisterAdminPush = async function () {
+    if (_adminPushRegistered) return;
     if (typeof firebase === 'undefined' || !firebase.auth().currentUser) return;
-
     try {
-      const perm = Notification.permission === 'granted'
-        ? 'granted'
-        : await Notification.requestPermission();
-      if (perm !== 'granted') return;
-
-      // Remove o service worker antigo do Firebase Cloud Messaging, se ainda existir.
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs
-        .filter(r => r.scope.indexOf('firebase-cloud-messaging-push-scope') !== -1)
-        .map(r => r.unregister()));
-
-      const cfg = await fetch('/api/push-subscription').then(r => r.json());
-      if (!cfg.publicKey) return;
-      const appKey = _keyBytes(cfg.publicKey);
-
-      const reg = await navigator.serviceWorker.register('/sw.js');
-      await navigator.serviceWorker.ready;
-      let sub = await reg.pushManager.getSubscription();
-      if (sub && !_sameKey(sub.options.applicationServerKey, appKey)) { await sub.unsubscribe(); sub = null; }
-      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
-
-      const token = await firebase.auth().currentUser.getIdToken();
-      const resp = await fetch('/api/push-subscription', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ subscription: sub.toJSON(), ua: (navigator.userAgent || '').slice(0, 180) })
-      });
-      if (resp.ok) _pushRegistered = true;
+      const sub = await subscribeDevice(true);
+      if (sub && await sendSubscription(sub, { audience: 'admin' })) _adminPushRegistered = true;
     } catch (err) {
       console.warn('PWA: push do admin indisponível', err);
     }
-  }
-  // Exposto para o app chamar quando confirmar que o usuário logado é o admin.
-  window.pwaRegisterAdminPush = registerAdminPush;
+  };
 
-  // Mostra o botão instalar já embutido no painel (caso o app não esteja instalado).
-  window.addEventListener('load', () => {
-    if (_isStandalone()) {
-      document.querySelectorAll('.pwa-install-btn').forEach(b => { b.style.display = 'none'; });
+  /**
+   * Cliente: avisos de mudança no agendamento.
+   * opts.bookingId + opts.email → aquele agendamento (sem conta);
+   * cliente logado → todos os agendamentos da conta.
+   * opts.silent → só atualiza se a permissão já foi dada (sem perguntar).
+   * Retorna 'ok' | 'install' (iPhone sem o app instalado) | 'denied' | 'unsupported' | 'error'.
+   */
+  window.pwaEnableClientPush = async function (opts = {}) {
+    if (isIOS && !_isStandalone()) return 'install';
+    if (!pushSupported()) return 'unsupported';
+    if (Notification.permission === 'denied') return 'denied';
+    try {
+      const sub = await subscribeDevice(!opts.silent);
+      if (!sub) return Notification.permission === 'denied' ? 'denied' : 'error';
+      const extra = { audience: 'client' };
+      if (opts.bookingId && opts.email) { extra.bookingId = opts.bookingId; extra.email = opts.email; }
+      return await sendSubscription(sub, extra) ? 'ok' : 'error';
+    } catch (err) {
+      console.warn('PWA: push do cliente indisponível', err);
+      return 'error';
     }
-  });
+  };
+  window.pwaPushState = () => (!pushSupported() ? 'unsupported' : Notification.permission);
+  window.pwaIsStandalone = _isStandalone;
 })();
 </script>
 

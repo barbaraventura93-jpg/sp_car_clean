@@ -3,6 +3,11 @@ output "s3_bucket" {
   value       = aws_s3_bucket.site.bucket
 }
 
+output "media_bucket" {
+  description = "Bucket S3 das fotos/vídeos (servido em /media/*). Usado pelo scripts/migrate-media.js."
+  value       = aws_s3_bucket.media.bucket
+}
+
 output "cloudfront_distribution_id" {
   description = "ID da distribuição CloudFront."
   value       = aws_cloudfront_distribution.site.id
@@ -39,9 +44,4 @@ output "github_secrets_para_configurar" {
     Faltam ainda (chaves públicas de cliente, usadas no build.js):
       FIREBASE_API_KEY, EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY
   EOT
-}
-
-output "media_bucket" {
-  description = "Bucket S3 da mídia do painel (servida em /media/*)."
-  value       = aws_s3_bucket.media.bucket
 }

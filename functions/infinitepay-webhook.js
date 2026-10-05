@@ -10,6 +10,8 @@
 // valor esperado do pedido. Falha em verificar → devolvemos erro para o InfinitePay
 // reenviar, em vez de confirmar às cegas (fail-closed).
 
+const { pushBookingUpdate } = require('./lib/webpush');
+
 const PAYMENT_CHECK_URL = 'https://api.checkout.infinitepay.io/payment_check';
 const PAID_STATUSES     = ['paid', 'approved', 'captured', 'succeeded', 'complete', 'completed'];
 const CHECK_TIMEOUT_MS  = 8000;
@@ -116,6 +118,9 @@ exports.handler = async (event) => {
       paymentMethod: verifiedCapture,
       paidAmount: verifiedPaidCents ? verifiedPaidCents / 100 : 0
     });
+    // Aviso no celular do cliente (best-effort: nunca derruba a confirmação).
+    await pushBookingUpdate({ id: order_nsu, ...booking }, '✅ Pagamento confirmado',
+      `Seu agendamento ${order_nsu} está confirmado. Até breve!`).catch(() => {});
     return ok('confirmed');
   } catch (err) {
     console.error('infinitepay-webhook error:', err.message);

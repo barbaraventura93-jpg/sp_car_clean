@@ -118,8 +118,11 @@ No repositório → **Settings** → **Secrets and variables** → **Actions** �
 1. Precisa da **Firebase CLI**: `firebase auth:export usuarios.json --project SEU_PROJETO`.
 2. ⚠️ Usuários vão **redefinir a senha** no 1º login (o hash não é portável) — isso é normal e seguro.
 
-### 6.3 Storage / fotos (Fase 5)
-1. Dê acesso ou baixe o bucket do Firebase Storage → 🤖 eu escrevo o script de cópia para o S3.
+### 6.3 Storage / fotos (Fase 5) — ✅ pronto para rodar
+1. `terraform apply` (cria o bucket de mídia e a rota `/media/*`).
+2. Rode `node scripts/migrate-media.js` (simulação) e depois `node scripts/migrate-media.js --apply`
+   (variáveis e passo a passo no README → "Fotos e vídeos (S3)").
+3. Conferido o site, `firebase deploy --only storage` (regras só leitura) e apague os arquivos do Storage.
 
 ---
 

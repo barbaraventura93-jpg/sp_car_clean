@@ -1,49 +1,35 @@
 {
-  "name": "SP Car Clean — Gestão",
+  "id": "/?app=cliente",
+  "name": "SP Car Clean",
   "short_name": "SP Car Clean",
-  "description": "Estética automotiva premium — agendamento online e painel de gestão SP Car Clean.",
+  "description": "Agende serviços de estética automotiva, acompanhe seus agendamentos e receba avisos no celular.",
   "lang": "pt-BR",
   "dir": "ltr",
-  "start_url": "/?utm_source=pwa",
+  "start_url": "/?app=cliente",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#06090F",
   "theme_color": "#06090F",
-  "categories": ["business", "productivity"],
+  "categories": ["lifestyle", "shopping"],
   "icons": [
-    {
-      "src": "assets/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/icon-512-maskable.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    }
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    {
-      "name": "Painel Admin",
-      "short_name": "Admin",
-      "description": "Abrir o painel de gestão",
-      "url": "/?admin",
-      "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" }]
-    },
     {
       "name": "Agendar serviço",
       "short_name": "Agendar",
       "description": "Iniciar um novo agendamento",
-      "url": "/?agendar",
+      "url": "/?app=cliente&agendar",
+      "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Consultar agendamento",
+      "short_name": "Consultar",
+      "description": "Ver o status do seu agendamento",
+      "url": "/?app=cliente&consulta",
       "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]

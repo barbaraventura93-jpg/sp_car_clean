@@ -1,11 +1,23 @@
 # =====================================================================
-# Mídia (fotos de check-in, galeria e portfólio): bucket próprio, servido pelo
-# CloudFront em /media/*. Separado do bucket do site porque o deploy do site
-# faz `s3 sync --delete`, que apagaria a mídia. O painel envia direto ao S3
-# com URL pré-assinada (função media-upload).
+# Mídia (substitui o Firebase Storage): fotos da galeria/carrossel, vídeos e
+# fotos do check-in. Bucket privado, servido pelo mesmo CloudFront do site em
+# https://<site>/media/... (as chaves no bucket começam com "media/").
+#
+# É um bucket separado do site de propósito: o deploy faz "aws s3 sync --delete"
+# no bucket do site, o que apagaria as fotos.
+#
+# Upload: o painel admin pede uma URL pré-assinada à função upload-url e envia
+# o arquivo direto ao bucket (PUT). Migração do que estava no Firebase:
+# scripts/migrate-media.js.
 # =====================================================================
+locals {
+  media_bucket_name = "sp-car-clean-media-${data.aws_caller_identity.current.account_id}"
+  media_base_url    = "${local.site_url}/media"
+  site_origins      = [for a in var.site_aliases : "https://${a}"]
+}
+
 resource "aws_s3_bucket" "media" {
-  bucket = "sp-car-clean-media-${data.aws_caller_identity.current.account_id}"
+  bucket = local.media_bucket_name
 }
 
 resource "aws_s3_bucket_public_access_block" "media" {
@@ -16,6 +28,7 @@ resource "aws_s3_bucket_public_access_block" "media" {
   restrict_public_buckets = true
 }
 
+# Versionado: uma foto apagada ou sobrescrita por engano pode ser recuperada.
 resource "aws_s3_bucket_versioning" "media" {
   bucket = aws_s3_bucket.media.id
   versioning_configuration {
@@ -23,33 +36,37 @@ resource "aws_s3_bucket_versioning" "media" {
   }
 }
 
-# Versões substituídas ou apagadas ficam 30 dias (para desfazer engano).
 resource "aws_s3_bucket_lifecycle_configuration" "media" {
   bucket = aws_s3_bucket.media.id
 
   rule {
-    id     = "expira-versoes-antigas"
+    id     = "versoes-antigas"
     status = "Enabled"
     filter {}
 
     noncurrent_version_expiration {
-      noncurrent_days = 30
+      noncurrent_days = 90
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
     }
   }
 }
 
-# O navegador do admin envia o arquivo direto ao S3 (PUT pré-assinado).
+# O navegador do admin envia o arquivo direto ao bucket (URL pré-assinada).
 resource "aws_s3_bucket_cors_configuration" "media" {
   bucket = aws_s3_bucket.media.id
 
   cors_rule {
     allowed_methods = ["PUT"]
-    allowed_origins = [for a in local.aliases : "https://${a}"]
-    allowed_headers = ["content-type"]
-    max_age_seconds = 3000
+    allowed_origins = concat(local.site_origins, ["http://localhost:3000"])
+    allowed_headers = ["Content-Type", "Cache-Control"]
+    max_age_seconds = 3600
   }
 }
 
+# Leitura só pelo CloudFront (OAC). Sem ListBucket: ninguém lista as fotos.
 data "aws_iam_policy_document" "media_bucket" {
   statement {
     sid       = "AllowCloudFrontOAC"
@@ -74,10 +91,10 @@ resource "aws_s3_bucket_policy" "media" {
   policy = data.aws_iam_policy_document.media_bucket.json
 }
 
-# A URL pré-assinada usa as credenciais da Lambda: ela precisa poder gravar.
+# A função upload-url assina os PUTs com a role das funções.
 data "aws_iam_policy_document" "lambda_media" {
   statement {
-    sid       = "MediaUpload"
+    sid       = "UploadMedia"
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.media.arn}/media/*"]
   }

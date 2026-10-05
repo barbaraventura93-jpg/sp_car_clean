@@ -919,6 +919,7 @@ function renderBookingStep() {
         <h3 style="font-family:Montserrat,sans-serif;font-size:1.2rem;font-weight:800;color:var(--dark)">Solicitação Enviada!</h3>
         <p style="color:var(--muted);margin-top:.5rem;font-size:.9rem">Guarde seu código de reserva:</p>
         <div class="booking-id-badge" id="newBookingId"></div>
+        <div id="newBookingExtras"></div>
         <div style="background:var(--green-lt);border:1px solid #a8e6c1;border-radius:8px;padding:.9rem 1rem;margin-top:.8rem;font-size:.83rem;color:#1a6b3a;line-height:1.5">
           📱 <strong>Estabelecimento notificado via Telegram!</strong>
         </div>
@@ -1085,6 +1086,108 @@ async function submitBooking() {
   booking.step = 4;
   renderBookingStep();
   document.getElementById('newBookingId').textContent = id;
+  const extras = document.getElementById('newBookingExtras');
+  if (extras) extras.innerHTML = clientExtrasHtml(b, email);
+}
+
+// ============================================================
+// CLIENTE — agenda (Google Agenda / .ics) e avisos no celular
+// ============================================================
+// Janela do agendamento: entrada do veículo → retirada.
+function _bkWindow(b) {
+  const start = String(b.startDate || b.date || '').slice(0, 10);
+  let end = String(b.endDate || b.pickup || start).slice(0, 10);
+  if (!end || end < start) end = start;
+  return { start, end };
+}
+// Horário de Brasília (UTC-3, sem horário de verão) → carimbo UTC do iCalendar.
+function _utcStamp(ymd, hhmm) {
+  return new Date(`${ymd}T${hhmm || '08:00'}:00-03:00`).toISOString().replace(/[-:]|\.\d{3}/g, '');
+}
+function _bkCalendarText(b) {
+  const { start, end } = _bkWindow(b);
+  return {
+    title: `SP Car Clean — ${bkLabel(b)}`,
+    details: `Código: ${b.id}\n` +
+      `Entrada do veículo: ${fmtDateShort(start)} às ${CFG.dropoffTime}\n` +
+      `Retirada: ${fmtDateShort(end)} às ${CFG.pickupTime}\n` +
+      (b.status === 'pending' ? 'Aguardando aprovação — a data pode mudar.\n' : '') +
+      `Acompanhe: https://www.spcarclean.com.br/?consulta=${b.id}`,
+    location: b.approvedLocation || CFG.location
+  };
+}
+function googleCalendarUrl(b) {
+  const { start, end } = _bkWindow(b);
+  const t = _bkCalendarText(b);
+  return 'https://calendar.google.com/calendar/render?' + new URLSearchParams({
+    action: 'TEMPLATE', text: t.title, details: t.details, location: t.location,
+    dates: `${_utcStamp(start, CFG.dropoffTime)}/${_utcStamp(end, CFG.pickupTime)}`
+  }).toString();
+}
+// Arquivo .ics (Apple Agenda, Outlook, Samsung...). UID fixo: baixar de novo atualiza o evento.
+const _extrasBookings = {}; // agendamentos com botões na tela (para o .ics)
+function downloadBookingIcs(id) {
+  const b = _extrasBookings[id] || _bookings.find(x => x.id === id);
+  if (!b) return;
+  const { start, end } = _bkWindow(b);
+  const t = _bkCalendarText(b);
+  const icsEsc = v => String(v).replace(/\\/g, '\\\\').replace(/[,;]/g, m => '\\' + m).replace(/\n/g, '\\n');
+  const ics = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//SP Car Clean//Agendamento//PT-BR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${b.id}@spcarclean.com.br`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]|\.\d{3}/g, '')}`,
+    `DTSTART:${_utcStamp(start, CFG.dropoffTime)}`,
+    `DTEND:${_utcStamp(end, CFG.pickupTime)}`,
+    `SUMMARY:${icsEsc(t.title)}`,
+    `LOCATION:${icsEsc(t.location)}`,
+    `DESCRIPTION:${icsEsc(t.details)}`,
+    'BEGIN:VALARM', 'TRIGGER:-PT12H', 'ACTION:DISPLAY', 'DESCRIPTION:Lembrete SP Car Clean', 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR'
+  ].join('\r\n');
+  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = `spcarclean-${b.id}.ics`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// Botões "adicionar à agenda" + "avisos no celular" de um agendamento ativo.
+function clientExtrasHtml(b, email, opts = {}) {
+  if (!b || !['pending', 'approved', 'confirmed'].includes(b.status)) return '';
+  _extrasBookings[b.id] = b;
+  const pending = b.status === 'pending';
+  const mail = String(email || b.email || '').replace(/"/g, '');
+  return `<div class="client-extras">
+    <a href="${googleCalendarUrl(b)}" target="_blank" rel="noopener noreferrer">📅 Google Agenda${pending ? ' (a confirmar)' : ''}</a>
+    <button type="button" onclick="downloadBookingIcs('${b.id}')">🗓️ Apple / Outlook</button>
+    ${opts.push === false ? '' : `<button type="button" data-id="${b.id}" data-email="${mail}" onclick="enableBookingPush(this)">🔔 Avisos no celular</button>`}
+    <div class="client-extras-msg"></div>
+  </div>`;
+}
+
+const _PUSH_MSGS = {
+  ok:          '✅ Pronto! Você vai receber neste aparelho os avisos de mudança no seu agendamento.',
+  install:     '📲 No iPhone os avisos chegam pelo app. Instale o app e toque em "Avisos no celular" por lá.',
+  denied:      '🔕 As notificações estão bloqueadas neste navegador. Libere nas configurações do site e tente de novo.',
+  unsupported: 'Este navegador não recebe notificações. Você continua recebendo tudo por e-mail.',
+  error:       'Não foi possível ativar agora. Tente de novo em instantes.'
+};
+// Ativa o push do agendamento (btn.dataset.id/email) ou da conta (sem id).
+async function enableBookingPush(btn) {
+  const box = btn.closest('.client-extras, .client-push-box');
+  const msg = box && box.querySelector('.client-extras-msg');
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Ativando...';
+  const result = window.pwaEnableClientPush
+    ? await window.pwaEnableClientPush({ bookingId: btn.dataset.id, email: btn.dataset.email })
+    : 'unsupported';
+  btn.disabled = false;
+  btn.textContent = result === 'ok' ? '🔔 Avisos ativados' : label;
+  if (msg) {
+    msg.innerHTML = _PUSH_MSGS[result] || _PUSH_MSGS.error;
+    if (result === 'install') msg.innerHTML += ` <a style="color:var(--blue);cursor:pointer;font-weight:700" onclick="openInstallApp('cliente')">Como instalar →</a>`;
+  }
 }
 
 // ============================================================
@@ -1220,6 +1323,7 @@ function _renderStatusResult(b) {
           : ''}
       </div>
     </div>
+    ${clientExtrasHtml(b, document.getElementById('statusEmailInput')?.value)}
     ${confirmBtn}
     ${rescheduleBtn}
     ${cancelBtn}`;
@@ -2150,6 +2254,7 @@ function renderClientAccount() {
         <button class="btn-ghost" onclick="openReschedule('${b.id}');closeModal('clientAccountModal')">📅 Reagendar</button>
         <button class="btn-reject" onclick="confirmClientCancel('${b.id}');closeModal('clientAccountModal')">🚫 Cancelar</button>
       </div>` : ''}
+      ${actions ? clientExtrasHtml(b, b.email, { push: false }) : ''}
       ${b.checkin ? _buildCheckinSummaryHtml(b.checkin) : ''}
     </div>`;
   };
@@ -2168,6 +2273,12 @@ function renderClientAccount() {
         <div class="loyalty-points-label">Equivale a ${pointsValue} de desconto<br/>Mín. para resgatar: ${CFG.minPointsRedeem} pts</div>
       </div>
     </div>` : ''}
+    <div class="client-booking-card client-push-box" style="margin-bottom:.8rem">
+      <div style="font-weight:700;margin-bottom:.3rem">🔔 Avisos no celular</div>
+      <div style="font-size:.8rem;color:var(--muted);margin-bottom:.6rem">Receba aqui quando seu orçamento for aprovado, o check-in for feito, a data mudar ou o serviço ficar pronto.</div>
+      <button class="btn-ghost" style="font-size:.78rem;padding:.45rem 1rem" onclick="enableBookingPush(this)">${window.pwaPushState && window.pwaPushState() === 'granted' ? '🔔 Avisos ativados — atualizar' : '🔔 Ativar avisos'}</button>
+      <div class="client-extras-msg" style="margin-top:.4rem"></div>
+    </div>
     <h4 class="client-section-title">📅 Próximos Agendamentos (${upcoming.length})</h4>
     ${upcoming.length ? upcoming.map(b => bCard(b, true)).join('') : '<p class="client-empty">Nenhum agendamento futuro.</p>'}
     ${suggestion ? `<div class="client-booking-card" style="border-color:var(--accent);margin-top:.8rem">
@@ -3815,6 +3926,10 @@ async function doApprove(id) {
   closeModal('detailModal');
   renderAdminBookings();
 
+  notifyClientPush(b.id, '✅ Orçamento aprovado',
+    `${bkLabel(b)} · entrada ${fmtDateShort(startDate)} · ${fmtMoney(priceWithFee)}. ` +
+    (paymentUrl ? 'Toque para ver e pagar.' : 'Toque para ver e confirmar.'));
+
   // Abrir WhatsApp com link de pagamento
   const _waPhone = buildWaPhone(b.phone);
   const _waMsg = encodeURIComponent(
@@ -3888,6 +4003,7 @@ function rejectBooking(id) {
   if(b) { b.status = 'rejected'; b.rejectedAt = new Date().toISOString(); }
   setBookings(bookings);
   renderAdminBookings();
+  if(b) notifyClientPush(b.id, '❌ Solicitação não aprovada', `Seu pedido ${b.id} não pôde ser atendido. Fale conosco pelo WhatsApp para outra data.`);
 }
 
 function deleteBooking(id) {
@@ -4404,30 +4520,12 @@ function _ciToggle(key) {
   det.style.display = isAv ? 'none' : 'block';
 }
 
-// Envia foto/vídeo do painel direto para o S3 (link assinado gerado pela função
-// media-upload, só para o admin) e devolve o endereço público em /media/...
-async function uploadMedia(kind, file, bookingId) {
-  const user = firebase.auth().currentUser;
-  if (!user) throw new Error('Sessão expirada — faça login novamente');
-  const contentType = file.type || 'application/octet-stream';
-  const prep = await fetch('/api/media-upload', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + await user.getIdToken() },
-    body: JSON.stringify({ kind, contentType, size: file.size, bookingId })
-  });
-  const data = await prep.json().catch(() => ({}));
-  if (!prep.ok || !data.uploadUrl) throw new Error(data.error || 'não foi possível preparar o envio');
-  const put = await fetch(data.uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: file });
-  if (!put.ok) throw new Error('falha no envio do arquivo (' + put.status + ')');
-  return data.url;
-}
-
 async function _ciUploadPhoto(key, input) {
   if (!input.files?.[0] || !_checkinBookingId) return;
   const ps = document.getElementById('ci-ps-' + key);
   if (ps) ps.textContent = '⏳';
   try {
-    const url = await uploadMedia('checkin', input.files[0], _checkinBookingId);
+    const url = await uploadMedia(input.files[0], 'checkin', _checkinBookingId);
     _checkinPhotos[key] = url;
     if (ps) ps.textContent = '✅';
     const row = ps.closest('.ci-photo-row');
@@ -5979,8 +6077,8 @@ async function savePortfolioItem() {
 
   try {
     const ts = Date.now();
-    setP(10);
-    const url = await uploadMedia('portfolio', file);
+    setP(5);
+    const url = await uploadMedia(file, 'gallery', null, f => setP(5 + Math.round(f * 85)));
     setP(90);
     await _portfolioRef.push({ url, caption, type: isVideo ? 'video' : 'image', createdAt: ts });
     setP(100);
@@ -6084,12 +6182,13 @@ async function saveGalleryItem() {
   const setP = p => { if (fill) fill.style.width = p + '%'; };
 
   try {
-    const ts   = Date.now();
+    const ts = Date.now();
+
     setP(5);
-    const beforeUrl = await uploadMedia('gallery', fileBefore);
+    const beforeUrl = await uploadMedia(fileBefore, 'gallery', null, f => setP(5 + Math.round(f * 45)));
 
     setP(55);
-    const afterUrl = await uploadMedia('gallery', fileAfter);
+    const afterUrl = await uploadMedia(fileAfter, 'gallery', null, f => setP(55 + Math.round(f * 35)));
 
     setP(90);
     await _galleryRef.push({ caption, beforeUrl, afterUrl, createdAt: ts });
@@ -6622,6 +6721,16 @@ function renderAdminConfig() {
       <div id="cfgAdminDeviceMsg" style="font-size:.74rem;color:var(--green);margin-top:.5rem;display:none"></div>
     </div>
     <div class="admin-panel" style="max-width:520px">
+      <h3>📅 Google Agenda</h3>
+      <p style="font-size:.78rem;color:var(--muted);line-height:1.55;margin-bottom:.8rem">
+        Os agendamentos entram sozinhos na agenda do Google de ${CFG.adminEmail} a cada 15 minutos.
+        Pendentes aparecem com ⏳. Ao aprovar, o cliente recebe o convite e o evento fica na agenda dele —
+        reagendou, muda lá; cancelou, some.
+      </p>
+      <button class="btn-primary" onclick="syncGoogleCalendar(this)">🔄 Sincronizar agora</button>
+      <div id="gcalSyncMsg" style="font-size:.76rem;margin-top:.6rem;line-height:1.5"></div>
+    </div>
+    <div class="admin-panel" style="max-width:520px">
       <h3>⭐ Fidelidade & Cupons</h3>
       <div class="form-row">
         <div class="form-group"><label>Pontos por R$1 gasto</label><input id="cfgPtsReal" type="number" value="${CFG.pointsPerReal}" min="0" step="0.5"/></div>
@@ -6750,6 +6859,36 @@ function saveConfig() {
   }).then(() => alert('Configurações salvas!')).catch(() => alert('Erro ao salvar. Verifique a conexão.'));
   else alert('Configurações salvas localmente!');
 }
+// Força a sincronização com o Google Agenda (normalmente roda sozinha a cada 15 min).
+async function syncGoogleCalendar(btn) {
+  const msg = document.getElementById('gcalSyncMsg');
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Sincronizando...';
+  try {
+    const resp = await fetch('/api/calendar-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + await firebase.auth().currentUser.getIdToken() }
+    });
+    const r = await resp.json().catch(() => ({}));
+    if (r.skipped === 'google-calendar-not-configured') {
+      msg.style.color = 'var(--orange)';
+      msg.textContent = '⚠️ Google Agenda ainda não conectado. Siga o passo a passo "Google Agenda" do README (uma vez só).';
+    } else if (!resp.ok || r.error) {
+      msg.style.color = 'var(--red)';
+      msg.textContent = '❌ Falhou: ' + (r.error || resp.status);
+    } else {
+      msg.style.color = r.errors && r.errors.length ? 'var(--orange)' : 'var(--green)';
+      msg.textContent = `✓ ${r.upserted} evento(s) atualizado(s), ${r.deleted} removido(s), ${r.unchanged} sem mudança` +
+        (r.partial ? ' — ainda há mais; a próxima rodada continua.' : '.') +
+        (r.errors && r.errors.length ? ` ${r.errors.length} erro(s): ${r.errors[0].error}` : '');
+    }
+  } catch (e) {
+    msg.style.color = 'var(--red)';
+    msg.textContent = '❌ Falhou: ' + e.message;
+  }
+  btn.disabled = false; btn.textContent = label;
+}
+
 // Liga/desliga a abertura direta na tela de senha ao iniciar o app neste aparelho.
 function toggleAdminDevice(on) {
   setAdminDevice(on);
@@ -7163,7 +7302,6 @@ _buildHeroCarousel(HERO_FALLBACK);
     authDomain: "sp-car-clean.firebaseapp.com",
     databaseURL: "https://sp-car-clean-default-rtdb.firebaseio.com",
     projectId: "sp-car-clean",
-    storageBucket: "sp-car-clean.firebasestorage.app",
     messagingSenderId: "726947312422",
     appId: "1:726947312422:web:f6a0bcebc57f19b3f107e7"
   };
@@ -7304,6 +7442,8 @@ _buildHeroCarousel(HERO_FALLBACK);
         if (window.pwaRegisterAdminPush) window.pwaRegisterAdminPush();
         return;
       }
+      // Cliente que já liberou as notificações: mantém o aparelho ligado à conta.
+      if (window.pwaEnableClientPush) window.pwaEnableClientPush({ silent: true });
       // Cliente logado — carrega perfil e os próprios agendamentos (via índice)
       _clientProfilesRef.child(user.uid).once('value', snap => {
         _clientProfile = snap.val() || { uid: user.uid, email: user.email };
@@ -7423,9 +7563,60 @@ const EMAILJS_SERVICE = (window.__ENV && window.__ENV.EMAILJS_SERVICE_ID) || '';
 })();
 
 function sendEmail(templateId, params) {
+  // Toda mudança que o admin comunica ao cliente por e-mail também vira push
+  // no celular dele (se ele ativou as notificações).
+  if (isAdmin() && params && params.booking_id && params.titulo && params.to_email &&
+      String(params.to_email).toLowerCase() !== CFG.adminEmail) {
+    notifyClientPush(params.booking_id, params.titulo, params.mensagem);
+  }
   if(typeof emailjs === 'undefined' || EMAILJS_SERVICE.startsWith('%%')) return;
   emailjs.send(EMAILJS_SERVICE, templateId, params)
     .catch(e => console.warn('EmailJS:', e));
+}
+
+// Push no celular do cliente sobre o agendamento (função notify-client, só admin).
+// O destino sai do agendamento no servidor. Best-effort: nunca trava o painel.
+async function notifyClientPush(bookingId, title, message) {
+  try {
+    const user = firebase.auth().currentUser;
+    if (!user || !isAdmin()) return;
+    const body = String(message || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    await fetch('/api/notify-client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + await user.getIdToken() },
+      body: JSON.stringify({ bookingId, title: String(title || '').replace(/ — SP Car Clean$/, ''), body })
+    });
+  } catch (e) { console.warn('notify-client:', e); }
+}
+
+// Envia uma foto/vídeo do painel para o S3 (bucket de mídia, servido em /media/).
+// A função upload-url (só admin) devolve uma URL pré-assinada; o arquivo vai
+// direto do navegador para o bucket. Retorna a URL pública do arquivo.
+const _MEDIA_TYPES = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif', heic:'image/heic', heif:'image/heif', mp4:'video/mp4', mov:'video/quicktime', webm:'video/webm' };
+async function uploadMedia(file, folder, bookingId, onProgress) {
+  const user = firebase.auth().currentUser;
+  if (!user) throw new Error('faça login novamente');
+  const ext = String(file.name || '').split('.').pop().toLowerCase();
+  const contentType = file.type || _MEDIA_TYPES[ext] || '';
+  const resp = await fetch('/api/upload-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + await user.getIdToken() },
+    body: JSON.stringify({ folder, bookingId: bookingId || undefined, filename: file.name, contentType, size: file.size })
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data.ok) throw new Error(data.error || ('falha ao preparar o envio (' + resp.status + ')'));
+
+  await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', data.uploadUrl);
+    xhr.setRequestHeader('Content-Type', contentType);
+    xhr.setRequestHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    if (onProgress) xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    xhr.onload  = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error('envio recusado (' + xhr.status + ')'));
+    xhr.onerror = () => reject(new Error('falha de rede no envio'));
+    xhr.send(file);
+  });
+  return data.url;
 }
 
 // ============================================================
@@ -7435,15 +7626,47 @@ renderServices();
 updateWaLink();
 _updateClientNavUI();
 
+// Qual app instalado abriu a página: cada manifesto tem o seu start_url
+// (?app=cliente / ?app=admin). Fica na sessão porque alguns fluxos limpam a URL.
+const APP_MODE_KEY = 'spcc.appMode';
+function launchedAppMode() {
+  const m = new URLSearchParams(window.location.search).get('app');
+  if (m === 'admin' || m === 'cliente') {
+    try { sessionStorage.setItem(APP_MODE_KEY, m); } catch (_) {}
+    return m;
+  }
+  try { return sessionStorage.getItem(APP_MODE_KEY); } catch (_) { return null; }
+}
+
 // Entrada do admin:
-//  • app instalado (PWA) → tela de senha em tela cheia, já na primeira abertura
+//  • app da gestão (PWA) → tela de senha em tela cheia, já na primeira abertura
+//  • app do cliente (PWA) → sempre o site
 //  • ?admin na URL (atalho "Painel Admin" do app ou link direto)
 //  • navegador comum sem ?admin → site normal
+// App antigo (instalado antes de existirem os dois apps, sem ?app=) segue a regra
+// do aparelho: tela de senha, salvo se pediram "Ver o site" (appOpensOnAdminGate).
 (function() {
-  const wantsAdmin = window.location.search.includes('admin');
+  const params     = new URLSearchParams(window.location.search);
+  const mode       = launchedAppMode();
+  const wantsAdmin = params.has('admin') || params.get('app') === 'admin';
   const inApp      = isStandaloneApp();
   if (wantsAdmin && !inApp) { openAdminLogin(); return; }
-  if (wantsAdmin || (inApp && appOpensOnAdminGate())) openAdminGate(true);
+  if (wantsAdmin || (inApp && mode !== 'cliente' && appOpensOnAdminGate())) { openAdminGate(true); return; }
+
+  // Atalhos do app do cliente e links dos avisos: ?agendar e ?consulta=CÓDIGO
+  if (params.has('agendar')) { openBooking(); return; }
+  if (params.has('consulta')) {
+    openStatusCheck();
+    const code = (params.get('consulta') || '').trim().toUpperCase();
+    if (code) document.getElementById('statusInput').value = code;
+    // Cliente logado: o e-mail já vem preenchido → consulta direto.
+    const tryAuto = () => {
+      const emailEl = document.getElementById('statusEmailInput');
+      if (isClient() && _authUser?.email && emailEl && !emailEl.value) emailEl.value = _authUser.email;
+      if (code && emailEl && emailEl.value) checkStatus();
+    };
+    setTimeout(tryAuto, 1500);
+  }
 })();
 
 // Gift card activation redirect: ?gift=ok&codigo=GIFT-XXXXXX

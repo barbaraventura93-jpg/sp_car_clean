@@ -679,3 +679,18 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 .ci-sum-avaria-item{margin:.4rem 0}
 .ci-sum-photo{display:block;width:100%;max-width:280px;border-radius:8px;margin-top:.4rem;cursor:pointer;border:2px solid rgba(245,158,11,.3);transition:border-color .2s}
 .ci-sum-photo:hover{border-color:var(--orange)}
+
+/* ===== PWA: baixar o app ===== */
+.pwa-standalone .pwa-site-only,.pwa-installed .pwa-site-only{display:none!important}
+.pwa-banner{position:fixed;left:12px;right:12px;bottom:12px;z-index:900;display:flex;align-items:center;gap:.6rem;background:var(--surface,#0d1420);border:1px solid var(--border-glow);border-radius:14px;padding:.6rem .7rem;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.pwa-banner img{border-radius:9px;flex:0 0 auto}
+.pwa-banner-txt{flex:1;min-width:0;display:flex;flex-direction:column;font-size:.74rem;line-height:1.35;color:var(--muted)}
+.pwa-banner-txt strong{font-family:'Montserrat',sans-serif;font-size:.8rem;color:var(--text)}
+.pwa-banner-btn{background:var(--blue);color:#fff;border:none;border-radius:50px;padding:.45rem .95rem;font-family:'Montserrat',sans-serif;font-weight:800;font-size:.74rem;cursor:pointer}
+.pwa-banner-x{background:none;border:none;color:var(--muted);font-size:.95rem;cursor:pointer;padding:.2rem .3rem}
+.pwa-standalone .pwa-banner,.pwa-installed .pwa-banner{display:none!important}
+/* Ações do cliente no agendamento: agenda + notificações */
+.client-extras{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.8rem}
+.client-extras a,.client-extras button{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:.35rem;background:transparent;border:1px solid var(--border-glow);color:var(--text);border-radius:6px;padding:.5rem .7rem;font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap}
+.client-extras a:hover,.client-extras button:hover{background:var(--blue-lt)}
+.client-extras-msg{flex-basis:100%;font-size:.74rem;color:var(--muted);line-height:1.45}
