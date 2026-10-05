@@ -151,8 +151,8 @@ Antes de eu escrever a Infraestrutura-como-Código, preciso destas escolhas (pos
 | Passo | Quem | Ação |
 |---|---|---|
 | 5.1 | 🤖 | **EmailJS → Amazon SES**: reescrever `lib/core/email.js`; 👤 verificar domínio no SES e sair do *sandbox* |
-| 5.2 | 🤖 | **Storage**: copiar objetos do Firebase Storage → **S3**; reescrever refs de imagem no `app.js` |
-| 5.3 | — | **FCM**: manter (nenhuma mudança) — mais barato |
+| 5.2 | ✅ | **Storage → S3 (feito):** bucket de mídia `infra/media.tf` servido em `/media/*`; o painel envia direto ao S3 com URL pré-assinada (`functions/upload-url.js`); `scripts/migrate-storage-to-s3.js` copia os arquivos antigos e troca as URLs no RTDB; `storage.rules` fica só leitura até apagar o bucket. Passo a passo: README → "Fotos e vídeos (S3)" |
+| 5.3 | ✅ | **FCM → Web Push padrão (feito):** push do admin e dos clientes sem Firebase (`infra/push.tf`, `functions/lib/webpush.js`) |
 | 5.4 | 🤖 | (Opcional) Avaliar migração da IA para **Bedrock** |
 
 **Validação:** e-mails saem pelo SES; fotos carregam do S3.

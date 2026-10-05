@@ -45,6 +45,8 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - **Reagendamento self-service**: cliente solicita nova data com justificativa; admin aprova ou rejeita
 - **Cancelamento self-service**: política de reembolso calculada automaticamente por dias úteis
 - **Confirmação automática por e-mail** via EmailJS em cada mudança de status relevante
+- **Avisos no celular** (push) a cada mudança do serviço: orçamento aprovado, pagamento confirmado, reagendamento, check-in, conclusão, cancelamento
+- **Adicionar à agenda**: botões **Google Agenda** e **Apple / Outlook (.ics)** na confirmação, na consulta por código e em Minha Conta; depois da aprovação o cliente também recebe o **convite do Google Agenda**, que se atualiza sozinho
 - Coleta de **bairro e CEP** do cliente para mapeamento geográfico
 - **Pagamento online via InfinitePay** (PIX + cartão de crédito): link de pagamento gerado automaticamente no momento da aprovação; webhook confirma o pagamento no Firebase
 
@@ -62,8 +64,8 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - Cada item tem toggle **OK / Avaria** — itens com avaria expandem campo de descrição + upload de foto
 - Registro de **km no odômetro** e **nível de combustível** na entrada
 - Campo de observações gerais (acessórios, objetos no interior etc.)
-- Fotos armazenadas no **Firebase Storage** (`checkin/{bookingId}/`)
-- Ao finalizar: envia **e-mail** (template_update) e abre **WhatsApp** ao cliente com o resumo completo
+- Fotos armazenadas no **S3 da AWS** (`media/checkin/{bookingId}/`, nome aleatório — servidas pelo CloudFront em `/media/…`)
+- Ao finalizar: envia **e-mail** (template_update), **push no celular do cliente** (se ele ativou os avisos) e abre **WhatsApp** com o resumo completo
 - Resumo do check-in visível no detalhe do agendamento (admin) e em **Minha Conta** (cliente) com miniaturas clicáveis
 - Badge **"📋 check-in"** na lista de agendamentos do admin
 - Após check-in concluído, cliente **não pode mais reagendar ou cancelar** — veículo já entregue
@@ -79,7 +81,9 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - **Alerta de capacidade** por dia (`maxPerDay` configurável)
 - **Nota do agendamento** (`adminNotes`): observação escrita na aprovação e **compartilhada com o cliente** — aparece como "Nota" na consulta de status e como "Obs" no WhatsApp de aprovação
 - Contato direto com o cliente via **WhatsApp** a partir do painel
-- **Notificação em tempo real via Telegram** a cada novo agendamento, reagendamento ou cancelamento
+- **Notificação em tempo real via Telegram e push no celular** a cada novo agendamento, reagendamento ou cancelamento
+- **Avisos diários no celular** (07h30): serviços com entrega nos próximos dias e produtos abaixo do mínimo no estoque
+- **Google Agenda**: todos os agendamentos aparecem sozinhos na agenda do Google do admin (ver [Google Agenda](#google-agenda))
 - **Exportação de dados** em JSON
 
 ### Agendamento Manual pelo Admin
@@ -147,7 +151,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - Aba dedicada **📸 Galeria** no painel administrativo
 - Upload de foto **ANTES** + foto **DEPOIS** diretamente pelo admin (máx 5 MB cada)
 - Barra de progresso durante o upload
-- Fotos armazenadas no **Firebase Storage**; URLs e legendas no Firebase Realtime DB
+- Fotos armazenadas no **S3 da AWS** (`media/gallery/`, upload direto do navegador com URL pré-assinada); URLs e legendas no Firebase Realtime DB
 - Lista de comparações salvas com thumbnails e botão de remoção
 - Galeria pública atualiza em tempo real após cada adição ou remoção, sem redeploy
 
@@ -218,11 +222,14 @@ auto-desliga ao estourar o teto (avisa via Telegram).
   (`/stockRecipes`) — quanto de cada insumo cada serviço consome
 - Agente de IA **Previsão de Reposição** cruza a agenda com o estoque e alerta sobre itens
   prestes a acabar
+- **Push diário no celular do admin** (07h30, `admin-alerts`) com os produtos abaixo do
+  mínimo cadastrado
 
 ### Configurações do sistema (admin)
 - WhatsApp, endereço/local de entrega, horários de entrada e saída, máximo de agendamentos por dia
 - Troca de senha administrativa
 - Segurança do aparelho (abrir direto na tela de senha) e registro de push
+- **Google Agenda**: botão **🔄 Sincronizar agora** (normalmente a sincronização roda sozinha a cada 15 min)
 - Limpeza total de dados
 
 ---
@@ -233,7 +240,7 @@ auto-desliga ao estourar o teto (avisa via Telegram).
 |---|---|
 | Frontend | HTML5, CSS3, JavaScript puro (sem frameworks) |
 | Banco de dados | Firebase Realtime Database |
-| Armazenamento de imagens | Firebase Storage (galeria antes/depois) |
+| Armazenamento de imagens e vídeos | AWS S3 (bucket de mídia) + CloudFront em `/media/*` — galeria, carrossel e fotos do check-in |
 | Autenticação | Firebase Auth (e-mail + senha) |
 | Hosting | AWS S3 + CloudFront |
 | Backend | AWS Lambda + API Gateway (HTTP API), segredos no SSM Parameter Store, crons no EventBridge Scheduler |
@@ -241,7 +248,9 @@ auto-desliga ao estourar o teto (avisa via Telegram).
 | Domínio | spcarclean.com.br (Registro.br + Route 53, certificado ACM) |
 | Pagamento | InfinitePay (PIX + cartão) via funções no Lambda |
 | Inteligência Artificial | Claude API (Anthropic) via funções no Lambda (`ai` + `ai-dispatcher`) |
-| Notificações | AWS Lambda + EmailJS + Telegram Bot API + Web Push padrão (VAPID, sem Firebase) |
+| Notificações | AWS Lambda + EmailJS + Telegram Bot API + Web Push padrão (VAPID, sem Firebase) para o admin **e para os clientes** |
+| Agenda | Google Calendar API (OAuth do admin) — agendamentos na agenda do admin, cliente como convidado; links Google Agenda / `.ics` para o cliente |
+| App instalável | 2 PWAs: **app do cliente** (`manifest.webmanifest`) e **app da gestão** (`admin.webmanifest`) |
 | E-mail automático de aniversário | Cron diário na AWS (EventBridge Scheduler → Lambda) + EmailJS REST API |
 | Mapa | Leaflet.js + OpenStreetMap + Nominatim (geocoding) |
 | Fontes | Google Fonts (Montserrat + Open Sans) |
@@ -250,21 +259,29 @@ auto-desliga ao estourar o teto (avisa via Telegram).
 
 ## Configuração rápida
 
-Todas as configurações do site ficam no bloco `CFG` dentro do `index.html`:
+Todas as configurações do site ficam no bloco `CFG` no início do `app.js`
+(WhatsApp, endereço, horários e lotação também podem ser alterados pelo painel, em Configurações):
 
 ```js
 const CFG = {
-  whatsapp:    '11926697474',       // número para o botão WhatsApp
-  location:    'São Paulo, SP',     // endereço exibido no site
-  dropoffTime: '08:00',             // horário de entrada do veículo
-  pickupTime:  '18:00',             // horário de saída
-  adminEmail:  'seu@email.com',     // e-mail do administrador
-  maxPerDay:   2,                   // máximo de agendamentos por dia
-  pointsPerReal: 1,                 // pontos concedidos por R$ gasto
-  pointsValue:   0.05,              // valor em R$ de cada ponto
-  pointsMin:     100,               // mínimo de pontos para resgate
+  whatsapp: '11926697474',                 // número para o botão WhatsApp
+  location: 'Rua São José, 301 — Parque Santo Antônio, Guarulhos-SP', // endereço exibido no site
+  dropoffTime: '08:00',                    // horário de entrada do veículo
+  pickupTime: '18:00',                     // horário de saída
+  adminEmail: 'spcarclean0@gmail.com',     // e-mail (login) do administrador
+  maxPerDay: 2,                            // máximo de agendamentos por dia
+  pointsPerReal: 1,                        // pontos por R$1 gasto
+  pointsToReal: 0.10,                      // 1 ponto = R$0,10 de desconto
+  minPointsRedeem: 50,                     // mínimo de pontos para resgatar
 };
 ```
+
+> **E-mail do admin: `spcarclean0@gmail.com`.** É o login do painel (o app entra só com a
+> senha, nesse e-mail), o e-mail que recebe os avisos internos e o dono da agenda do Google
+> sincronizada. Aparece também nas regras do Realtime Database (`database.rules.json`), no
+> `ADMIN_EMAIL` das funções e em `functions/lib/admin-auth.js`. Para trocar, mude **todos**
+> esses pontos juntos e crie antes a conta nova no Firebase Auth — senão o painel fica
+> inacessível.
 
 ---
 
@@ -272,10 +289,13 @@ const CFG = {
 
 ### Pré-requisitos
 - Conta AWS com a infraestrutura de `infra/` aplicada (passo a passo em **[`infra/README.md`](infra/README.md)**)
-- Projeto [Firebase](https://console.firebase.google.com) com Realtime Database, Auth e Storage habilitados (plano Blaze)
+- Projeto [Firebase](https://console.firebase.google.com) com Realtime Database e Auth habilitados (o Storage não é mais usado — fotos e vídeos ficam no S3)
 - Domínio no Registro.br com os nameservers do Route 53
 
 Cada merge na `main` publica **funções e site** pelo GitHub Actions (`.github/workflows/deploy-aws.yml`).
+Função nova em `functions/` ou recurso novo na AWS exige `terraform apply` **antes** do merge
+(ver [`infra/README.md`](infra/README.md)) — é o caso desta versão (bucket de mídia, `upload-url`,
+`notify-client`, `calendar-sync`, `admin-alerts`).
 
 ### Variáveis de ambiente (SSM Parameter Store)
 
@@ -289,7 +309,7 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
 | `FIREBASE_API_KEY` | Chave de API do Firebase (obrigatória — injetada no build) |
 | `FIREBASE_DATABASE_URL` | URL do Realtime Database, ex: `https://projeto-default-rtdb.firebaseio.com` |
 | `FIREBASE_DATABASE_SECRET` | Token legado do Firebase (webhook InfinitePay + cron de aniversário). **Secreto** |
-| `ADMIN_EMAIL` | E-mail do administrador — usado server-side pela função `ai` para validar o token do painel (padrão: `spcarclean0@gmail.com`) |
+| `ADMIN_EMAIL` | E-mail do administrador — usado server-side para validar o token do painel (funções `ai`, `push-subscription`, `upload-url`, `notify-client`, `calendar-sync`). Padrão: `spcarclean0@gmail.com` |
 | `EMAILJS_SERVICE_ID` | ID do serviço no EmailJS |
 | `EMAILJS_PUBLIC_KEY` | Chave pública do EmailJS |
 | `EMAILJS_PRIVATE_KEY` | Chave privada do EmailJS (para envio server-side). **Secreto** |
@@ -304,6 +324,15 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
 | `REFERRAL_FRIEND_PCT` | (Opcional) % de desconto do cupom do amigo indicado no programa Indique um Amigo (padrão: `15`) |
 | `REFERRAL_REFERRER_PCT` | (Opcional) % de desconto do cupom de recompensa para quem indicou (padrão: `15`) |
 | `REFERRAL_VALID_DAYS` | (Opcional) Validade em dias dos cupons de indicação (padrão: `90`) |
+| `GOOGLE_CLIENT_ID` | Credencial OAuth (tipo "App para computador") do Google Agenda. Gravada pelo `scripts/google-calendar-auth.js` |
+| `GOOGLE_CLIENT_SECRET` | Segredo da credencial OAuth do Google Agenda. **Secreto** |
+| `GOOGLE_REFRESH_TOKEN` | Autorização do admin para a função `calendar-sync` escrever na agenda dele. **Secreto** |
+| `GOOGLE_CALENDAR_ID` | (Opcional) Agenda que recebe os eventos (padrão: `primary`, a principal de spcarclean0@gmail.com) |
+| `GOOGLE_CALENDAR_INVITE_CLIENTS` | (Opcional) `false` desliga o convite ao cliente (padrão: ligado — o cliente recebe o evento na agenda dele após a aprovação) |
+| `ADMIN_ALERT_DAYS` | (Opcional) Quantos dias à frente o aviso diário de entregas olha (padrão: `2`) |
+
+> `MEDIA_BUCKET` e `MEDIA_BASE_URL` (bucket de mídia e endereço `https://<site>/media`) são
+> definidos pelo Terraform direto no Lambda — não vão no SSM.
 
 > As variáveis marcadas **Secreto** nunca podem aparecer no front-end nem ser
 > commitadas — só existem no SSM Parameter Store (criptografadas) e são lidas
@@ -316,8 +345,8 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
 > **As regras agora são versionadas** em [`database.rules.json`](database.rules.json) e
 > referenciadas no `firebase.json`. Publique-as com `firebase deploy --only database`
 > (preferível — mantém Console e repositório em sincronia) ou cole o conteúdo do arquivo
-> no Console. O bloco abaixo é uma cópia comentada; o arquivo versionado usa o e-mail real
-> do admin em vez do placeholder `ADMIN_EMAIL`.
+> no Console. O bloco abaixo é uma cópia do arquivo versionado, com o e-mail do admin
+> (`spcarclean0@gmail.com`).
 
 > **Privacidade dos agendamentos.** A coleção `bookings` **não** é mais legível
 > publicamente (isso expunha nome, telefone, e-mail e bairro de todos os clientes).
@@ -348,36 +377,36 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
 {
   "rules": {
     "bookings": {
-      ".read":  "auth != null && auth.token.email == 'ADMIN_EMAIL'",
-      ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      ".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
       "$id": {
-        ".read":  "auth != null && (auth.token.email == 'ADMIN_EMAIL' || data.child('clientUid').val() == auth.uid || data.child('email').val() == auth.token.email)",
+        ".read":  "auth != null && (auth.token.email == 'spcarclean0@gmail.com' || data.child('clientUid').val() == auth.uid || data.child('email').val() == auth.token.email)",
         ".write": "(!data.exists() && newData.exists()) || (data.exists() && newData.exists() && newData.child('id').val() == data.child('id').val() && newData.child('createdAt').val() == data.child('createdAt').val() && newData.child('email').val() == data.child('email').val() && newData.child('name').val() == data.child('name').val() && newData.child('phone').val() == data.child('phone').val() && newData.child('price').val() == data.child('price').val() && newData.child('finalPrice').val() == data.child('finalPrice').val() && newData.child('priceWithFee').val() == data.child('priceWithFee').val() && newData.child('paidAmount').val() == data.child('paidAmount').val() && newData.child('paymentTransactionId').val() == data.child('paymentTransactionId').val() && newData.child('paymentConfirmedAt').val() == data.child('paymentConfirmedAt').val() && (newData.child('status').val() == data.child('status').val() || newData.child('status').val() == 'cancelled'))"
       }
     },
-    "dayLoad":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "portfolio":      { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "dayLoad":        { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "portfolio":      { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
     "bookingIndex": {
       "$uid": {
-        ".read":  "auth != null && (auth.uid == $uid || auth.token.email == 'ADMIN_EMAIL')",
-        ".write": "auth != null && (auth.uid == $uid || auth.token.email == 'ADMIN_EMAIL')"
+        ".read":  "auth != null && (auth.uid == $uid || auth.token.email == 'spcarclean0@gmail.com')",
+        ".write": "auth != null && (auth.uid == $uid || auth.token.email == 'spcarclean0@gmail.com')"
       }
     },
-    "blocked":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "config":         { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "services":       { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "combos":         { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "gallery":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "clientNotes":    { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "clientLinks":            { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "clientLinkDismissals":   { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "clientOverrides":        { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "coupons":        { ".read": true, ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "referrals":      { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "waitlist":       { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": true },
+    "blocked":        { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "config":         { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "services":       { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "combos":         { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "gallery":        { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "clientNotes":    { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "clientLinks":            { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "clientLinkDismissals":   { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "clientOverrides":        { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "coupons":        { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "referrals":      { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "waitlist":       { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": true },
     "clientProfiles": {
-      ".read":  "auth != null && auth.token.email == 'ADMIN_EMAIL'",
-      ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      ".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
         ".write": "auth != null && auth.uid == $uid"
@@ -385,29 +414,29 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
     },
     "feedback": {
       ".read":  true,
-      ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
       ".indexOn": ["status"],
       "$id": { ".write": "newData.exists()" }
     },
     "giftcards": {
-      ".read":  "auth != null && auth.token.email == 'ADMIN_EMAIL'",
-      ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      ".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
       "$code": {
         ".read":  true,
         ".write": "newData.exists()"
       }
     },
-    "stock":           { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "stockRecipes":    { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "adminPushTokens": { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
+    "stock":           { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "stockRecipes":    { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "adminPushTokens": { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
     "aiConfig": {
-      ".read":  "auth != null && auth.token.email == 'ADMIN_EMAIL'",
-      ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'",
+      ".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
       "concierge": { "enabled": { ".read": true } }
     },
-    "aiUsage":         { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "aiLogs":          { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" },
-    "aiRateLimit":     { ".read": "auth != null && auth.token.email == 'ADMIN_EMAIL'", ".write": "auth != null && auth.token.email == 'ADMIN_EMAIL'" }
+    "aiUsage":         { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "aiLogs":          { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "aiRateLimit":     { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" }
   }
 }
 ```
@@ -424,80 +453,182 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
 > leitura pública porque o **widget concierge** do site consulta esse caminho sem login.
 > As funções do backend escrevem esses nós via Admin SDK (ignoram estas regras).
 
-### Firebase Storage — regras de segurança
+### Fotos e vídeos (S3)
 
-> **Versionadas** em [`storage.rules`](storage.rules) e referenciadas no `firebase.json`.
-> Publique com `firebase deploy --only storage` (ou cole no Console). O bloco abaixo é
-> uma cópia do arquivo versionado.
+Fotos da galeria antes/depois, fotos e vídeos do carrossel "Nossas Obras" e fotos do
+check-in ficam no **bucket de mídia da AWS** (`infra/media.tf`), servido pelo mesmo
+CloudFront do site em `https://www.spcarclean.com.br/media/...`. O **Firebase Storage não é
+mais usado**.
 
+- **Upload:** o painel pede uma URL pré-assinada à função `upload-url` (só com login de
+  admin; aceita imagens até 5 MB e vídeos até 30 MB) e envia o arquivo direto do navegador
+  para o bucket (`PUT`). A URL pública volta para o Realtime Database como antes.
+- **Pastas:** `media/gallery/` (vitrine pública) e `media/checkin/{código}/` (nome com
+  sufixo aleatório: a URL não é adivinhável, como era o `?token=` do Firebase).
+- **Segurança:** bucket privado, sem listagem; só o CloudFront lê e só a role das funções
+  grava. Versionado (versões antigas expiram em 90 dias).
+
+#### Migração do que estava no Firebase Storage
+
+Uma vez só, depois do `terraform apply` desta versão:
+
+```bash
+eval "$(aws configure export-credentials --format env)"    # credenciais AWS no terminal (CloudShell já tem)
+export AWS_REGION=sa-east-1
+export MEDIA_BUCKET=$(cd infra && terraform output -raw media_bucket)
+export MEDIA_BASE_URL=https://www.spcarclean.com.br/media
+export FIREBASE_DATABASE_URL=https://sp-car-clean-default-rtdb.firebaseio.com
+export FIREBASE_DATABASE_SECRET='...'                       # mesmo valor do SSM
+node scripts/migrate-storage-to-s3.js --dry-run             # lista o que vai migrar
+node scripts/migrate-storage-to-s3.js                       # copia para o S3 e troca as URLs no banco
 ```
-rules_version = '2';
-service firebase.storage {
-  match /b/{bucket}/o {
-    match /gallery/{file} {
-      allow read: if true;
-      allow write: if request.auth != null;
-    }
-    match /checkin/{allPaths=**} {
-      allow read: if request.auth != null;   // item 7: bloqueia acesso por caminho bruto; URLs com ?token continuam abrindo
-      allow write: if request.auth != null;
-    }
-  }
-}
-```
 
-### App instalável (PWA) e notificações push
+O script procura URLs do Firebase Storage em `/portfolio`, `/gallery` e `/bookings`
+(fotos do check-in), copia cada arquivo para o S3 e grava a URL nova no mesmo lugar. Pode
+rodar de novo sem problema (o que já foi migrado é pulado).
 
-O site é um **PWA**: admin e cliente podem instalá-lo na tela inicial do celular
-("Adicionar à tela de início" no iPhone, "Instalar app" no Android/desktop) e abri-lo
-em tela cheia, como um app nativo — sem loja de aplicativos.
+Depois de conferir o site (carrossel, galeria e um check-in antigo abrindo):
 
-Arquivos que compõem o PWA:
+1. Publique as regras **só leitura** do Storage: `firebase deploy --only storage`
+   ([`storage.rules`](storage.rules) bloqueia qualquer gravação nova — antes, qualquer
+   usuário logado podia gravar).
+2. (Opcional) Guarde uma cópia: `gsutil -m cp -r gs://sp-car-clean.firebasestorage.app ./backup-storage`.
+3. Apague os arquivos do bucket no Console do Firebase (Storage) para não pagar por eles.
+
+### App instalável: app do cliente e app da gestão
+
+O site tem **dois apps instaláveis** (PWA), baixados direto do site, sem loja de
+aplicativos:
+
+| App | Para quem | Manifesto | Abre em | Ícone na tela inicial |
+|---|---|---|---|---|
+| **App do Cliente** | clientes | `manifest.webmanifest` (`id: /?app=cliente`) | site, com atalhos *Agendar* e *Consultar* | "SP Car Clean" |
+| **App da Gestão** | admin/equipe | `admin.webmanifest` (`id: /?utm_source=pwa`) | tela de senha do painel | "SPCC Gestão" |
+
+O `<head>` do `index.html` escolhe o manifesto na hora: a página aberta com `?admin`
+oferece o app da gestão; as demais, o do cliente. O app da gestão herdou o `id` do app
+antigo, então quem já tinha o app instalado continua com ele (agora como app da gestão).
+
+**Como baixar**
+
+- **Cliente:** botão **📲 Baixar app** no menu do site, no rodapé e na faixa que aparece no
+  celular. Link direto para mandar ao cliente: `https://www.spcarclean.com.br/?instalar=1`.
+- **Admin:** botão **📲 Instalar app** no topo do painel, ou o link
+  `https://www.spcarclean.com.br/?admin&instalar=1`.
+- No **Android/Chrome** e no computador aparece o botão **Instalar agora**. No **iPhone**
+  (Safari) o site mostra o passo a passo: Compartilhar ⬆️ → **Adicionar à Tela de Início**.
+- Aberto **dentro do Instagram/WhatsApp/Facebook** (navegador embutido) não dá para
+  instalar: o site detecta e explica como abrir no Safari/Chrome. Esse era o motivo mais
+  comum de "não consigo baixar o app" — e, antes, o botão só existia dentro do painel e só
+  aparecia no Chrome do Android.
+
+Arquivos do PWA:
 
 | Arquivo | Papel |
 |---|---|
-| `manifest.webmanifest` | Nome, ícones, cor de tema, `display: standalone` e atalhos (Admin / Agendar) |
-| `sw.js` | Service worker: cache offline (network-first no HTML, stale-while-revalidate nos assets) e recebimento do push do admin |
+| `manifest.webmanifest` | App do cliente: nome, ícones, `display: standalone`, atalhos Agendar/Consultar |
+| `admin.webmanifest` | App da gestão: abre direto no painel (`/?admin&app=admin`) |
+| `sw.js` | Service worker: cache offline (network-first no HTML, stale-while-revalidate nos assets) e recebimento dos pushes |
 
-**Notificações push do admin** (novo agendamento, reagendamento, cancelamento, etc.)
-chegam direto no celular, além do Telegram. É **Web Push padrão**, sem Firebase:
+O deploy publica `sw.js` e os dois manifestos sem cache longo e com o `Content-Type`
+correto (`application/manifest+json`).
 
-- A chave VAPID é criada pelo Terraform (`infra/push.tf`) e fica no SSM; a função
-  `push-subscription` entrega a chave pública ao navegador (`GET /api/push-subscription`).
-- No login do admin, o painel inscreve o aparelho no `sw.js` e envia a inscrição para
-  `POST /api/push-subscription` (só com login de admin). Os aparelhos ficam na tabela DynamoDB
-  `sp-car-clean-push-subscriptions`.
-- A função `notify-booking` envia o push criptografado (`lib/webpush.js`) para todos os
-  aparelhos e remove sozinha os que o navegador invalidou.
+#### Notificações push
 
-O admin ativa o push tocando em **📲 Instalar app** e aceitando as notificações no
-primeiro login pelo celular. No iPhone, o push só funciona com o app **instalado** na tela
-de início (iOS 16.4+).
+É **Web Push padrão** (VAPID, sem Firebase). A chave é criada pelo Terraform
+(`infra/push.tf`); os aparelhos ficam na tabela DynamoDB `sp-car-clean-push-subscriptions`,
+marcados como `admin` ou `client`. No iPhone o push só funciona com o app **instalado**
+(iOS 16.4+).
 
-#### O app do admin abre direto na tela de senha
+**Admin** — ativa sozinho no login pelo celular (aceitando a permissão):
 
-Abrir o app instalado cai **direto na tela de senha do painel**, em tela cheia — sem
-passar pelo site, **já na primeira abertura**. O app é o painel de gestão: o botão
-**📲 Instalar app** só aparece dentro do painel.
+| Aviso | Quando | Função |
+|---|---|---|
+| 🔔 Novo agendamento | na hora | `notify-booking` |
+| 📅 Pedido de reagendamento / 🚫 cancelamento pelo cliente | na hora | `notify-booking` |
+| 🏁 Entregas próximas | todo dia 07h30 — serviços com retirada de hoje até `ADMIN_ALERT_DAYS` dias | `admin-alerts` |
+| 📦 Estoque em falta | todo dia 07h30 — produtos abaixo do mínimo cadastrado | `admin-alerts` |
 
-1. Abriu o app → tela de senha. Se a sessão do Firebase ainda estiver válida, exibe
-   *"Verificando sessão…"* por um instante e entra no painel **sem pedir a senha**.
+Tudo também vai para o Telegram.
+
+**Cliente** — toca em **🔔 Avisos no celular** (na confirmação do agendamento, na consulta
+por código ou em Minha Conta). Sem conta, a inscrição vale para aquele agendamento
+(código + e-mail conferidos no servidor); com conta, para todos os agendamentos dela.
+Recebe um push a cada mudança do serviço:
+
+- orçamento aprovado / solicitação não aprovada;
+- pagamento confirmado (webhook do InfinitePay);
+- reagendamento aprovado ou recusado, data alterada, check-in feito, serviço concluído,
+  cancelamento — toda mensagem que o painel manda ao cliente por e-mail também vira push
+  (`sendEmail` → função `notify-client`).
+
+Tocar no aviso abre a consulta do agendamento (`/?app=cliente&consulta=CÓDIGO`). A função
+`notify-client` só aceita chamada do admin e escolhe o destino pelo próprio agendamento —
+o painel não consegue mandar push para outra pessoa. A tabela guarda só hashes do código,
+da conta e do e-mail do cliente.
+
+#### O app da gestão abre direto na tela de senha
+
+Abrir o **app da gestão** cai **direto na tela de senha do painel**, em tela cheia — sem
+passar pelo site, **já na primeira abertura**. O **app do cliente** sempre abre no site.
+
+1. Abriu o app da gestão → tela de senha. Se a sessão do Firebase ainda estiver válida,
+   exibe *"Verificando sessão…"* por um instante e entra no painel **sem pedir a senha**.
 2. Um login de admin marca o aparelho como sendo da gestão
    (`localStorage` → `spcc.adminDevice`).
 3. Sair do painel dentro do app volta para a tela de senha, não para o site.
 
-Quem instalou o app sem ser da gestão tem o link **Ver o site** na própria tela de
-senha. Num aparelho que **nunca** fez login de admin, esse link também marca
-`spcc.appSiteOnly` — dali em diante o app abre no site, como um visitante. Num
-aparelho da gestão o link é só uma saída pontual: o app continua abrindo no painel.
+O link **Ver o site** na tela de senha é uma saída pontual. Num app **antigo** (instalado
+antes da separação, sem `?app=` no endereço) vale a regra anterior: num aparelho que
+**nunca** fez login de admin, esse link marca `spcc.appSiteOnly` e dali em diante o app
+abre no site.
 
 Outros detalhes:
 
 - Para ligar/desligar num aparelho: **Painel → Configurações → Segurança → 📱 Este
   aparelho**, na opção *"Abrir direto na tela de senha"*.
-- O atalho **Painel Admin** do app (`/?admin`) abre a mesma tela em qualquer aparelho,
-  sem marcá-lo. No navegador comum, `/?admin` abre o modal de senha sobre o site.
+- O atalho **Painel Admin** (`/?admin`) abre a mesma tela em qualquer aparelho, sem
+  marcá-lo. No navegador comum, `/?admin` abre o modal de senha sobre o site.
 - Nada disso depende de rede: os marcadores ficam em `localStorage`, por aparelho.
+
+### Google Agenda
+
+**Admin:** a função `calendar-sync` (a cada 15 min, ou pelo botão **🔄 Sincronizar
+agora** em Configurações) coloca cada agendamento como evento na agenda do Google de
+**spcarclean0@gmail.com**, da entrada (08:00) à retirada (18:00 — horários de
+Configurações). Pendentes aparecem com ⏳; rejeitados, cancelados e excluídos saem da
+agenda. Só o que mudou é enviado ao Google (o hash de cada evento fica em `/calendarSync`).
+
+**Cliente:** depois da aprovação, o cliente entra como **convidado** do evento: o Google
+manda o convite e o evento aparece na agenda dele (Gmail adiciona sozinho) e acompanha as
+mudanças — reagendou, muda lá; cancelou, some. Para desligar o convite:
+`GOOGLE_CALENDAR_INVITE_CLIENTS=false`. Além disso, o cliente tem os botões
+**📅 Google Agenda** e **🗓️ Apple / Outlook** (`.ics`) na confirmação, na consulta e em
+Minha Conta.
+
+**Conectar (uma vez só):**
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → projeto **sp-car-clean**
+   (o mesmo do Firebase) → **APIs e serviços → Biblioteca** → ative a **Google Calendar API**.
+2. **Tela de consentimento OAuth** → tipo **Externo** → nome "SP Car Clean", e-mail
+   spcarclean0@gmail.com → escopo `.../auth/calendar.events` → **Publicar app**
+   ("Em produção"). *Em modo "Teste" a autorização expira em 7 dias.* Não precisa
+   verificação do Google: na autorização aparece "app não verificado" → **Avançado →
+   Acessar**.
+3. **Credenciais → Criar credenciais → ID do cliente OAuth → App para computador**. Copie
+   o ID e a chave secreta.
+4. No CloudShell (ou num terminal com o AWS CLI logado):
+
+   ```bash
+   GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... node scripts/google-calendar-auth.js
+   ```
+
+   Abra o link, entre com **spcarclean0@gmail.com** e aceite. O script grava
+   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_REFRESH_TOKEN` no SSM (ou mostra os
+   comandos). No CloudShell, o navegador não alcança `127.0.0.1`: depois de aceitar, copie
+   a URL da página que não abriu e rode `curl '<url copiada>'` no próprio CloudShell.
+5. Rode o workflow **Deploy to AWS** (Actions → Run workflow) para as funções lerem os
+   segredos e toque em **🔄 Sincronizar agora** no painel.
 
 ### Build
 
@@ -519,20 +650,26 @@ O build injeta a `FIREBASE_API_KEY` no HTML e copia os assets para `dist/`. O de
 sp-car-clean/
 ├── index.html                   # Aplicação completa (site público + painel admin)
 ├── build.js                     # Script de build — injeta variáveis de ambiente
-├── manifest.webmanifest         # Manifesto do PWA (app instalável)
-├── sw.js                        # Service worker: cache offline + push do admin
+├── manifest.webmanifest         # Manifesto do app do cliente (PWA)
+├── admin.webmanifest            # Manifesto do app da gestão (PWA)
+├── sw.js                        # Service worker: cache offline + push (admin e cliente)
 ├── package.json
 ├── firebase.json                # Config Firebase (regras de Database e Storage; hosting migrado p/ AWS)
 ├── database.rules.json          # Regras de segurança do Realtime Database (versionadas)
-├── storage.rules                # Regras de segurança do Firebase Storage (versionadas)
+├── storage.rules                # Firebase Storage só leitura (fotos migradas para o S3)
 ├── assets/
 │   ├── logo.png                 # Logo oficial (PNG com fundo transparente)
 │   └── portfolio/               # Imagens e vídeos do carrossel hero
-├── infra/                       # Terraform: S3, CloudFront, Route 53, ACM, Lambda, API Gateway, crons
-├── scripts/                     # aws-put-secrets.sh (SSM) e aws-bootstrap-tfstate.sh (estado do Terraform)
+├── infra/                       # Terraform: S3 (site e mídia), CloudFront, Route 53, ACM, Lambda, API Gateway, crons
+├── scripts/                     # aws-put-secrets.sh (SSM), aws-bootstrap-tfstate.sh (estado do Terraform),
+│                                # migrate-storage-to-s3.js (Firebase Storage → S3), google-calendar-auth.js
 └── functions/                   # Backend (AWS Lambda; entrada: lib/aws-adapter.js)
         ├── notify-booking.js        # Notifica o admin (Telegram + push)
-        ├── push-subscription.js     # Chave pública VAPID (GET) e inscrição do aparelho do admin (POST)
+        ├── notify-client.js         # Push no celular do cliente quando o serviço muda (chamado pelo painel)
+        ├── push-subscription.js     # Chave pública VAPID (GET) e inscrição do aparelho do admin ou do cliente (POST)
+        ├── upload-url.js            # URL pré-assinada para o painel enviar fotos/vídeos ao S3
+        ├── calendar-sync.js         # Agendamentos → Google Agenda do admin (cron 15 min + botão no painel)
+        ├── admin-alerts.js          # Cron diário: entregas próximas e estoque em falta (push + Telegram)
         ├── create-payment.js        # Gera link de pagamento InfinitePay (agendamento)
         ├── create-gift-payment.js   # Gera link de pagamento InfinitePay (gift card)
         ├── infinitepay-webhook.js   # Confirma pagamento/ativa gift card e atualiza Firebase
@@ -543,7 +680,9 @@ sp-car-clean/
         ├── ai-dispatcher.js         # Cron diário: dispara agentes de IA agendados
         └── lib/
             ├── aws-adapter.js       # Entrada no Lambda: segredos do SSM + normalização do evento
-            ├── webpush.js           # Web Push: VAPID, criptografia aes128gcm, inscrições no DynamoDB
+            ├── webpush.js           # Web Push: VAPID, criptografia aes128gcm, inscrições (admin/cliente) no DynamoDB
+            ├── s3.js                # S3 sem SDK: URL pré-assinada (SigV4) e PUT assinado
+            ├── google-calendar.js   # Google Calendar API: token OAuth e upsert/remoção de eventos
             ├── admin-auth.js        # Confere se o login é do admin (único ponto a trocar na Fase 4)
             ├── guard.js             # Rate-limit por IP + checagem de origem (CORS) das funções públicas
             ├── agents/              # Agentes de IA (concierge, relatorio, upsell, orcamento, …)
@@ -595,6 +734,11 @@ sp-car-clean/
 | Registro histórico com data retroativa e status "Concluído" direto | ✅ |
 | App instalável na tela inicial (PWA) — admin e cliente | ✅ |
 | Notificações push no celular do admin (Web Push padrão, sem Firebase) | ✅ |
+| Dois apps instaláveis: app do cliente e app da gestão (com instrução para iPhone e navegadores embutidos) | ✅ |
+| Push no celular do cliente a cada mudança do serviço | ✅ |
+| Avisos diários ao admin: entregas dos próximos dias e estoque em falta | ✅ |
+| Agendamentos no Google Agenda do admin + convite na agenda do cliente | ✅ |
+| Fotos e vídeos no S3 da AWS (Firebase Storage desativado) | ✅ |
 | App do admin abrindo direto na tela de senha do painel (sem passar pelo site) | ✅ |
 | Central de IA com agentes (concierge, relatório, reativação, upsell, etc.) | ✅ |
 | Chat Concierge público no site | ✅ |

@@ -4,17 +4,21 @@ Terraform de toda a infraestrutura do site e do backend (região `sa-east-1`, ce
 
 | Arquivo | O que cria |
 |---|---|
-| `main.tf` | **S3** (arquivos do site, privado), **CloudFront** (CDN + HTTPS, roteia `/api/*` para a API), registros **Route 53**, **OIDC do GitHub** (deploy sem chave estática) |
+| `main.tf` | **S3** (arquivos do site, privado), **CloudFront** (CDN + HTTPS, roteia `/api/*` para a API e `/media/*` para o bucket de mídia), registros **Route 53**, **OIDC do GitHub** (deploy sem chave estática) |
 | `certificate.tf` | Certificado **ACM** para `spcarclean.com.br` e `*.spcarclean.com.br`, validado por DNS |
 | `api.tf` | **Lambda** (uma por arquivo de `functions/`), **API Gateway HTTP API**, crons no **EventBridge Scheduler**, permissões |
-| `push.tf` | Push do admin: chave **VAPID** (gerada aqui, guardada no SSM) e tabela **DynamoDB** dos aparelhos inscritos |
+| `media.tf` | **S3 de mídia** (substitui o Firebase Storage): fotos/vídeos da galeria e fotos do check-in, privado, servido pelo CloudFront em `/media/*`; CORS para o upload direto do painel |
+| `push.tf` | Push do admin e dos clientes: chave **VAPID** (gerada aqui, guardada no SSM) e tabela **DynamoDB** dos aparelhos inscritos |
 | `versions.tf` | Providers e **backend S3** do estado |
 
 ```
 visitante ──▶ CloudFront ──┬── /*                     ──▶ S3 (site)
-                           ├── /api/*                 ──▶ API Gateway ──▶ Lambda (11 funções)
+                           ├── /media/*               ──▶ S3 (mídia: fotos e vídeos)
+                           ├── /api/*                 ──▶ API Gateway ──▶ Lambda (15 funções)
                            └── /.netlify/functions/*  ──▶ (legado, reescrito p/ /api/* — backlog L1)
-EventBridge Scheduler ──(3 crons diários)──▶ Lambda
+painel admin ──(PUT com URL pré-assinada pela função upload-url)──▶ S3 (mídia)
+EventBridge Scheduler ──(4 crons diários + calendar-sync a cada 15 min)──▶ Lambda
+Lambda calendar-sync ──▶ Google Calendar API (agenda do admin)
 Lambda ──(na inicialização)──▶ SSM Parameter Store /sp-car-clean/* (segredos)
 Estado do Terraform ──▶ S3 sp-car-clean-tfstate-<conta> (versionado, com trava)
 ```
@@ -52,6 +56,12 @@ terraform apply    # digite "yes"
 
 Mudanças no CloudFront levam ~5–10 min para propagar.
 
+> **Esta versão (apps + S3 + Google Agenda) precisa de `terraform apply` antes do
+> merge**: ela cria o bucket de mídia, a rota `/media/*` e as funções novas
+> (`upload-url`, `notify-client`, `calendar-sync`, `admin-alerts`). Sem o apply, o
+> passo "Publicar funções" do deploy falha (de propósito) e o upload de fotos do painel
+> fica sem destino.
+
 ## Deploy do código
 
 Cada merge na `main` roda `.github/workflows/deploy-aws.yml`: publica as **funções** (Lambda) e depois o **site** (S3 + invalidação do CloudFront).
@@ -76,7 +86,10 @@ Depois de mudar um segredo, as funções o leem quando reiniciam: no próximo de
 
 ## Crons
 
-`ai-dispatcher` (08h), `birthday-check` (09h) e `reminder-check` (10h), horário de Brasília. Para pausar todos: `terraform apply -var schedules_enabled=false`.
+`admin-alerts` (07h30 — entregas dos próximos dias e estoque em falta, por push e Telegram),
+`ai-dispatcher` (08h), `birthday-check` (09h) e `reminder-check` (10h), horário de Brasília,
+e `calendar-sync` a cada 15 minutos (Google Agenda). Para pausar todos:
+`terraform apply -var schedules_enabled=false`.
 
 ```bash
 aws scheduler list-schedules --query 'Schedules[].[Name,State]' --output table
@@ -96,4 +109,5 @@ Logs: CloudWatch → Log groups → `/aws/lambda/sp-car-clean-<função>` (reten
 - O endpoint direto do API Gateway recusa requisições que não vêm do CloudFront (cabeçalho secreto `x-origin-verify`).
 - O IP usado no rate-limit vem da borda do CloudFront (`x-viewer-ip`), não de um cabeçalho que o cliente possa forjar.
 - Throttling da API (25 req/s, rajada 50) como teto de custo.
+- Bucket de mídia sem listagem: só o CloudFront lê (`/media/*`) e só a função `upload-url` (com login de admin) gera URL de envio. Fotos de check-in têm nome aleatório (a URL não é adivinhável).
 - Estado do Terraform em bucket privado, versionado (90 dias de histórico), criptografado e só por HTTPS.

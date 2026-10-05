@@ -4,7 +4,7 @@
  *   - Assets estáticos → stale-while-revalidate (rápido offline, atualiza em segundo plano)
  * Bump em CACHE_VERSION invalida caches antigos a cada deploy relevante.
  */
-const CACHE_VERSION = 'spcc-v1';
+const CACHE_VERSION = 'spcc-v2';
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const OFFLINE_URL   = '/';
 
@@ -12,6 +12,7 @@ const OFFLINE_URL   = '/';
 const PRECACHE_URLS = [
   '/',
   '/manifest.webmanifest',
+  '/admin.webmanifest',
   '/assets/favicon.png',
   '/assets/logo.png'
 ];
@@ -38,7 +39,8 @@ self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
 });
 
-// Push do admin (Web Push padrão, enviado pela função notify-booking).
+// Push (Web Push padrão): avisos do admin (notify-booking, admin-alerts) e do
+// cliente sobre o próprio agendamento (notify-client, webhook de pagamento).
 self.addEventListener('push', (event) => {
   let d = {};
   try { d = event.data ? event.data.json() : {}; } catch (_) { d = { body: event.data && event.data.text() }; }
@@ -69,11 +71,12 @@ self.addEventListener('notificationclick', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
 
-  // Só lida com GET same-origin. Firebase/API (/api e o legado /.netlify)/APIs externas passam direto.
+  // Só lida com GET same-origin. Firebase/API (/api e o legado /.netlify)/APIs externas
+  // e as fotos/vídeos (/media, cache do próprio navegador) passam direto.
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/.netlify/')) return;
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/.netlify/') || url.pathname.startsWith('/media/')) return;
 
   // Navegação (documento HTML) → network-first com fallback ao cache offline.
   if (req.mode === 'navigate') {

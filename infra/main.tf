@@ -64,7 +64,7 @@ resource "aws_s3_bucket_policy" "site" {
 # =====================================================================
 resource "aws_cloudfront_origin_access_control" "site" {
   name                              = "sp-car-clean-oac"
-  description                       = "OAC para o bucket do site"
+  description                       = "OAC para os buckets do site e de midia"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
@@ -122,6 +122,13 @@ resource "aws_cloudfront_distribution" "site" {
     origin_access_control_id = aws_cloudfront_origin_access_control.site.id
   }
 
+  # Fotos e vídeos (infra/media.tf), em /media/*.
+  origin {
+    domain_name              = aws_s3_bucket.media.bucket_regional_domain_name
+    origin_id                = "s3-media"
+    origin_access_control_id = aws_cloudfront_origin_access_control.site.id
+  }
+
   origin {
     domain_name = replace(aws_apigatewayv2_api.api.api_endpoint, "https://", "")
     origin_id   = "api"
@@ -171,6 +178,17 @@ resource "aws_cloudfront_distribution" "site" {
       event_type   = "viewer-request"
       function_arn = aws_cloudfront_function.api_router.arn
     }
+  }
+
+  # Mídia: cada arquivo tem nome único (nunca muda) → cache longo.
+  ordered_cache_behavior {
+    path_pattern           = "/media/*"
+    target_origin_id       = "s3-media"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
   }
 
   # Estáticos (assets, css, js): cache otimizado.

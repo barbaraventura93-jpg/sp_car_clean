@@ -2,7 +2,7 @@
 
 // Web Push padrão (sem Firebase): assinatura VAPID (RFC 8292) e conteúdo
 // criptografado em aes128gcm (RFC 8291/8188), só com o crypto nativo do Node.
-// Os aparelhos do admin ficam na tabela DynamoDB PUSH_TABLE.
+// Os aparelhos (do admin e dos clientes) ficam na tabela DynamoDB PUSH_TABLE.
 //
 // Variáveis:
 //   WEB_PUSH_VAPID_PRIVATE_KEY → chave EC P-256 em PEM (criada pelo Terraform, no SSM)
@@ -81,6 +81,10 @@ function isValidSubscription(s) {
 // ---------------------------------------------------------------------------
 // Inscrições (DynamoDB)
 // ---------------------------------------------------------------------------
+// Cada item é um aparelho: { id, subscription, ua, audience, targets? }
+//   audience 'admin'  → recebe os avisos da gestão (itens antigos, sem audience, também)
+//   audience 'client' → recebe só o que é dos seus "targets": hashes de
+//                       booking:<código>, uid:<uid> e email:<e-mail> do cliente
 let _ddb = null;
 function ddb() {
   if (!_ddb) {
@@ -90,7 +94,19 @@ function ddb() {
   return _ddb;
 }
 
-const subId = (endpoint) => crypto.createHash('sha256').update(endpoint).digest('hex');
+const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
+// O aparelho do admin mantém o id antigo (hash do endpoint); o mesmo aparelho
+// inscrito como cliente vira outro item, sem sobrescrever o do admin.
+const subId = (endpoint, audience = 'admin') =>
+  sha256(audience === 'client' ? `client|${endpoint}` : endpoint);
+
+// Alvo de um push de cliente. Guardado como hash: a tabela não tem e-mail em claro.
+function clientTarget(kind, value) {
+  let v = String(value || '').trim();
+  if (kind === 'email') v = v.toLowerCase();
+  if (kind === 'booking') v = v.toUpperCase();
+  return v ? `${kind}:${sha256(v).slice(0, 40)}` : null;
+}
 
 async function saveSubscription(subscription, ua) {
   const { PutItemCommand } = require('@aws-sdk/client-dynamodb');
@@ -100,7 +116,28 @@ async function saveSubscription(subscription, ua) {
       id: { S: subId(subscription.endpoint) },
       subscription: { S: JSON.stringify({ endpoint: subscription.endpoint, keys: subscription.keys }) },
       ua: { S: String(ua || '').slice(0, 180) },
+      audience: { S: 'admin' },
       createdAt: { S: new Date().toISOString() }
+    }
+  }));
+}
+
+// Inscreve (ou atualiza) o aparelho de um cliente, somando os novos alvos aos
+// que ele já tinha — um mesmo celular acompanha vários agendamentos.
+async function saveClientSubscription(subscription, ua, targets) {
+  const { UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
+  const list = [...new Set(targets.filter(Boolean))];
+  if (!list.length) throw new Error('sem alvos');
+  await ddb().send(new UpdateItemCommand({
+    TableName: process.env.PUSH_TABLE,
+    Key: { id: { S: subId(subscription.endpoint, 'client') } },
+    UpdateExpression: 'SET subscription = :s, ua = :ua, audience = :a, updatedAt = :t ADD targets :tg',
+    ExpressionAttributeValues: {
+      ':s': { S: JSON.stringify({ endpoint: subscription.endpoint, keys: subscription.keys }) },
+      ':ua': { S: String(ua || '').slice(0, 180) },
+      ':a': { S: 'client' },
+      ':t': { S: new Date().toISOString() },
+      ':tg': { SS: list }
     }
   }));
 }
@@ -114,7 +151,12 @@ async function listSubscriptions() {
     items.push(...(out.Items || []));
     ExclusiveStartKey = out.LastEvaluatedKey;
   } while (ExclusiveStartKey);
-  return items.map((it) => ({ id: it.id.S, subscription: JSON.parse(it.subscription.S) }));
+  return items.map((it) => ({
+    id: it.id.S,
+    subscription: JSON.parse(it.subscription.S),
+    audience: (it.audience && it.audience.S) || 'admin',
+    targets: (it.targets && it.targets.SS) || []
+  }));
 }
 
 async function deleteSubscription(id) {
@@ -122,17 +164,8 @@ async function deleteSubscription(id) {
   await ddb().send(new DeleteItemCommand({ TableName: process.env.PUSH_TABLE, Key: { id: { S: id } } }));
 }
 
-/**
- * Envia um push para todos os aparelhos do admin. Best-effort: nunca lança.
- * @param {{title:string, body:string, link?:string, tag?:string}} msg
- */
-async function sendAdminPush(msg) {
-  const keys = vapidKeys();
-  if (!keys || !process.env.PUSH_TABLE) return { ok: false, skipped: 'push-not-configured' };
-
-  let subs;
-  try { subs = await listSubscriptions(); }
-  catch (err) { return { ok: false, skipped: 'list-failed: ' + err.message }; }
+// Envia o mesmo push para uma lista de aparelhos e remove os que o navegador invalidou.
+async function deliver(subs, msg, keys) {
   if (!subs.length) return { ok: true, sent: 0 };
 
   const payload = JSON.stringify({
@@ -152,7 +185,7 @@ async function sendAdminPush(msg) {
           Authorization: vapidAuthorization(subscription.endpoint, keys),
           'Content-Encoding': 'aes128gcm',
           'Content-Type': 'application/octet-stream',
-          TTL: '3600',
+          TTL: '86400',
           Urgency: 'high'
         },
         body: encrypt(subscription, payload)
@@ -166,4 +199,58 @@ async function sendAdminPush(msg) {
   return { ok: true, sent, pruned: expired.length };
 }
 
-module.exports = { publicKey, isValidSubscription, saveSubscription, sendAdminPush, encrypt, vapidAuthorization };
+async function sendTo(filter, msg) {
+  const keys = vapidKeys();
+  if (!keys || !process.env.PUSH_TABLE) return { ok: false, skipped: 'push-not-configured' };
+  let subs;
+  try { subs = await listSubscriptions(); }
+  catch (err) { return { ok: false, skipped: 'list-failed: ' + err.message }; }
+  return deliver(subs.filter(filter), msg, keys);
+}
+
+/**
+ * Envia um push para todos os aparelhos do admin. Best-effort: nunca lança.
+ * @param {{title:string, body:string, link?:string, tag?:string}} msg
+ */
+async function sendAdminPush(msg) {
+  return sendTo((s) => s.audience !== 'client', msg);
+}
+
+/**
+ * Envia um push aos aparelhos do cliente que têm algum dos alvos (clientTarget).
+ * Best-effort: nunca lança.
+ */
+async function sendClientPush(targets, msg) {
+  const wanted = new Set(targets.filter(Boolean));
+  if (!wanted.size) return { ok: true, sent: 0 };
+  return sendTo((s) => s.audience === 'client' && s.targets.some((t) => wanted.has(t)),
+    { tag: 'spcc-cliente', ...msg });
+}
+
+// Alvos de um agendamento: o código, a conta (uid) e o e-mail do cliente.
+function bookingTargets(booking) {
+  if (!booking) return [];
+  return [
+    clientTarget('booking', booking.id),
+    clientTarget('uid', booking.clientUid),
+    clientTarget('email', booking.email)
+  ].filter(Boolean);
+}
+
+// Push de "seu agendamento mudou" — painel admin (notify-client) e webhook de pagamento.
+async function pushBookingUpdate(booking, title, body) {
+  if (!booking || !booking.id) return { ok: false, skipped: 'sem agendamento' };
+  const site = (process.env.URL || 'https://www.spcarclean.com.br').replace(/\/$/, '');
+  return sendClientPush(bookingTargets(booking), {
+    title: String(title || '🔔 Atualização do seu agendamento').slice(0, 120),
+    body: String(body || `Agendamento ${booking.id}`).slice(0, 240),
+    link: `${site}/?app=cliente&consulta=${encodeURIComponent(booking.id)}`,
+    tag: `spcc-${booking.id}`
+  });
+}
+
+module.exports = {
+  publicKey, isValidSubscription, saveSubscription, saveClientSubscription,
+  sendAdminPush, sendClientPush, pushBookingUpdate, clientTarget, bookingTargets,
+  encrypt, vapidAuthorization
+};

@@ -18,7 +18,7 @@ html = html.replace('%%EMAILJS_SERVICE_ID%%', ejsService);
 html = html.replace('%%EMAILJS_PUBLIC_KEY%%', ejsPublicKey);
 fs.writeFileSync(path.join('dist', 'index.html'), html);
 
-for (const f of ['sw.js', 'manifest.webmanifest', 'styles.css', 'app.js']) {
+for (const f of ['sw.js', 'manifest.webmanifest', 'admin.webmanifest', 'styles.css', 'app.js']) {
   if (fs.existsSync(f)) fs.copyFileSync(f, path.join('dist', f));
 }
 

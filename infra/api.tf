@@ -10,22 +10,28 @@ locals {
   http_functions = [
     "ai",
     "booking-status",
+    "calendar-sync",
     "create-gift-payment",
     "create-payment",
     "create-referral",
     "infinitepay-webhook",
     "notify-booking",
+    "notify-client",
     "push-subscription",
+    "upload-url",
   ]
 
-  # Horários em UTC (08h, 09h e 10h em Brasília).
+  # Horários em UTC (07h30, 08h, 09h e 10h em Brasília). calendar-sync também
+  # é HTTP (botão "Sincronizar agora" do painel).
   scheduled_functions = {
+    "admin-alerts"   = "cron(30 10 * * ? *)"
     "ai-dispatcher"  = "cron(0 11 * * ? *)"
     "birthday-check" = "cron(0 12 * * ? *)"
     "reminder-check" = "cron(0 13 * * ? *)"
+    "calendar-sync"  = "rate(15 minutes)"
   }
 
-  all_functions = concat(local.http_functions, keys(local.scheduled_functions))
+  all_functions = distinct(concat(local.http_functions, keys(local.scheduled_functions)))
   ssm_path_arn  = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${trimsuffix(var.ssm_param_path, "/")}"
 }
 
@@ -122,6 +128,8 @@ resource "aws_lambda_function" "fn" {
       URL                  = local.site_url
       ORIGIN_VERIFY_SECRET = random_password.origin_verify.result
       PUSH_TABLE           = aws_dynamodb_table.push.name
+      MEDIA_BUCKET         = aws_s3_bucket.media.bucket
+      MEDIA_BASE_URL       = local.media_base_url
     }
   }
 
@@ -134,6 +142,7 @@ resource "aws_lambda_function" "fn" {
     aws_iam_role_policy_attachment.lambda_logs,
     aws_iam_role_policy.lambda_ssm,
     aws_iam_role_policy.lambda_push,
+    aws_iam_role_policy.lambda_media,
     aws_ssm_parameter.vapid_private_key,
   ]
 }
@@ -231,7 +240,8 @@ resource "aws_scheduler_schedule" "cron" {
     role_arn = aws_iam_role.scheduler.arn
     input    = jsonencode({ source = "eventbridge-scheduler" })
 
-    # Sem retentativa: um cron repetido reenviaria lembretes/cupons.
+    # Sem retentativa: um cron repetido reenviaria lembretes/cupons
+    # (o calendar-sync roda de novo em 15 min de qualquer jeito).
     retry_policy {
       maximum_retry_attempts = 0
     }

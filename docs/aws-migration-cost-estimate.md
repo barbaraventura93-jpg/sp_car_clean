@@ -40,7 +40,7 @@ Se a migração for feita com **arquitetura serverless-nativa** (S3 + CloudFront
 | Funções backend | **Netlify Functions** (~13) | IA, pagamentos, webhooks, notificações |
 | Funções agendadas | Netlify Scheduled (3 crons) | `birthday-check`, `reminder-check`, `ai-dispatcher` |
 | Banco de dados | **Firebase Realtime Database** | Agendamentos, clientes, config de IA, uso |
-| Armazenamento | **Firebase Storage** | Fotos (check-in, portfólio, orçamento) |
+| Armazenamento | **Firebase Storage** → migrado para **S3** (`infra/media.tf`) | Fotos (check-in, portfólio, orçamento) |
 | Autenticação | **Firebase Auth** | Acesso ao painel administrativo |
 | Notificações push | **Firebase Cloud Messaging (FCM)** | Push de agendamento/lembrete |
 | Inteligência artificial | **Claude API (Anthropic)** | 13 agentes (concierge, orçamento, upsell…) |
@@ -60,9 +60,9 @@ Se a migração for feita com **arquitetura serverless-nativa** (S3 + CloudFront
 | Netlify Functions | **AWS Lambda + API Gateway (HTTP API)** | Mantém o modelo serverless |
 | Netlify Scheduled Functions | **EventBridge Scheduler → Lambda** | Os 3 crons diários |
 | Firebase Realtime Database | **DynamoDB** (on-demand) | NoSQL, encaixa no modelo atual |
-| Firebase Storage | **S3** | Mesmo bucket family das fotos |
+| Firebase Storage | **S3** ✅ feito | Bucket de mídia servido pelo CloudFront em `/media/*` |
 | Firebase Auth | **Amazon Cognito** | Login do painel admin |
-| Firebase Cloud Messaging | **Manter FCM** *ou* **SNS/Pinpoint** | FCM é grátis e multiplataforma — manter é mais barato |
+| Firebase Cloud Messaging | **Web Push padrão** ✅ feito | VAPID + DynamoDB, sem Firebase nem SNS (admin e clientes) |
 | EmailJS | **Amazon SES** | E-mail transacional |
 | Claude API | **Manter Claude API** *ou* **Amazon Bedrock** | Bedrock roda Claude dentro da AWS |
 | InfinitePay / WhatsApp / Telegram | **Inalterados** (externos) | Continuam via API |
@@ -209,7 +209,7 @@ Migração incremental, sem downtime, de menor para maior risco:
 | **2 — Backend** | Netlify Functions → Lambda + API Gateway; crons → EventBridge | Médio | 1 semana |
 | **3 — Dados** | Firebase RTDB → DynamoDB (migração + dupla escrita temporária) | **Alto** | 1–2 semanas |
 | **4 — Auth** | Firebase Auth → Cognito (migração de usuários) | Médio-alto | 3–5 dias |
-| **5 — Complementos** | EmailJS → SES; avaliar Bedrock; push (manter FCM ou SNS) | Baixo-médio | 3–5 dias |
+| **5 — Complementos** | EmailJS → SES; avaliar Bedrock; ~~push (FCM)~~ e ~~Storage~~ ✅ feitos (Web Push + S3) | Baixo-médio | 3–5 dias |
 | **6 — Cutover** | DNS final, desligar Netlify/Firebase, validação | Médio | 1–2 dias |
 
 **Ponto crítico:** a **Fase 3 (migração de dados)** é a mais delicada — exige janela de dupla escrita e validação de integridade antes do cutover. É onde mora o maior risco do projeto.
