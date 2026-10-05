@@ -37,6 +37,9 @@ terraform -version || (sudo yum install -y yum-utils \
 [ -d ~/sp_car_clean ] || git clone https://github.com/barbaraventura93-jpg/sp_car_clean.git ~/sp_car_clean
 cd ~/sp_car_clean && git checkout main && git pull
 
+# Se o CloudShell tiver AWS_REGION de outro projeto (ex.: us-east-1), os comandos
+# `aws` abaixo levam --region sa-east-1 de propósito; o Terraform já fixa a região.
+
 # Estado do Terraform no S3 (cria o bucket se preciso, gera infra/backend.hcl e roda o init)
 bash scripts/aws-bootstrap-tfstate.sh
 ```
@@ -67,11 +70,11 @@ Ficam em `/sp-car-clean/<NOME>`, criptografados, e as Lambdas carregam ao inicia
 
 ```bash
 # Um valor
-aws ssm put-parameter --name /sp-car-clean/NOME --type SecureString --overwrite --value 'valor'
+aws ssm put-parameter --region sa-east-1 --name /sp-car-clean/NOME --type SecureString --overwrite --value 'valor'
 # Vários, a partir de um JSON {"NOME": "valor", ...}
 bash scripts/aws-put-secrets.sh segredos.json && rm segredos.json
 # Conferir os nomes gravados
-aws ssm get-parameters-by-path --path /sp-car-clean/ --query 'Parameters[].Name' --output text
+aws ssm get-parameters-by-path --region sa-east-1 --path /sp-car-clean/ --query 'Parameters[].Name' --output text
 ```
 
 Depois de mudar um segredo, as funções o leem quando reiniciam: no próximo deploy, ou rodando o workflow **Deploy to AWS** manualmente (aba Actions → Run workflow).
@@ -96,7 +99,7 @@ Pode rodar de novo com segurança; o que falhar continua com o link antigo e é 
 `ai-dispatcher` (08h), `birthday-check` (09h) e `reminder-check` (10h), horário de Brasília. Para pausar todos: `terraform apply -var schedules_enabled=false`.
 
 ```bash
-aws scheduler list-schedules --query 'Schedules[].[Name,State]' --output table
+aws scheduler list-schedules --region sa-east-1 --query 'Schedules[].[Name,State]' --output table
 ```
 
 ## Diagnóstico
