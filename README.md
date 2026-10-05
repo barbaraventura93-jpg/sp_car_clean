@@ -62,7 +62,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - Cada item tem toggle **OK / Avaria** — itens com avaria expandem campo de descrição + upload de foto
 - Registro de **km no odômetro** e **nível de combustível** na entrada
 - Campo de observações gerais (acessórios, objetos no interior etc.)
-- Fotos armazenadas no **Firebase Storage** (`checkin/{bookingId}/`)
+- Fotos armazenadas no **S3** (`/media/checkin/{bookingId}/`, com nome aleatório e impossível de adivinhar)
 - Ao finalizar: envia **e-mail** (template_update) e abre **WhatsApp** ao cliente com o resumo completo
 - Resumo do check-in visível no detalhe do agendamento (admin) e em **Minha Conta** (cliente) com miniaturas clicáveis
 - Badge **"📋 check-in"** na lista de agendamentos do admin
@@ -147,7 +147,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - Aba dedicada **📸 Galeria** no painel administrativo
 - Upload de foto **ANTES** + foto **DEPOIS** diretamente pelo admin (máx 5 MB cada)
 - Barra de progresso durante o upload
-- Fotos armazenadas no **Firebase Storage**; URLs e legendas no Firebase Realtime DB
+- Fotos armazenadas no **S3** (`/media/gallery/`); URLs e legendas no Firebase Realtime DB
 - Lista de comparações salvas com thumbnails e botão de remoção
 - Galeria pública atualiza em tempo real após cada adição ou remoção, sem redeploy
 
@@ -233,7 +233,7 @@ auto-desliga ao estourar o teto (avisa via Telegram).
 |---|---|
 | Frontend | HTML5, CSS3, JavaScript puro (sem frameworks) |
 | Banco de dados | Firebase Realtime Database |
-| Armazenamento de imagens | Firebase Storage (galeria antes/depois) |
+| Fotos e vídeos | AWS S3 (bucket de mídia) servido pelo CloudFront em `/media/*`; envio direto do painel com URL pré-assinada |
 | Autenticação | Firebase Auth (e-mail + senha) |
 | Hosting | AWS S3 + CloudFront |
 | Backend | AWS Lambda + API Gateway (HTTP API), segredos no SSM Parameter Store, crons no EventBridge Scheduler |
@@ -272,7 +272,7 @@ const CFG = {
 
 ### Pré-requisitos
 - Conta AWS com a infraestrutura de `infra/` aplicada (passo a passo em **[`infra/README.md`](infra/README.md)**)
-- Projeto [Firebase](https://console.firebase.google.com) com Realtime Database, Auth e Storage habilitados (plano Blaze)
+- Projeto [Firebase](https://console.firebase.google.com) com Realtime Database e Auth habilitados (o Storage só guarda as fotos antigas até a migração — `scripts/migrate-media.js`)
 - Domínio no Registro.br com os nameservers do Route 53
 
 Cada merge na `main` publica **funções e site** pelo GitHub Actions (`.github/workflows/deploy-aws.yml`).
@@ -424,7 +424,10 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
 > leitura pública porque o **widget concierge** do site consulta esse caminho sem login.
 > As funções do backend escrevem esses nós via Admin SDK (ignoram estas regras).
 
-### Firebase Storage — regras de segurança
+### Firebase Storage — regras de segurança (legado)
+
+> As fotos novas vão para o **S3** desde a Fase 2 da migração. Estas regras só protegem as
+> fotos antigas até elas serem copiadas por `scripts/migrate-media.js`; depois o Storage é desligado.
 
 > **Versionadas** em [`storage.rules`](storage.rules) e referenciadas no `firebase.json`.
 > Publique com `firebase deploy --only storage` (ou cole no Console). O bloco abaixo é
@@ -524,15 +527,16 @@ sp-car-clean/
 ├── package.json
 ├── firebase.json                # Config Firebase (regras de Database e Storage; hosting migrado p/ AWS)
 ├── database.rules.json          # Regras de segurança do Realtime Database (versionadas)
-├── storage.rules                # Regras de segurança do Firebase Storage (versionadas)
+├── storage.rules                # Regras do Firebase Storage (legado, até migrar as fotos antigas)
 ├── assets/
 │   ├── logo.png                 # Logo oficial (PNG com fundo transparente)
 │   └── portfolio/               # Imagens e vídeos do carrossel hero
 ├── infra/                       # Terraform: S3, CloudFront, Route 53, ACM, Lambda, API Gateway, crons
-├── scripts/                     # aws-put-secrets.sh (SSM) e aws-bootstrap-tfstate.sh (estado do Terraform)
+├── scripts/                     # aws-put-secrets.sh (SSM), aws-bootstrap-tfstate.sh (estado do Terraform), migrate-media.js (fotos antigas → S3)
 └── functions/                   # Backend (AWS Lambda; entrada: lib/aws-adapter.js)
         ├── notify-booking.js        # Notifica o admin (Telegram + push)
         ├── push-subscription.js     # Chave pública VAPID (GET) e inscrição do aparelho do admin (POST)
+        ├── media-upload.js          # Link pré-assinado para o painel enviar foto/vídeo direto ao S3
         ├── create-payment.js        # Gera link de pagamento InfinitePay (agendamento)
         ├── create-gift-payment.js   # Gera link de pagamento InfinitePay (gift card)
         ├── infinitepay-webhook.js   # Confirma pagamento/ativa gift card e atualiza Firebase
@@ -544,6 +548,7 @@ sp-car-clean/
         └── lib/
             ├── aws-adapter.js       # Entrada no Lambda: segredos do SSM + normalização do evento
             ├── webpush.js           # Web Push: VAPID, criptografia aes128gcm, inscrições no DynamoDB
+            ├── s3-presign.js        # Assinatura SigV4 de URL de upload (PUT) para o S3
             ├── admin-auth.js        # Confere se o login é do admin (único ponto a trocar na Fase 4)
             ├── guard.js             # Rate-limit por IP + checagem de origem (CORS) das funções públicas
             ├── agents/              # Agentes de IA (concierge, relatorio, upsell, orcamento, …)

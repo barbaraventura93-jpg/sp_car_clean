@@ -123,6 +123,12 @@ resource "aws_cloudfront_distribution" "site" {
   }
 
   origin {
+    domain_name              = aws_s3_bucket.media.bucket_regional_domain_name
+    origin_id                = "s3-media"
+    origin_access_control_id = aws_cloudfront_origin_access_control.site.id
+  }
+
+  origin {
     domain_name = replace(aws_apigatewayv2_api.api.api_endpoint, "https://", "")
     origin_id   = "api"
 
@@ -137,6 +143,17 @@ resource "aws_cloudfront_distribution" "site" {
       name  = "x-origin-verify"
       value = random_password.origin_verify.result
     }
+  }
+
+  # Mídia enviada pelo painel (nomes únicos, nunca reescritos): cache longo.
+  ordered_cache_behavior {
+    path_pattern           = "/media/*"
+    target_origin_id       = "s3-media"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
   }
 
   # API (Lambda) — nunca cacheada.
