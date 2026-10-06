@@ -30,6 +30,13 @@ nav.scrolled{height:60px;background:rgba(6,9,15,.92);box-shadow:0 4px 30px rgba(
 .nav-links a:not(.cta):hover::after{width:100%}
 .nav-links .cta{background:linear-gradient(135deg,var(--blue),var(--accent));color:#fff!important;padding:.5rem 1.4rem;border-radius:50px;transition:opacity .2s,transform .2s,box-shadow .2s!important;box-shadow:0 4px 20px rgba(42,159,214,.3)}
 .nav-links .cta:hover{opacity:.88;transform:translateY(-1px);box-shadow:0 8px 28px rgba(42,159,214,.45)!important}
+/* Botão de menu (hambúrguer) — só aparece no mobile (ver media query) */
+.nav-mobile-actions{display:none;align-items:center;gap:.6rem}
+.nav-toggle{display:none;flex-direction:column;justify-content:center;gap:4px;width:40px;height:38px;padding:0;background:rgba(72,201,245,.1);border:1px solid var(--border-glow);border-radius:10px;cursor:pointer;flex:0 0 auto}
+.nav-toggle span{display:block;width:18px;height:2px;margin:0 auto;background:var(--accent);border-radius:2px;transition:transform .3s ease,opacity .2s ease}
+nav.menu-open .nav-toggle span:nth-child(1){transform:translateY(6px) rotate(45deg)}
+nav.menu-open .nav-toggle span:nth-child(2){opacity:0}
+nav.menu-open .nav-toggle span:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
 
 /* ====== HERO ====== */
 #hero{min-height:100vh;padding-top:72px;display:grid;grid-template-columns:55% 45%;position:relative;overflow:hidden}
@@ -505,7 +512,25 @@ body.admin-gate-on #waFloat,body.admin-gate-on #concierge-fab,body.admin-gate-on
   .hero-left{padding:4rem 5%}
   .porque-wrap{grid-template-columns:1fr}
   .porque-vis{display:none}
-  .nav-links{display:none}
+  /* Menu vira dropdown aberto pelo botão hambúrguer */
+  .nav-mobile-actions{display:flex}
+  .nav-toggle{display:flex}
+  .nav-links{
+    display:flex;flex-direction:column;align-items:stretch;gap:0;
+    position:absolute;top:100%;left:0;right:0;
+    padding:.4rem 6% 1rem;
+    background:linear-gradient(135deg,rgba(12,18,28,.98),rgba(6,12,22,.99));
+    border-bottom:1px solid var(--border);
+    box-shadow:0 20px 44px rgba(0,0,0,.55);
+    max-height:calc(100vh - 100%);overflow-y:auto;
+    transform:translateY(-14px);opacity:0;visibility:hidden;pointer-events:none;
+    transition:opacity .25s ease,transform .25s ease,visibility .25s;
+  }
+  nav.menu-open .nav-links{transform:translateY(0);opacity:1;visibility:visible;pointer-events:auto}
+  .nav-links li{width:100%}
+  .nav-links a:not(.cta){display:block;padding:.95rem .2rem;font-size:.9rem;border-bottom:1px solid var(--border)}
+  .nav-links a:not(.cta)::after{display:none}
+  .nav-links .cta{display:block;text-align:center;margin-top:.9rem;padding:.85rem 1.4rem}
   .svc-pick-grid{grid-template-columns:1fr}
   .form-row{grid-template-columns:1fr}
   .admin-body{flex-direction:column}

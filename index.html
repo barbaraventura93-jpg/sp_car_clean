@@ -100,9 +100,14 @@ window.__ENV = {
       <div class="tag">Centro Estético Automotivo</div>
     </div>
   </a>
-  <!-- Botão Minha Conta visível apenas no mobile (controlado por CSS + _updateClientNavUI) -->
-  <button id="mobileAccountBtn" class="mobile-account-btn" onclick="openClientAccount()">👤 Minha Conta</button>
-  <ul class="nav-links">
+  <!-- Ações mobile: Minha Conta (controlado por CSS + _updateClientNavUI) + botão de menu -->
+  <div class="nav-mobile-actions">
+    <button id="mobileAccountBtn" class="mobile-account-btn" onclick="openClientAccount()">👤 Minha Conta</button>
+    <button id="navToggle" class="nav-toggle" aria-label="Abrir menu" aria-expanded="false" aria-controls="navLinks" onclick="toggleNavMenu()">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+  <ul class="nav-links" id="navLinks">
     <li id="clientNavItem"><a onclick="openClientAccount()" class="client-nav-link">👤 Minha Conta</a></li>
     <li><a href="#servicos">Serviços</a></li>
     <li><a href="#combos">Combos</a></li>
@@ -1178,6 +1183,37 @@ window.__ENV = {
   };
   window.pwaPushState = () => (!pushSupported() ? 'unsupported' : Notification.permission);
   window.pwaIsStandalone = _isStandalone;
+})();
+</script>
+
+<!-- Menu mobile (hambúrguer): abre/fecha a lista de navegação no celular -->
+<script>
+(function () {
+  function navEl()  { return document.querySelector('nav'); }
+  function toggleEl() { return document.getElementById('navToggle'); }
+  function setOpen(open) {
+    var nav = navEl();
+    if (!nav) return;
+    nav.classList.toggle('menu-open', open);
+    var btn = toggleEl();
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  window.toggleNavMenu = function () {
+    var nav = navEl();
+    setOpen(nav ? !nav.classList.contains('menu-open') : true);
+  };
+  // Fecha ao escolher um item do menu
+  document.querySelectorAll('#navLinks a, #navLinks button').forEach(function (el) {
+    el.addEventListener('click', function () { setOpen(false); });
+  });
+  // Fecha ao tocar fora do menu
+  document.addEventListener('click', function (e) {
+    var nav = navEl();
+    if (nav && nav.classList.contains('menu-open') && !nav.contains(e.target)) setOpen(false);
+  });
+  // Fecha com ESC e ao voltar para desktop
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setOpen(false); });
+  window.addEventListener('resize', function () { if (window.innerWidth > 880) setOpen(false); });
 })();
 </script>
 
