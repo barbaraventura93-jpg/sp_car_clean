@@ -1161,7 +1161,8 @@ function clientExtrasHtml(b, email, opts = {}) {
   return `<div class="client-extras">
     <a href="${googleCalendarUrl(b)}" target="_blank" rel="noopener noreferrer">📅 Google Agenda${pending ? ' (a confirmar)' : ''}</a>
     <button type="button" onclick="downloadBookingIcs('${b.id}')">🗓️ Apple / Outlook</button>
-    ${opts.push === false ? '' : `<button type="button" data-id="${b.id}" data-email="${mail}" onclick="enableBookingPush(this)">🔔 Avisos no celular</button>`}
+    ${opts.push === false ? '' : `<button type="button" data-id="${b.id}" data-email="${mail}" onclick="subscribeClientCalendar(this)">🔁 Agenda sempre atualizada</button>
+    <button type="button" data-id="${b.id}" data-email="${mail}" onclick="enableBookingPush(this)">🔔 Avisos no celular</button>`}
     <div class="client-extras-msg"></div>
   </div>`;
 }
@@ -1188,6 +1189,36 @@ async function enableBookingPush(btn) {
     msg.innerHTML = _PUSH_MSGS[result] || _PUSH_MSGS.error;
     if (result === 'install') msg.innerHTML += ` <a style="color:var(--blue);cursor:pointer;font-weight:700" onclick="openInstallApp('cliente')">Como instalar →</a>`;
   }
+}
+
+// Agenda assinada do cliente (.ics com todos os agendamentos dele, atualizada
+// sozinha). O servidor só entrega o link a quem prova ser o dono: conta logada
+// ou código + e-mail do agendamento.
+async function subscribeClientCalendar(btn) {
+  const box = btn.closest('.client-extras, .client-push-box');
+  const msg = box && box.querySelector('.client-extras-msg');
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Gerando...';
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    const user = firebase.auth().currentUser;
+    if (user && isClient()) headers.Authorization = 'Bearer ' + await user.getIdToken();
+    const resp = await fetch('/api/calendar-sync', {
+      method: 'POST', headers,
+      body: JSON.stringify({ action: 'client-link', bookingId: btn.dataset.id, email: btn.dataset.email })
+    });
+    const r = await resp.json().catch(() => ({}));
+    if (!resp.ok || !r.ics) throw new Error(r.error || resp.status);
+    const isApple = /iphone|ipad|ipod|macintosh/i.test(navigator.userAgent);
+    if (msg) msg.innerHTML =
+      'Escolha onde assinar — a agenda "SP Car Clean — meus agendamentos" se atualiza sozinha (no Google pode levar algumas horas):<br/>' +
+      `<a href="${r.google}" target="_blank" rel="noopener" style="color:var(--blue);font-weight:700">Google Agenda</a> · ` +
+      `<a href="${r.webcal}" style="color:var(--blue);font-weight:700">${isApple ? 'Agenda do iPhone/Mac' : 'Outlook / Apple'}</a> · ` +
+      `<a style="color:var(--blue);cursor:pointer;font-weight:700" onclick="navigator.clipboard&&navigator.clipboard.writeText('${r.ics}');this.textContent='link copiado ✓'">copiar link</a>`;
+  } catch (e) {
+    if (msg) msg.textContent = 'Não foi possível gerar a agenda agora. Tente de novo em instantes.';
+  }
+  btn.disabled = false; btn.textContent = label;
 }
 
 // ============================================================
@@ -2274,9 +2305,10 @@ function renderClientAccount() {
       </div>
     </div>` : ''}
     <div class="client-booking-card client-push-box" style="margin-bottom:.8rem">
-      <div style="font-weight:700;margin-bottom:.3rem">🔔 Avisos no celular</div>
+      <div style="font-weight:700;margin-bottom:.3rem">🔔 Avisos e agenda</div>
       <div style="font-size:.8rem;color:var(--muted);margin-bottom:.6rem">Receba aqui quando seu orçamento for aprovado, o check-in for feito, a data mudar ou o serviço ficar pronto.</div>
       <button class="btn-ghost" style="font-size:.78rem;padding:.45rem 1rem" onclick="enableBookingPush(this)">${window.pwaPushState && window.pwaPushState() === 'granted' ? '🔔 Avisos ativados — atualizar' : '🔔 Ativar avisos'}</button>
+      <button class="btn-ghost" style="font-size:.78rem;padding:.45rem 1rem;margin-left:.3rem" onclick="subscribeClientCalendar(this)">🔁 Meus agendamentos na agenda</button>
       <div class="client-extras-msg" style="margin-top:.4rem"></div>
     </div>
     <h4 class="client-section-title">📅 Próximos Agendamentos (${upcoming.length})</h4>
@@ -6723,12 +6755,17 @@ function renderAdminConfig() {
     <div class="admin-panel" style="max-width:520px">
       <h3>📅 Google Agenda</h3>
       <p style="font-size:.78rem;color:var(--muted);line-height:1.55;margin-bottom:.8rem">
-        Os agendamentos entram sozinhos na agenda do Google de ${CFG.adminEmail} a cada 15 minutos.
-        Pendentes aparecem com ⏳. Ao aprovar, o cliente recebe o convite e o evento fica na agenda dele —
-        reagendou, muda lá; cancelou, some.
+        Um script grátis do Google (Apps Script) na conta ${CFG.adminEmail} coloca os agendamentos na
+        agenda a cada 5 minutos — pendentes com ⏳; cancelados saem. Sem Google Cloud e sem cartão.
       </p>
-      <button class="btn-primary" onclick="syncGoogleCalendar(this)">🔄 Sincronizar agora</button>
-      <div id="gcalSyncMsg" style="font-size:.76rem;margin-top:.6rem;line-height:1.5"></div>
+      <ol style="font-size:.76rem;color:var(--muted);line-height:1.6;padding-left:1.1rem;margin-bottom:.8rem">
+        <li>Copie o link abaixo.</li>
+        <li>Em <a href="https://script.google.com" target="_blank" rel="noopener" style="color:var(--blue)">script.google.com</a> → <strong>Novo projeto</strong>, cole o script <a href="https://github.com/barbaraventura93-jpg/sp_car_clean/blob/main/scripts/agenda-admin.gs" target="_blank" rel="noopener" style="color:var(--blue)">agenda-admin.gs</a> e troque <code>COLE_AQUI_O_LINK</code> pelo link.</li>
+        <li>Selecione a função <strong>instalar</strong> e clique em <strong>Executar</strong>; autorize.</li>
+      </ol>
+      <button class="btn-primary" onclick="copyAdminCalendarLink(this, 'json')">📋 Copiar link do script</button>
+      <button class="btn-ghost" onclick="copyAdminCalendarLink(this, 'ics')" style="margin-left:.4rem">🗓️ Link .ics (iPhone/Outlook)</button>
+      <div id="gcalSyncMsg" style="font-size:.76rem;margin-top:.6rem;line-height:1.5;word-break:break-all"></div>
     </div>
     <div class="admin-panel" style="max-width:520px">
       <h3>⭐ Fidelidade & Cupons</h3>
@@ -6859,34 +6896,27 @@ function saveConfig() {
   }).then(() => alert('Configurações salvas!')).catch(() => alert('Erro ao salvar. Verifique a conexão.'));
   else alert('Configurações salvas localmente!');
 }
-// Força a sincronização com o Google Agenda (normalmente roda sozinha a cada 15 min).
-async function syncGoogleCalendar(btn) {
+// Links da agenda do admin (assinados pelo servidor): JSON para o Apps Script
+// e .ics para assinar no iPhone/Outlook. Só o admin recebe.
+async function copyAdminCalendarLink(btn, kind) {
   const msg = document.getElementById('gcalSyncMsg');
-  const label = btn.textContent;
-  btn.disabled = true; btn.textContent = '⏳ Sincronizando...';
   try {
     const resp = await fetch('/api/calendar-sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + await firebase.auth().currentUser.getIdToken() }
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + await firebase.auth().currentUser.getIdToken() },
+      body: JSON.stringify({ action: 'admin-links' })
     });
     const r = await resp.json().catch(() => ({}));
-    if (r.skipped === 'google-calendar-not-configured') {
-      msg.style.color = 'var(--orange)';
-      msg.textContent = '⚠️ Google Agenda ainda não conectado. Siga o passo a passo "Google Agenda" do README (uma vez só).';
-    } else if (!resp.ok || r.error) {
-      msg.style.color = 'var(--red)';
-      msg.textContent = '❌ Falhou: ' + (r.error || resp.status);
-    } else {
-      msg.style.color = r.errors && r.errors.length ? 'var(--orange)' : 'var(--green)';
-      msg.textContent = `✓ ${r.upserted} evento(s) atualizado(s), ${r.deleted} removido(s), ${r.unchanged} sem mudança` +
-        (r.partial ? ' — ainda há mais; a próxima rodada continua.' : '.') +
-        (r.errors && r.errors.length ? ` ${r.errors.length} erro(s): ${r.errors[0].error}` : '');
-    }
+    if (!resp.ok || !r[kind]) throw new Error(r.error || resp.status);
+    let copied = false;
+    try { await navigator.clipboard.writeText(r[kind]); copied = true; } catch (_) {}
+    msg.style.color = 'var(--green)';
+    msg.innerHTML = (copied ? '✓ Link copiado. ' : 'Copie o link: ') + `<code>${esc(r[kind])}</code>` +
+      '<br/><span style="color:var(--muted)">Não compartilhe: quem tiver o link vê os agendamentos.</span>';
   } catch (e) {
     msg.style.color = 'var(--red)';
     msg.textContent = '❌ Falhou: ' + e.message;
   }
-  btn.disabled = false; btn.textContent = label;
 }
 
 // Liga/desliga a abertura direta na tela de senha ao iniciar o app neste aparelho.

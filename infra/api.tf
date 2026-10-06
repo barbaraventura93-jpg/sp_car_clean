@@ -21,14 +21,12 @@ locals {
     "upload-url",
   ]
 
-  # Horários em UTC (07h30, 08h, 09h e 10h em Brasília). calendar-sync também
-  # é HTTP (botão "Sincronizar agora" do painel).
+  # Horários em UTC (07h30, 08h, 09h e 10h em Brasília).
   scheduled_functions = {
     "admin-alerts"   = "cron(30 10 * * ? *)"
     "ai-dispatcher"  = "cron(0 11 * * ? *)"
     "birthday-check" = "cron(0 12 * * ? *)"
     "reminder-check" = "cron(0 13 * * ? *)"
-    "calendar-sync"  = "rate(15 minutes)"
   }
 
   all_functions = distinct(concat(local.http_functions, keys(local.scheduled_functions)))
@@ -240,8 +238,7 @@ resource "aws_scheduler_schedule" "cron" {
     role_arn = aws_iam_role.scheduler.arn
     input    = jsonencode({ source = "eventbridge-scheduler" })
 
-    # Sem retentativa: um cron repetido reenviaria lembretes/cupons
-    # (o calendar-sync roda de novo em 15 min de qualquer jeito).
+    # Sem retentativa: um cron repetido reenviaria lembretes/cupons.
     retry_policy {
       maximum_retry_attempts = 0
     }
