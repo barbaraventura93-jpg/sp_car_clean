@@ -46,7 +46,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - **Cancelamento self-service**: política de reembolso calculada automaticamente por dias úteis
 - **Confirmação automática por e-mail** via EmailJS em cada mudança de status relevante
 - **Avisos no celular** (push) a cada mudança do serviço: orçamento aprovado, pagamento confirmado, reagendamento, check-in, conclusão, cancelamento
-- **Adicionar à agenda**: botões **Google Agenda** e **Apple / Outlook (.ics)** na confirmação, na consulta por código e em Minha Conta; depois da aprovação o cliente também recebe o **convite do Google Agenda**, que se atualiza sozinho
+- **Adicionar à agenda**: botões **Google Agenda** e **Apple / Outlook (.ics)** na confirmação, na consulta por código e em Minha Conta, e **🔁 Agenda sempre atualizada** — o cliente assina a agenda "SP Car Clean — meus agendamentos", que se atualiza sozinha (ver [Google Agenda](#google-agenda))
 - Coleta de **bairro e CEP** do cliente para mapeamento geográfico
 - **Pagamento online via InfinitePay** (PIX + cartão de crédito): link de pagamento gerado automaticamente no momento da aprovação; webhook confirma o pagamento no Firebase
 
@@ -83,7 +83,7 @@ Site institucional + sistema de agendamento online com painel de gestão para a 
 - Contato direto com o cliente via **WhatsApp** a partir do painel
 - **Notificação em tempo real via Telegram e push no celular** a cada novo agendamento, reagendamento ou cancelamento
 - **Avisos diários no celular** (07h30): serviços com entrega nos próximos dias e produtos abaixo do mínimo no estoque
-- **Google Agenda**: todos os agendamentos aparecem sozinhos na agenda do Google do admin (ver [Google Agenda](#google-agenda))
+- **Google Agenda**: todos os agendamentos aparecem sozinhos na agenda do Google do admin a cada 5 min, por um Google Apps Script grátis (ver [Google Agenda](#google-agenda))
 - **Exportação de dados** em JSON
 
 ### Agendamento Manual pelo Admin
@@ -229,7 +229,7 @@ auto-desliga ao estourar o teto (avisa via Telegram).
 - WhatsApp, endereço/local de entrega, horários de entrada e saída, máximo de agendamentos por dia
 - Troca de senha administrativa
 - Segurança do aparelho (abrir direto na tela de senha) e registro de push
-- **Google Agenda**: botão **🔄 Sincronizar agora** (normalmente a sincronização roda sozinha a cada 15 min)
+- **Google Agenda**: link do script da agenda do admin (e link `.ics` para iPhone/Outlook)
 - Limpeza total de dados
 
 ---
@@ -249,7 +249,7 @@ auto-desliga ao estourar o teto (avisa via Telegram).
 | Pagamento | InfinitePay (PIX + cartão) via funções no Lambda |
 | Inteligência Artificial | Claude API (Anthropic) via funções no Lambda (`ai` + `ai-dispatcher`) |
 | Notificações | AWS Lambda + EmailJS + Telegram Bot API + Web Push padrão (VAPID, sem Firebase) para o admin **e para os clientes** |
-| Agenda | Google Calendar API (OAuth do admin) — agendamentos na agenda do admin, cliente como convidado; links Google Agenda / `.ics` para o cliente |
+| Agenda | Google Apps Script na conta do admin (lê o feed `calendar-sync` a cada 5 min) + agenda `.ics` assinada pelo cliente — sem Google Cloud nem cartão |
 | App instalável | 2 PWAs: **app do cliente** (`manifest.webmanifest`) e **app da gestão** (`admin.webmanifest`) |
 | E-mail automático de aniversário | Cron diário na AWS (EventBridge Scheduler → Lambda) + EmailJS REST API |
 | Mapa | Leaflet.js + OpenStreetMap + Nominatim (geocoding) |
@@ -324,11 +324,7 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
 | `REFERRAL_FRIEND_PCT` | (Opcional) % de desconto do cupom do amigo indicado no programa Indique um Amigo (padrão: `15`) |
 | `REFERRAL_REFERRER_PCT` | (Opcional) % de desconto do cupom de recompensa para quem indicou (padrão: `15`) |
 | `REFERRAL_VALID_DAYS` | (Opcional) Validade em dias dos cupons de indicação (padrão: `90`) |
-| `GOOGLE_CLIENT_ID` | Credencial OAuth (tipo "App para computador") do Google Agenda. Gravada pelo `scripts/google-calendar-auth.js` |
-| `GOOGLE_CLIENT_SECRET` | Segredo da credencial OAuth do Google Agenda. **Secreto** |
-| `GOOGLE_REFRESH_TOKEN` | Autorização do admin para a função `calendar-sync` escrever na agenda dele. **Secreto** |
-| `GOOGLE_CALENDAR_ID` | (Opcional) Agenda que recebe os eventos (padrão: `primary`, a principal de spcarclean0@gmail.com) |
-| `GOOGLE_CALENDAR_INVITE_CLIENTS` | (Opcional) `false` desliga o convite ao cliente (padrão: ligado — o cliente recebe o evento na agenda dele após a aprovação) |
+| `CALENDAR_FEED_SECRET` | (Opcional) Chave que assina os links da agenda (admin e clientes). Sem ela, deriva do segredo do CloudFront. Trocar invalida todos os links já entregues. **Secreto** |
 | `ADMIN_ALERT_DAYS` | (Opcional) Quantos dias à frente o aviso diário de entregas olha (padrão: `2`) |
 
 > `MEDIA_BUCKET` e `MEDIA_BASE_URL` (bucket de mídia e endereço `https://<site>/media`) são
@@ -590,42 +586,39 @@ Outros detalhes:
 
 ### Google Agenda
 
-**Admin:** a função `calendar-sync` (a cada 15 min, ou pelo botão **🔄 Sincronizar
-agora** em Configurações) coloca cada agendamento como evento na agenda do Google de
-**spcarclean0@gmail.com**, da entrada (08:00) à retirada (18:00 — horários de
-Configurações). Pendentes aparecem com ⏳; rejeitados, cancelados e excluídos saem da
-agenda. Só o que mudou é enviado ao Google (o hash de cada evento fica em `/calendarSync`).
+Sem Google Cloud, sem credencial OAuth e sem cartão. A função `calendar-sync` serve a
+agenda em dois formatos, por links assinados (HMAC):
 
-**Cliente:** depois da aprovação, o cliente entra como **convidado** do evento: o Google
-manda o convite e o evento aparece na agenda dele (Gmail adiciona sozinho) e acompanha as
-mudanças — reagendou, muda lá; cancelou, some. Para desligar o convite:
-`GOOGLE_CALENDAR_INVITE_CLIENTS=false`. Além disso, o cliente tem os botões
-**📅 Google Agenda** e **🗓️ Apple / Outlook** (`.ics`) na confirmação, na consulta e em
-Minha Conta.
+**Admin — Google Apps Script (a cada 5 min).** Um script grátis na conta
+spcarclean0@gmail.com ([`scripts/agenda-admin.gs`](scripts/agenda-admin.gs)) lê o feed JSON e
+cria, atualiza e apaga os eventos na agenda principal: da entrada (08:00) à retirada (18:00 —
+horários de Configurações), com cliente, telefone, veículo, valor e nota. Pendentes aparecem
+com ⏳; cancelados, rejeitados e excluídos saem da agenda.
 
-**Conectar (uma vez só):**
+Instalar (uma vez):
 
-1. [Google Cloud Console](https://console.cloud.google.com/) → projeto **sp-car-clean**
-   (o mesmo do Firebase) → **APIs e serviços → Biblioteca** → ative a **Google Calendar API**.
-2. **Tela de consentimento OAuth** → tipo **Externo** → nome "SP Car Clean", e-mail
-   spcarclean0@gmail.com → escopo `.../auth/calendar.events` → **Publicar app**
-   ("Em produção"). *Em modo "Teste" a autorização expira em 7 dias.* Não precisa
-   verificação do Google: na autorização aparece "app não verificado" → **Avançado →
-   Acessar**.
-3. **Credenciais → Criar credenciais → ID do cliente OAuth → App para computador**. Copie
-   o ID e a chave secreta.
-4. No CloudShell (ou num terminal com o AWS CLI logado):
+1. Painel → **Configurações → 📅 Google Agenda → 📋 Copiar link do script**.
+2. Entre com **spcarclean0@gmail.com** em [script.google.com](https://script.google.com) →
+   **Novo projeto** → apague o conteúdo e cole o `scripts/agenda-admin.gs`.
+3. Troque `COLE_AQUI_O_LINK` pelo link copiado e salve (💾).
+4. No menu de funções, escolha **instalar** → **Executar** → autorize. Se o Google avisar
+   "app não verificado": **Avançado → Acessar** (o script é seu).
 
-   ```bash
-   GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... node scripts/google-calendar-auth.js
-   ```
+Pronto: roda sozinho a cada 5 minutos (gatilho de tempo). Para forçar, execute
+**sincronizar**. Há também o **Link .ics**, para assinar a agenda do admin no iPhone/Outlook.
 
-   Abra o link, entre com **spcarclean0@gmail.com** e aceite. O script grava
-   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_REFRESH_TOKEN` no SSM (ou mostra os
-   comandos). No CloudShell, o navegador não alcança `127.0.0.1`: depois de aceitar, copie
-   a URL da página que não abriu e rode `curl '<url copiada>'` no próprio CloudShell.
-5. Rode o workflow **Deploy to AWS** (Actions → Run workflow) para as funções lerem os
-   segredos e toque em **🔄 Sincronizar agora** no painel.
+**Cliente — agenda assinada.** O botão **🔁 Agenda sempre atualizada** (consulta por código)
+ou **🔁 Meus agendamentos na agenda** (Minha Conta) gera um link `.ics` só com os
+agendamentos daquele e-mail — o servidor só entrega o link a quem prova ser o dono (conta
+logada ou código + e-mail). O cliente escolhe **Google Agenda**, **Agenda do iPhone/Mac**
+ou **Outlook**, e a agenda "SP Car Clean — meus agendamentos" se atualiza sozinha:
+reagendou, muda lá; cancelou, some. O iPhone atualiza a cada hora; o **Google atualiza
+agendas assinadas a cada poucas horas** (limite do Google). Para ter o evento na hora,
+continuam os botões **📅 Google Agenda** e **🗓️ Apple / Outlook** de cada agendamento.
+
+> Os links funcionam como senha (quem tem o link vê aqueles agendamentos). Para invalidar
+> todos, grave um novo `CALENDAR_FEED_SECRET` no SSM e rode o deploy; depois, copie o link
+> novo para o Apps Script.
 
 ### Build
 
@@ -659,13 +652,13 @@ sp-car-clean/
 │   └── portfolio/               # Imagens e vídeos do carrossel hero
 ├── infra/                       # Terraform: S3 (site e mídia), CloudFront, Route 53, ACM, Lambda, API Gateway, crons
 ├── scripts/                     # aws-put-secrets.sh (SSM), aws-bootstrap-tfstate.sh (estado do Terraform),
-│                                # migrate-media.js (fotos antigas do Firebase → S3), google-calendar-auth.js
+│                                # migrate-media.js (fotos antigas do Firebase → S3), agenda-admin.gs (Apps Script da agenda)
 └── functions/                   # Backend (AWS Lambda; entrada: lib/aws-adapter.js)
         ├── notify-booking.js        # Notifica o admin (Telegram + push)
         ├── notify-client.js         # Push no celular do cliente quando o serviço muda (chamado pelo painel)
         ├── push-subscription.js     # Chave pública VAPID (GET) e inscrição do aparelho do admin ou do cliente (POST)
         ├── upload-url.js            # URL pré-assinada para o painel enviar fotos/vídeos ao S3
-        ├── calendar-sync.js         # Agendamentos → Google Agenda do admin (cron 15 min + botão no painel)
+        ├── calendar-sync.js         # Feeds da agenda: JSON p/ o Apps Script do admin e .ics do admin/cliente
         ├── admin-alerts.js          # Cron diário: entregas próximas e estoque em falta (push + Telegram)
         ├── create-payment.js        # Gera link de pagamento InfinitePay (agendamento)
         ├── create-gift-payment.js   # Gera link de pagamento InfinitePay (gift card)
@@ -679,7 +672,6 @@ sp-car-clean/
             ├── aws-adapter.js       # Entrada no Lambda: segredos do SSM + normalização do evento
             ├── webpush.js           # Web Push: VAPID, criptografia aes128gcm, inscrições (admin/cliente) no DynamoDB
             ├── s3.js                # S3 sem SDK: URL pré-assinada (SigV4) para o upload do painel
-            ├── google-calendar.js   # Google Calendar API: token OAuth e upsert/remoção de eventos
             ├── admin-auth.js        # Confere se o login é do admin (único ponto a trocar na Fase 4)
             ├── guard.js             # Rate-limit por IP + checagem de origem (CORS) das funções públicas
             ├── agents/              # Agentes de IA (concierge, relatorio, upsell, orcamento, …)
@@ -734,7 +726,7 @@ sp-car-clean/
 | Dois apps instaláveis: app do cliente e app da gestão (com instrução para iPhone e navegadores embutidos) | ✅ |
 | Push no celular do cliente a cada mudança do serviço | ✅ |
 | Avisos diários ao admin: entregas dos próximos dias e estoque em falta | ✅ |
-| Agendamentos no Google Agenda do admin + convite na agenda do cliente | ✅ |
+| Agendamentos no Google Agenda do admin (Apps Script) + agenda assinada do cliente (.ics) | ✅ |
 | Fotos e vídeos no S3 da AWS (Firebase Storage desativado) | ✅ |
 | App do admin abrindo direto na tela de senha do painel (sem passar pelo site) | ✅ |
 | Central de IA com agentes (concierge, relatório, reativação, upsell, etc.) | ✅ |

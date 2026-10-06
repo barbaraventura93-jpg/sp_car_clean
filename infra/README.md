@@ -17,8 +17,8 @@ visitante ──▶ CloudFront ──┬── /*                     ──▶ 
                            ├── /api/*                 ──▶ API Gateway ──▶ Lambda (15 funções)
                            └── /.netlify/functions/*  ──▶ (legado, reescrito p/ /api/* — backlog L1)
 painel admin ──(PUT com URL pré-assinada pela função upload-url)──▶ S3 (mídia)
-EventBridge Scheduler ──(4 crons diários + calendar-sync a cada 15 min)──▶ Lambda
-Lambda calendar-sync ──▶ Google Calendar API (agenda do admin)
+EventBridge Scheduler ──(4 crons diários)──▶ Lambda
+Apps Script (conta do admin) ──(a cada 5 min, GET /api/calendar-sync)──▶ Google Agenda do admin
 Lambda ──(na inicialização)──▶ SSM Parameter Store /sp-car-clean/* (segredos)
 Estado do Terraform ──▶ S3 sp-car-clean-tfstate-<conta> (versionado, com trava)
 ```
@@ -59,11 +59,9 @@ terraform apply    # digite "yes"
 
 Mudanças no CloudFront levam ~5–10 min para propagar.
 
-> **Esta versão (apps + S3 + Google Agenda) precisa de `terraform apply` antes do
-> merge**: ela cria o bucket de mídia, a rota `/media/*` e as funções novas
-> (`upload-url`, `notify-client`, `calendar-sync`, `admin-alerts`). Sem o apply, o
-> passo "Publicar funções" do deploy falha (de propósito) e o upload de fotos do painel
-> fica sem destino.
+> O cron `calendar-sync` (a cada 15 min) saiu do código quando a agenda do admin passou
+> para o Apps Script. Enquanto ninguém rodar `terraform apply`, ele continua existindo e só
+> responde "nada a fazer"; o próximo apply o remove (1 schedule destruído — esperado).
 
 ## Deploy do código
 
@@ -105,8 +103,8 @@ Pode rodar de novo com segurança; o que falhar continua com o link antigo e é 
 ## Crons
 
 `admin-alerts` (07h30 — entregas dos próximos dias e estoque em falta, por push e Telegram),
-`ai-dispatcher` (08h), `birthday-check` (09h) e `reminder-check` (10h), horário de Brasília,
-e `calendar-sync` a cada 15 minutos (Google Agenda). Para pausar todos:
+`ai-dispatcher` (08h), `birthday-check` (09h) e `reminder-check` (10h), horário de Brasília.
+A agenda do admin não usa cron na AWS: quem chama é o Apps Script, a cada 5 minutos. Para pausar todos:
 `terraform apply -var schedules_enabled=false`.
 
 ```bash
