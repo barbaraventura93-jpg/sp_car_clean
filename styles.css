@@ -689,6 +689,13 @@ nav.scrolled{background:linear-gradient(135deg,rgba(12,18,28,.88),rgba(6,12,22,.
 .pwa-banner-btn{background:var(--blue);color:#fff;border:none;border-radius:50px;padding:.45rem .95rem;font-family:'Montserrat',sans-serif;font-weight:800;font-size:.74rem;cursor:pointer}
 .pwa-banner-x{background:none;border:none;color:var(--muted);font-size:.95rem;cursor:pointer;padding:.2rem .3rem}
 .pwa-standalone .pwa-banner,.pwa-installed .pwa-banner{display:none!important}
+/* App instalado (standalone): a barra de status/notch do celular sobrepõe o topo
+   (status bar "black-translucent" no iOS). Reservamos a área segura do topo nas
+   barras fixas para os botões do canto superior não ficarem escondidos. */
+.pwa-standalone nav{height:calc(72px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top)}
+.pwa-standalone nav.scrolled{height:calc(60px + env(safe-area-inset-top))}
+.pwa-standalone #hero{padding-top:calc(72px + env(safe-area-inset-top))}
+.pwa-standalone .admin-nav{height:calc(60px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top)}
 /* Ações do cliente no agendamento: agenda + notificações */
 .client-extras{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.8rem}
 .client-extras a,.client-extras button{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:.35rem;background:transparent;border:1px solid var(--border-glow);color:var(--text);border-radius:6px;padding:.5rem .7rem;font-family:'Montserrat',sans-serif;font-size:.72rem;font-weight:700;cursor:pointer;text-decoration:none;white-space:nowrap}
