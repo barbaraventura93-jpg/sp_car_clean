@@ -838,6 +838,22 @@ function renderBookingStep() {
       <div class="form-row"><div class="form-group"><label>Veículo (modelo/ano)</label><input id="fCar" placeholder="Honda Civic 2020"/></div><div class="form-group"><label>Placa</label><input id="fPlate" placeholder="ABC-1234"/></div></div>
       <div class="form-row"><div class="form-group"><label>Bairro *</label><input id="fBairro" placeholder="Moema, Brooklin, Vila Mariana..." onblur="handleBairroBlur('fBairro','fBairroWarn')"/><div id="fBairroWarn" class="bairro-warn" style="display:none"></div></div><div class="form-group"><label>CEP (opcional)</label><input id="fCep" placeholder="04543-000" maxlength="9" oninput="fmtCep(this)"/></div></div>
       <div class="form-row full"><div class="form-group"><label>Observações (opcional)</label><textarea id="fObs" placeholder="Informe alguma particularidade do veículo, manchas específicas, etc."></textarea></div></div>
+      <div class="form-group" id="fSourceWrap" style="margin-top:.8rem">
+        <label>Como você nos conheceu? <span style="color:var(--muted);font-weight:400;font-size:.8em">(ajuda a gente a melhorar 💙)</span></label>
+        <select id="fSource" onchange="fSourceChanged()">
+          <option value="">Selecione uma opção...</option>
+          <option value="Instagram">📸 Instagram</option>
+          <option value="TikTok">🎵 TikTok</option>
+          <option value="Indicação">🤝 Indicação de amigo/familiar</option>
+          <option value="Evento de carros">🏁 Evento / encontro de carros</option>
+          <option value="Google">🔎 Google / pesquisa na internet</option>
+          <option value="Facebook">👍 Facebook</option>
+          <option value="WhatsApp">💬 WhatsApp / grupo</option>
+          <option value="Fachada">🚗 Vi a loja / adesivo no carro</option>
+          <option value="Outro">✨ Outro</option>
+        </select>
+        <input id="fSourceDetail" style="display:none;margin-top:.5rem" placeholder="Conte mais (ex: quem indicou, qual evento)"/>
+      </div>
       <div class="form-group" style="margin-top:.8rem">
         <label>Cupom de desconto (opcional)</label>
         <div class="coupon-input-wrap">
@@ -884,6 +900,8 @@ function renderBookingStep() {
       const myLast = _bookings.filter(b => (b.clientUid === _authUser.uid) || (!b.clientUid && b.email?.toLowerCase() === p.email?.toLowerCase()))
         .sort((a, b) => (b.submittedAt||'').localeCompare(a.submittedAt||''))[0];
       if (myLast) { fill('fBairro', myLast.bairro); fill('fCep', myLast.cep); }
+      // Já tem histórico → não repetir a pergunta "como nos conheceu".
+      if (myLast) _toggleSourceWrap(false);
       // Frota: veículos cadastrados no perfil + os identificados nos agendamentos.
       const fleetVehicles = _buildLoggedClientFleet(p, myLast);
       if (fleetVehicles.length) {
@@ -994,6 +1012,11 @@ async function submitBooking() {
   const bairroSugestao = bairroEl.dataset.bairroSugestao || null;
   const cep    = document.getElementById('fCep').value.trim();
   const obs    = document.getElementById('fObs').value.trim();
+  // Origem do cliente (como nos conheceu) — capturado só na 1ª compra, para marketing
+  const srcWrap   = document.getElementById('fSourceWrap');
+  const askedSrc  = srcWrap && srcWrap.style.display !== 'none';
+  const comoConheceu        = askedSrc ? (document.getElementById('fSource')?.value || '') : '';
+  const comoConheceuDetalhe = askedSrc ? (document.getElementById('fSourceDetail')?.value.trim() || '') : '';
   if(!name||!email||!phone||!car||!bairro) { alert('Preencha todos os campos obrigatórios (incluindo o bairro).'); return; }
 
   // Auth opcional: criar/logar conta de cliente
@@ -1029,6 +1052,7 @@ async function submitBooking() {
     submittedAt: new Date().toISOString(),
     adminNotes: '',
     ...(clientUid ? { clientUid } : {}),
+    ...(comoConheceu ? { comoConheceu, ...(comoConheceuDetalhe ? { comoConheceuDetalhe } : {}) } : {}),
     ...(_appliedCoupon   ? { couponCode: _appliedCoupon.code, couponDiscount }                                           : {}),
     ...(_appliedGiftCard ? { giftCardCode: _appliedGiftCard.code, giftCardUsed: _appliedGiftCard.amountToUse } : {}),
   };
@@ -3229,6 +3253,26 @@ function abEmailEditWarning() {
 }
 
 // ── Pré-preenchimento por e-mail no formulário público (clientes sem login) ──
+// "Como nos conheceu" — mostra o campo livre quando a origem pede detalhe
+// (indicação: quem indicou; evento: qual; outro: descrição).
+function fSourceChanged() {
+  const sel = document.getElementById('fSource');
+  const det = document.getElementById('fSourceDetail');
+  if (!sel || !det) return;
+  const needsDetail = ['Indicação', 'Evento de carros', 'Outro'].includes(sel.value);
+  det.style.display = needsDetail ? 'block' : 'none';
+  if (!needsDetail) { det.value = ''; return; }
+  det.placeholder = sel.value === 'Indicação' ? 'Quem indicou você? (nome)'
+    : sel.value === 'Evento de carros' ? 'Qual evento / encontro?'
+    : 'Conte mais pra gente';
+}
+
+// A pergunta de origem só faz sentido na 1ª compra; esconde para quem já é cliente.
+function _toggleSourceWrap(show) {
+  const wrap = document.getElementById('fSourceWrap');
+  if (wrap) wrap.style.display = show ? 'block' : 'none';
+}
+
 function fLookupClient() {
   // Clientes já logados recebem pré-preenchimento ao abrir o modal; não duplicar aqui
   if (isClient()) return;
@@ -3238,6 +3282,7 @@ function fLookupClient() {
   if (!email || !email.includes('@')) {
     if (info)  info.style.display  = 'none';
     if (fleet) fleet.style.display = 'none';
+    _toggleSourceWrap(true); // sem e-mail: trata como possível 1ª compra
     return;
   }
 
@@ -3286,6 +3331,8 @@ function fLookupClient() {
     const match    = _bookings.find(b => b.email?.toLowerCase() === email);
     const vehicles = buildFleet();
     const cached   = loadClientData(email); // cache localStorage
+    const jaCliente = !!(profile || match || cached);
+    _toggleSourceWrap(!jaCliente); // já é cliente → não perguntar origem de novo
     if (!profile && !match && !vehicles.length && !cached) return; // e-mail desconhecido
 
     if (profile) {
@@ -3573,6 +3620,7 @@ function viewBooking(id) {
       <div class="summary-row"><strong>Nome</strong><span>${b.name}</span></div>
       <div class="summary-row"><strong>E-mail</strong><span>${b.email}</span></div>
       <div class="summary-row"><strong>Telefone</strong><span>${b.phone}</span></div>
+      ${b.comoConheceu ? `<div class="summary-row"><strong>📣 Como nos conheceu</strong><span>${esc(b.comoConheceu)}${b.comoConheceuDetalhe?' — '+esc(b.comoConheceuDetalhe):''}</span></div>` : ''}
       <button onclick="openClientWa('${b.id}')" style="display:inline-flex;align-items:center;gap:.5rem;margin-top:.8rem;background:#25D366;color:#fff;padding:.45rem 1rem;border-radius:4px;font-family:Montserrat,sans-serif;font-size:.72rem;font-weight:700;border:none;cursor:pointer;letter-spacing:.04em;transition:opacity .2s" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
         <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
         Contatar no WhatsApp
@@ -5159,6 +5207,47 @@ function renderAdminStats() {
   const returning = attendedClients.filter(c => c.completedCount > 1).length;
   const unique = attendedClients.length;
 
+  // Origem dos clientes (como nos conheceu) — conta 1x por e-mail (o 1º agendamento
+  // com origem informada), com taxa de conversão e ticket médio por canal, para
+  // orientar onde investir em marketing.
+  const SOLD_STATUS = ['confirmed', 'approved', 'completed']; // orçamento aprovado = venda
+  const srcByEmail = {}; // e-mail → canal declarado no 1º agendamento com origem
+  bookings
+    .filter(b => b.status !== 'rejected' && b.comoConheceu)
+    .sort((a, b) => (a.submittedAt || '').localeCompare(b.submittedAt || ''))
+    .forEach(b => { const k = (b.email || b.id).toLowerCase(); if (!srcByEmail[k]) srcByEmail[k] = b.comoConheceu; });
+  // canal → { leads, convertidos, ticketSoma, ticketN }
+  const srcAgg = {};
+  Object.values(srcByEmail).forEach(s => {
+    if (!srcAgg[s]) srcAgg[s] = { leads: 0, convertidos: 0, ticketSoma: 0, ticketN: 0 };
+    srcAgg[s].leads++;
+  });
+  // Conversão: cliente com ≥1 venda. Ticket médio: média do valor das vendas do canal.
+  const srcConverted = {};
+  bookings.forEach(b => {
+    const k   = (b.email || b.id).toLowerCase();
+    const src = srcByEmail[k];
+    if (!src || !srcAgg[src] || !SOLD_STATUS.includes(b.status)) return;
+    if (!srcConverted[k]) { srcConverted[k] = true; srcAgg[src].convertidos++; }
+    srcAgg[src].ticketSoma += paidValue(b);
+    srcAgg[src].ticketN++;
+  });
+  const srcTotal = Object.values(srcAgg).reduce((a, x) => a + x.leads, 0);
+  const maxSrc   = Math.max(...Object.values(srcAgg).map(x => x.leads), 1);
+  const srcBars = Object.entries(srcAgg).sort((a, b) => b[1].leads - a[1].leads).map(([k, x]) => {
+    const pct    = Math.round(x.leads / maxSrc * 100);
+    const share  = srcTotal > 0 ? Math.round(x.leads / srcTotal * 100) : 0;
+    const conv   = x.leads > 0 ? Math.round(x.convertidos / x.leads * 100) : 0;
+    const ticket = x.ticketN > 0 ? fmtMoney(Math.round(x.ticketSoma / x.ticketN)) : '—';
+    return `<div style="margin-bottom:.7rem">
+      <div class="chart-bar-row" style="margin-bottom:.2rem">
+        <div class="chart-bar-label">${esc(k)} <span style="color:var(--muted)">(${share}%)</span></div>
+        <div class="chart-bar-wrap"><div class="chart-bar-fill" style="width:${pct}%"><span class="chart-bar-val">${x.leads}</span></div></div>
+      </div>
+      <div style="font-size:.72rem;color:var(--muted);padding-left:.1rem">✅ ${conv}% viraram venda (${x.convertidos}/${x.leads}) · 🎟️ ticket médio ${ticket}</div>
+    </div>`;
+  }).join('') || '<p style="color:var(--muted);font-size:.85rem">Ainda sem dados. A pergunta aparece no 1º agendamento de cada cliente.</p>';
+
   document.getElementById('adminContent').innerHTML = `
     <h2>📊 Estatísticas do Negócio</h2>
     <div class="stats-grid">
@@ -5174,6 +5263,10 @@ function renderAdminStats() {
       <div class="admin-panel">
         <h3>Serviços Mais Vendidos</h3>
         ${svcBars}
+      </div>
+      <div class="admin-panel">
+        <h3>📣 Como nos conheceram</h3>
+        ${srcBars}
       </div>
       <div class="admin-panel">
         <h3>Indicadores de Fidelização</h3>
