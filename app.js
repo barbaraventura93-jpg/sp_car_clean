@@ -5208,22 +5208,43 @@ function renderAdminStats() {
   const unique = attendedClients.length;
 
   // Origem dos clientes (como nos conheceu) — conta 1x por e-mail (o 1º agendamento
-  // com origem informada), para orientar onde investir em marketing.
-  const srcByEmail = {};
+  // com origem informada), com taxa de conversão e ticket médio por canal, para
+  // orientar onde investir em marketing.
+  const SOLD_STATUS = ['confirmed', 'approved', 'completed']; // orçamento aprovado = venda
+  const srcByEmail = {}; // e-mail → canal declarado no 1º agendamento com origem
   bookings
     .filter(b => b.status !== 'rejected' && b.comoConheceu)
     .sort((a, b) => (a.submittedAt || '').localeCompare(b.submittedAt || ''))
     .forEach(b => { const k = (b.email || b.id).toLowerCase(); if (!srcByEmail[k]) srcByEmail[k] = b.comoConheceu; });
-  const srcCount = {};
-  Object.values(srcByEmail).forEach(s => { srcCount[s] = (srcCount[s] || 0) + 1; });
-  const srcTotal = Object.values(srcCount).reduce((a, b) => a + b, 0);
-  const maxSrc   = Math.max(...Object.values(srcCount), 1);
-  const srcBars = Object.entries(srcCount).sort((a, b) => b[1] - a[1]).map(([k, v]) => {
-    const pct = Math.round(v / maxSrc * 100);
-    const share = srcTotal > 0 ? Math.round(v / srcTotal * 100) : 0;
-    return `<div class="chart-bar-row">
-      <div class="chart-bar-label">${esc(k)} <span style="color:var(--muted)">(${share}%)</span></div>
-      <div class="chart-bar-wrap"><div class="chart-bar-fill" style="width:${pct}%"><span class="chart-bar-val">${v}</span></div></div>
+  // canal → { leads, convertidos, ticketSoma, ticketN }
+  const srcAgg = {};
+  Object.values(srcByEmail).forEach(s => {
+    if (!srcAgg[s]) srcAgg[s] = { leads: 0, convertidos: 0, ticketSoma: 0, ticketN: 0 };
+    srcAgg[s].leads++;
+  });
+  // Conversão: cliente com ≥1 venda. Ticket médio: média do valor das vendas do canal.
+  const srcConverted = {};
+  bookings.forEach(b => {
+    const k   = (b.email || b.id).toLowerCase();
+    const src = srcByEmail[k];
+    if (!src || !srcAgg[src] || !SOLD_STATUS.includes(b.status)) return;
+    if (!srcConverted[k]) { srcConverted[k] = true; srcAgg[src].convertidos++; }
+    srcAgg[src].ticketSoma += paidValue(b);
+    srcAgg[src].ticketN++;
+  });
+  const srcTotal = Object.values(srcAgg).reduce((a, x) => a + x.leads, 0);
+  const maxSrc   = Math.max(...Object.values(srcAgg).map(x => x.leads), 1);
+  const srcBars = Object.entries(srcAgg).sort((a, b) => b[1].leads - a[1].leads).map(([k, x]) => {
+    const pct    = Math.round(x.leads / maxSrc * 100);
+    const share  = srcTotal > 0 ? Math.round(x.leads / srcTotal * 100) : 0;
+    const conv   = x.leads > 0 ? Math.round(x.convertidos / x.leads * 100) : 0;
+    const ticket = x.ticketN > 0 ? fmtMoney(Math.round(x.ticketSoma / x.ticketN)) : '—';
+    return `<div style="margin-bottom:.7rem">
+      <div class="chart-bar-row" style="margin-bottom:.2rem">
+        <div class="chart-bar-label">${esc(k)} <span style="color:var(--muted)">(${share}%)</span></div>
+        <div class="chart-bar-wrap"><div class="chart-bar-fill" style="width:${pct}%"><span class="chart-bar-val">${x.leads}</span></div></div>
+      </div>
+      <div style="font-size:.72rem;color:var(--muted);padding-left:.1rem">✅ ${conv}% viraram venda (${x.convertidos}/${x.leads}) · 🎟️ ticket médio ${ticket}</div>
     </div>`;
   }).join('') || '<p style="color:var(--muted);font-size:.85rem">Ainda sem dados. A pergunta aparece no 1º agendamento de cada cliente.</p>';
 
