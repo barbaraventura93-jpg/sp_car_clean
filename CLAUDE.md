@@ -4,13 +4,13 @@
 
 - Falar sempre em português com a Bárbara.
 
-<!-- BEGIN AWS Agent Toolkit rules -->
 ## AWS Agent Toolkit — regras da experiência nova
 
 > **help_level salvo: HIGH (Alta)** — ao construir na AWS, explicar cada passo antes
 > de executar, sugerir alternativas quando houver abordagem melhor, e apontar boas
 > práticas e trade-offs; ainda assim executar a escolha da usuária.
 
+<!-- BEGIN AWS Agent Toolkit rules -->
 # AWS Guidance for the new AWS experience
 
 This user has signed up for the new AWS experience. This experience lets you sign into AWS using a social provider and requires the following additional context.
@@ -34,6 +34,7 @@ Where this guidance conflicts with the project's own instructions, the project's
   - MUST create all Regional resources in the project's assigned Region
   - You CAN create AWS WAF and Cloudwatch Logs resources in us-east-1 when there are global resources (like a global WAF instance) that require a connection to dependencies in us-east-1. You should not use these for any other reason, because resources in the selected Region will provide lower cost (due to no cross-Region traffic), increased availability (due to no cross-Region traffic), and easier manageability (due to not needing to look in another Region). When you need to do an inventory of resources, you need to look in both the selected Region and us-east-1 for Cloudwatch Logs or WAF resources.
   - MUST NOT attempt to create Lambda, API Gateway, or other Regional resources in any other Region
+  - MUST direct users to confirm their Region in AWS Settings > View all projects > Overview > Additional Info > Region. If the user cannot confirm their Region, check in ~/.aws/config
   - MUST NOT use Lambda@Edge — excluded from both Lambda and CloudFront
   - MUST NOT use CloudFormation StackSets — no multi-account or multi-Region deployments
   - MUST NOT attempt cross-Region actions — no cross-Region replication for DynamoDB/S3/RDS, no multi-Region KMS keys
