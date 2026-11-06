@@ -188,7 +188,7 @@ footer(img, S - 58)
 save(img, 'semana5-01-reparo-trinca-no-local.jpg')
 
 
-# ===== POST 2 · Qua 11/11 18:00 · Story · Por baixo também precisa de cuidado =====
+# ===== POST 2 · Qua 11/11 18:00 · Story · Lavagem por baixo: serviço à parte =====
 W, H = 1080, 1920
 ph = treat('raw/picape-por-baixo_WA0031.jpeg')
 img = Image.new('RGBA', (W, H), BG + (255,))
@@ -198,11 +198,11 @@ img = scrim(img, 0, 380, 250, 0)
 img = scrim(img, 760, 1060, 0, 255)
 logo(img, 0, 90, 40, center=True)
 d = ImageDraw.Draw(img)
-outline_pill(img, 70, 980, 'LAVAGEM DETALHADA', M(800, 24), col=LBLUE, fill=BG)
+outline_pill(img, 70, 980, 'LAVAGEM POR BAIXO', M(800, 24), col=LBLUE, fill=BG)
 d.text((70, 1060), 'Por baixo também', font=M(800, 70), fill=WHITE)
 d.text((70, 1142), 'precisa de cuidado', font=M(800, 70), fill=LBLUE)
-itens = [('Caixas de roda', 'limpeza detalhada, incluída na Lavagem Detalhada'),
-         ('Estepe e eixo', 'barro e areia se acumulam onde ninguém vê'),
+itens = [('Serviço à parte', 'contratado à parte, não entra na Lavagem Detalhada'),
+         ('Caixas de roda e eixo', 'barro e areia se acumulam onde ninguém vê'),
          ('Barro acumulado', 'segura umidade junto às peças por mais tempo')]
 y = 1270
 for tit, sub in itens:
