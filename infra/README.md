@@ -160,15 +160,35 @@ aws pricing-plan-manager create-subscription --region us-east-1 \
 aws pricing-plan-manager list-subscriptions --region us-east-1
 ```
 
+```bash
+# 5. Anexar a zona do Route 53 ao plano, o que zera os US$0,50/mês dela.
+#    A doc do CloudFront só cita o console (Manage Plan), mas a API resolve:
+SARN=$(aws pricing-plan-manager list-subscriptions --region us-east-1 \
+  --query 'subscriptionSummaries[0].arn' --output text)
+ETAG=$(aws pricing-plan-manager list-subscriptions --region us-east-1 \
+  --query 'subscriptionSummaries[0].eTag' --output text)
+aws pricing-plan-manager associate-resources-to-subscription --region us-east-1 \
+  --arn "$SARN" --if-match "$ETAG" \
+  --resource-arns "arn:aws:route53:::hostedzone/<ID_DA_ZONA>"
+```
+
 O que o tier Free cobre, sem cobrança por excesso mesmo durante ataque: a
 distribuição, o web ACL com até 5 regras, proteção DDoS sempre ativa,
 transferência de dados, ingestão de logs do WAF no CloudWatch, certificado TLS,
-CloudFront Functions e créditos de armazenamento no S3. A **zona do Route 53
-também entra** se você anexá-la ao plano (console do CloudFront → distribuição →
-Manage Plan), o que zera os US$0,50/mês da `spcarclean.com.br`.
+CloudFront Functions, créditos de armazenamento no S3 e a zona do Route 53
+anexada no passo 5.
 
 Limites e armadilhas que valem saber:
 
+- **O web ACL não pode ter condição customizada.** Um
+  `scope_down_statement` (ou qualquer lógica própria de match) torna o web ACL
+  inelegível e o `create-subscription` falha com
+  `ValidationException: The following resources are not eligible for this
+  subscription tier: <arn do web ACL>`. Isso aconteceu de verdade aqui: a
+  primeira versão do `waf.tf` excluía `/api/*` da inspeção por `scope_down` e
+  foi recusada. Para ajustar o comportamento de regras do grupo gerenciado use
+  `rule_action_override` (ligar/desligar regra), que é suportado — é o que o
+  `waf.tf` faz hoje com as 4 regras de inspeção de corpo.
 - **5 cache behaviors no tier Free, e a distribuição usa exatamente 5.** Um
   caminho novo exige subir para o Pro (pago).
 - **1 domínio apex por plano.** `spcarclean.com.br` + `www` contam como um.

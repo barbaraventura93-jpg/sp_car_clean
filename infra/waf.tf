@@ -65,14 +65,18 @@ resource "aws_wafv2_web_acl" "site" {
   # traversal, injeção). É a regra que efetivamente pega uma varredura de
   # caminhos como a de novembro.
   #
-  # O scope_down tira /api/* e /.netlify/functions/* da inspeção, de propósito:
-  # a Central de IA manda prompts longos e com texto livre, que disparariam
-  # falso positivo em SizeRestrictions_BODY (corpo > 8 KB) e nas regras de
-  # XSS/RFI sobre o corpo — quebrando a IA em produção. Os dois prefixos
-  # aparecem porque o caminho legado do Netlify é reescrito pela CloudFront
-  # Function, e assim a exceção vale independente da ordem de avaliação.
-  # A API não fica descoberta: ela mantém x-origin-verify, o throttling do
-  # API Gateway (25 req/s) e o rate-limit por IP da própria aplicação.
+  # As 4 regras que inspecionam o CORPO da requisição ficam em "count" em vez
+  # de "block": a Central de IA manda prompts longos e de texto livre, que
+  # dariam falso positivo em SizeRestrictions_BODY (corpo > 8 KB) e nas regras
+  # de XSS/RFI/LFI sobre o corpo — quebrando a IA em produção. Elas seguem
+  # contando em CloudWatch, só não bloqueiam.
+  #
+  # Isto substitui um scope_down_statement que excluía /api/* da inspeção:
+  # condição customizada deixa o web ACL inelegível para o plano de tarifa
+  # fixa (CreateSubscription devolve ValidationException "not eligible for
+  # this subscription tier"), enquanto ligar/desligar regras do grupo é
+  # explicitamente suportado. A API da aplicação segue protegida por
+  # x-origin-verify, throttling de 25 req/s e rate-limit por IP.
   rule {
     name     = "common-rules"
     priority = 1
@@ -86,43 +90,31 @@ resource "aws_wafv2_web_acl" "site" {
         vendor_name = "AWS"
         name        = "AWSManagedRulesCommonRuleSet"
 
-        scope_down_statement {
-          not_statement {
-            statement {
-              or_statement {
-                statement {
-                  byte_match_statement {
-                    search_string         = "/api/"
-                    positional_constraint = "STARTS_WITH"
+        rule_action_override {
+          name = "SizeRestrictions_BODY"
+          action_to_use {
+            count {}
+          }
+        }
 
-                    field_to_match {
-                      uri_path {}
-                    }
+        rule_action_override {
+          name = "CrossSiteScripting_BODY"
+          action_to_use {
+            count {}
+          }
+        }
 
-                    text_transformation {
-                      priority = 0
-                      type     = "NONE"
-                    }
-                  }
-                }
+        rule_action_override {
+          name = "GenericRFI_BODY"
+          action_to_use {
+            count {}
+          }
+        }
 
-                statement {
-                  byte_match_statement {
-                    search_string         = "/.netlify/functions/"
-                    positional_constraint = "STARTS_WITH"
-
-                    field_to_match {
-                      uri_path {}
-                    }
-
-                    text_transformation {
-                      priority = 0
-                      type     = "NONE"
-                    }
-                  }
-                }
-              }
-            }
+        rule_action_override {
+          name = "GenericLFI_BODY"
+          action_to_use {
+            count {}
           }
         }
       }
