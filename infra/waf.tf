@@ -28,7 +28,7 @@ resource "aws_wafv2_web_acl" "site" {
   provider = aws.us_east_1
 
   name        = "sp-car-clean-site"
-  description = "Protecao do site SP Car Clean (reputacao de IP, exploracoes comuns, teto por IP)"
+  description = "Protecao do site SP Car Clean - reputacao de IP, exploracoes comuns, teto por IP"
   scope       = "CLOUDFRONT"
 
   # Site público: libera por padrão e bloqueia só o que as regras pegarem.
