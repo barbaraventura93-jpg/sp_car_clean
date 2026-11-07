@@ -116,6 +116,11 @@ resource "aws_cloudfront_distribution" "site" {
   aliases             = local.aliases
   price_class         = var.cloudfront_price_class
 
+  # WAF do site (infra/waf.tf). null = sem WAF associado.
+  # Um plano de tarifa fixa do CloudFront exige esta associação e não permite
+  # removê-la enquanto o plano estiver ativo — ver infra/README.md.
+  web_acl_id = var.enable_waf ? aws_wafv2_web_acl.site[0].arn : null
+
   origin {
     domain_name              = aws_s3_bucket.site.bucket_regional_domain_name
     origin_id                = "s3-site"

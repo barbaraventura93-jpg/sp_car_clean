@@ -126,4 +126,64 @@ Logs: CloudWatch → Log groups → `/aws/lambda/sp-car-clean-<função>` (reten
 - O IP usado no rate-limit vem da borda do CloudFront (`x-viewer-ip`), não de um cabeçalho que o cliente possa forjar.
 - Throttling da API (25 req/s, rajada 50) como teto de custo.
 - Bucket de mídia sem listagem: só o CloudFront lê (`/media/*`) e só a função `upload-url` (com login de admin) gera URL de envio. Fotos de check-in têm nome aleatório (a URL não é adivinhável).
+- WAF na borda (reputação de IP, explorações comuns e teto por IP) — ver "WAF e plano de tarifa fixa" abaixo.
 - Estado do Terraform em bucket privado, versionado (90 dias de histórico), criptografado e só por HTTPS.
+
+## WAF e plano de tarifa fixa
+
+O site tem um AWS WAF (`infra/waf.tf`) associado ao CloudFront, com três regras:
+reputação de IP da Amazon, explorações comuns (`CommonRuleSet`, sem inspecionar
+`/api/*`) e um teto de 2.000 requisições por IP a cada 5 minutos.
+
+Por que foi criado: entre 1 e 7/nov/2026 a distribuição saiu de ~390 para
+~99.500 requisições/dia com **96,7% de respostas 4xx** — varredura de bot
+sondando caminhos inexistentes. Nada caiu (5xx em 0%), mas não havia nenhum
+filtro antes do CloudFront.
+
+**O WAF só é gratuito dentro de um plano de tarifa fixa do CloudFront.** Avulso,
+custa ~US$5/mês + ~US$1 por regra. Então a ordem importa:
+
+```bash
+# 1. Cria o WAF e associa à distribuição (enable_waf já vem true)
+terraform apply
+
+# 2. Pegue os dois ARNs
+terraform output -raw cloudfront_distribution_arn
+terraform output -raw waf_web_acl_arn
+
+# 3. Assine o tier Free JÁ EM SEGUIDA (entre os passos 1 e 2 o WAF é cobrado)
+aws pricing-plan-manager create-subscription --region us-east-1 \
+  --plan-family CloudFront --plan-tier FREE \
+  --resource-arns "<cloudfront_distribution_arn>" "<waf_web_acl_arn>"
+
+# 4. Conferir
+aws pricing-plan-manager list-subscriptions --region us-east-1
+```
+
+O que o tier Free cobre, sem cobrança por excesso mesmo durante ataque: a
+distribuição, o web ACL com até 5 regras, proteção DDoS sempre ativa,
+transferência de dados, ingestão de logs do WAF no CloudWatch, certificado TLS,
+CloudFront Functions e créditos de armazenamento no S3. A **zona do Route 53
+também entra** se você anexá-la ao plano (console do CloudFront → distribuição →
+Manage Plan), o que zera os US$0,50/mês da `spcarclean.com.br`.
+
+Limites e armadilhas que valem saber:
+
+- **5 cache behaviors no tier Free, e a distribuição usa exatamente 5.** Um
+  caminho novo exige subir para o Pro (pago).
+- **1 domínio apex por plano.** `spcarclean.com.br` + `www` contam como um.
+- **Não dá para voltar `enable_waf` para false com o plano ativo** — a AWS
+  recusa remover a associação. Cancele o plano primeiro
+  (`aws pricing-plan-manager cancel-subscription --arn <arn> --if-match <eTag>`).
+- **Ao cancelar o plano, apague o web ACL junto** se não for mais usá-lo, senão
+  ele volta a custar ~US$5/mês em pay-as-you-go.
+- **Desativar a distribuição não cancela o plano**: a cobrança continua.
+- Regras pagas do WAF (Bot Control direcionado, ATP, ACFP, regras de parceiros
+  e rule groups customizados) não são aceitas em plano. As gerenciadas
+  gratuitas da AWS, sim.
+- Logs de acesso padrão do CloudFront só entram do tier Pro para cima.
+
+Se um dia a Central de IA ou o painel admin começarem a dar 403 sem motivo,
+suspeite do `CommonRuleSet`: veja quais regras dispararam em CloudWatch
+(métricas `common-rules` / `sp-car-clean-site`) e mova a regra específica para
+`count` com um `rule_action_override` em `infra/waf.tf`.

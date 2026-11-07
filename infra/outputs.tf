@@ -45,3 +45,13 @@ output "github_secrets_para_configurar" {
       FIREBASE_API_KEY, EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY
   EOT
 }
+
+output "waf_web_acl_arn" {
+  description = "ARN do web ACL do site. Vazio se enable_waf=false. Necessário para assinar o plano de tarifa fixa do CloudFront (ver infra/README.md)."
+  value       = var.enable_waf ? aws_wafv2_web_acl.site[0].arn : ""
+}
+
+output "cloudfront_distribution_arn" {
+  description = "ARN da distribuição CloudFront. Necessário, junto do waf_web_acl_arn, para assinar o plano de tarifa fixa."
+  value       = aws_cloudfront_distribution.site.arn
+}

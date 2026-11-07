@@ -57,3 +57,15 @@ variable "github_branch" {
   type        = string
   default     = "main"
 }
+
+variable "enable_waf" {
+  description = "Cria o AWS WAF de infra/waf.tf e o associa ao CloudFront. Obrigatório para assinar um plano de tarifa fixa do CloudFront — e, com o plano ativo, não dá para voltar para false sem cancelar o plano antes. Sem plano, um web ACL custa ~US$5/mês + ~US$1 por regra; com o tier Free, US$ 0."
+  type        = bool
+  default     = true
+}
+
+variable "waf_rate_limit" {
+  description = "Teto de requisições por IP a cada 5 minutos antes de bloquear (regra rate-limit do web ACL). O tráfego normal do site é ~390 req/dia no total, então 2.000 por IP sobra para uso real e ainda barra pico de origem única."
+  type        = number
+  default     = 2000
+}
