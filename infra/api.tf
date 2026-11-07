@@ -22,11 +22,13 @@ locals {
   ]
 
   # Horários em UTC (07h30, 08h, 09h e 10h em Brasília).
+  # calendar-sync não tem hora fixa: roda de 15 em 15 min o dia todo.
   scheduled_functions = {
     "admin-alerts"   = "cron(30 10 * * ? *)"
     "ai-dispatcher"  = "cron(0 11 * * ? *)"
     "birthday-check" = "cron(0 12 * * ? *)"
     "reminder-check" = "cron(0 13 * * ? *)"
+    "calendar-sync"  = "rate(15 minutes)"
   }
 
   all_functions = distinct(concat(local.http_functions, keys(local.scheduled_functions)))
