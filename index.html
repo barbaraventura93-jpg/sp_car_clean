@@ -528,9 +528,14 @@ window.__ENV = {
       <div class="form-row full"><div class="form-group"><label>Senha</label><input id="adminPass" type="password" placeholder="Digite a senha" onkeydown="if(event.key==='Enter')doAdminLogin()"/></div></div>
       <div id="loginError" style="color:var(--red);font-size:.82rem;margin-bottom:.8rem;display:none">Senha incorreta. Tente novamente.</div>
       <button class="btn-primary" onclick="doAdminLogin()" style="width:100%;justify-content:center">Entrar no Painel</button>
-      <div class="admin-gate-foot">
+      <!-- "Esqueci minha senha" vale nos DOIS contextos (tela cheia do app e
+           modal aberto pela Área Restrita), então não pode morar no
+           .admin-gate-foot, que o CSS esconde fora da tela cheia. "Ver o site"
+           é que só faz sentido na tela cheia, onde não há site atrás. -->
+      <div class="modal-foot-link">
         <a onclick="openPasswordReset(CFG.adminEmail)">Esqueci minha senha</a>
-        &nbsp;·&nbsp;
+      </div>
+      <div class="admin-gate-foot">
         <a onclick="exitAdminGate()">Ver o site</a>
       </div>
     </div>
@@ -580,7 +585,9 @@ window.__ENV = {
       <div id="prOk" style="color:var(--accent);font-size:.82rem;margin-bottom:.8rem;display:none"></div>
       <button class="btn-primary" id="prSubmit" onclick="doPasswordResetConfirm()"
               style="width:100%;justify-content:center">Salvar nova senha</button>
-      <div class="admin-gate-foot"><a id="prResend" onclick="doPasswordResetRequest()">Enviar código</a></div>
+      <!-- .admin-gate-foot não serve aqui: este modal nunca recebe .admin-gate,
+           então o link ficava display:none em toda situação. -->
+      <div class="modal-foot-link"><a id="prResend" onclick="doPasswordResetRequest()">Enviar código</a></div>
     </div>
   </div>
 </div>
