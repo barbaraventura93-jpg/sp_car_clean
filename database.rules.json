@@ -59,6 +59,15 @@
     },
     "aiUsage":         { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
     "aiLogs":          { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
-    "aiRateLimit":     { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" }
+    "aiRateLimit":     { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+
+    // `referrals` existe nas regras publicadas e tinha sumido deste arquivo.
+    // Sem regra o nó cai no default (negar tudo), que por sorte é o mesmo
+    // efeito — mas publicar um arquivo que "esquece" um nó é como se descobre
+    // tarde que outro nó foi esquecido junto. O programa Indique um Amigo é
+    // escrito pela função create-referral (que usa o segredo) e lido pelo
+    // painel (que passa pelo /api/admin-data), então nada aqui precisa ser
+    // alcançável pelo navegador.
+    "referrals":       { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" }
   }
 }
