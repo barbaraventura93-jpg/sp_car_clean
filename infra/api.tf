@@ -136,6 +136,13 @@ resource "aws_lambda_function" "fn" {
         PUSH_TABLE           = aws_dynamodb_table.push.name
         MEDIA_BUCKET         = aws_s3_bucket.media.bucket
         MEDIA_BASE_URL       = local.media_base_url
+
+        # Ids do Cognito para functions/lib/admin-auth.js validar o token:
+        # valida a assinatura contra o JWKS do pool e exige o grupo `admin`.
+        # Nenhum dos dois é segredo — o client id vai no frontend, como a
+        # chave do Firebase ia.
+        COGNITO_USER_POOL_ID = aws_cognito_user_pool.users.id
+        COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web.id
       },
       each.key == "firebase-backup" ? { BACKUP_BUCKET = aws_s3_bucket.backups.bucket } : {}
     )
