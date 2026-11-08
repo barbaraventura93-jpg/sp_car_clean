@@ -254,6 +254,25 @@ function escHtml(s) {
 }
 const esc = escHtml;
 
+// Dados do próprio cliente pelo servidor. As regras do banco liberam o dado do
+// cliente por `auth.uid`, do Firebase Auth, que não existe mais desde a migração
+// para o Cognito — então ler/gravar direto responde 401. Ver functions/me.js.
+// O uid NUNCA vai no corpo: o servidor tira do token.
+async function chamarMe(op, dados) {
+  const user = AUTH.currentUser;
+  if (!user) throw new Error('Sessão expirada. Entre novamente.');
+  const resp = await fetch('/api/me', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await user.getIdToken() },
+    body: JSON.stringify(dados === undefined ? { op } : { op, dados }),
+  });
+  const corpo = await resp.json().catch(() => ({}));
+  if (!resp.ok || corpo.ok === false) {
+    throw new Error(corpo.error || `Falha ao acessar seus dados (HTTP ${resp.status})`);
+  }
+  return corpo.dados;
+}
+
 const isAdmin  = () => _authUser != null && _authUser.email === CFG.adminEmail;
 const isClient = () => _authUser != null && _authUser.email !== CFG.adminEmail;
 
@@ -313,18 +332,14 @@ function _recomputeDayLoad() {
 // A leitura da coleção /bookings é restrita ao admin. O cliente lê os próprios
 // registros pelo índice bookingIndex/$uid → cada bookings/$id (permitido pela regra
 // por-id: clientUid == auth.uid). Popula _bookings só com o que é dele.
+// Pelo servidor: `bookingIndex/$uid` exige auth do Firebase e responde 401 ao
+// navegador. Fail-open como antes — a tela abre mesmo se a lista falhar.
 function _loadMyBookings(uid, cb) {
-  if (!uid || !_bookingIndexRef || !_bookingsRef) { if (cb) cb(); return; }
-  _bookingIndexRef.child(uid).once('value', idxSnap => {
-    const ids = Object.keys(idxSnap.val() || {});
-    if (!ids.length) { _bookings = []; if (cb) cb(); return; }
-    Promise.all(ids.map(id =>
-      _bookingsRef.child(id).once('value').then(s => s.val()).catch(() => null)
-    )).then(list => {
-      _bookings = list.filter(Boolean);
-      if (cb) cb();
-    });
-  }, e => { console.warn('Firebase bookingIndex:', e); if (cb) cb(); });
+  if (!uid) { if (cb) cb(); return; }
+  chamarMe('agendamentos')
+    .then(lista => { _bookings = Array.isArray(lista) ? lista : []; })
+    .catch(e => { console.warn('meus agendamentos:', e.message); })
+    .finally(() => { if (cb) cb(); });
 }
 
 // Re-renderiza o calendário público de agendamento se estiver visível
@@ -1086,15 +1101,20 @@ async function submitBooking() {
   _bookings.push(b);
   if (_bookingsRef) {
     _bookingsRef.child(id).set(b).catch(e => console.error('Firebase booking:', e));
-    // Índice do cliente logado → permite ver "Meus agendamentos" sem leitura pública
-    if (clientUid && _bookingIndexRef) {
-      _bookingIndexRef.child(clientUid).child(id).set(true).catch(e => console.warn('Firebase bookingIndex:', e));
+    // Índice do cliente logado → permite ver "Meus agendamentos" sem leitura
+    // pública. Pelo servidor, que confere a posse antes de indexar: sem isso o
+    // cliente indexaria o código de outra pessoa e passaria a lê-lo pela
+    // leitura legítima dos próprios agendamentos.
+    if (clientUid && isClient()) {
+      chamarMe('indexar-agendamento', { id })
+        .catch(e => console.warn('indexar agendamento:', e.message));
     }
   }
 
   // Atualizar perfil do cliente com dados mais recentes
-  if (isClient() && _authUser && _clientProfilesRef) {
-    _clientProfilesRef.child(_authUser.uid).update({ name, phone, bairro, lastBookingAt: new Date().toISOString() }).catch(() => {});
+  if (isClient() && _authUser) {
+    chamarMe('salvar-perfil', { name, phone, bairro, lastBookingAt: new Date().toISOString() })
+      .catch(e => console.warn('salvar perfil:', e.message));
     _clientProfile = { ..._clientProfile, name, phone, bairro };
     _updateClientNavUI();
   }
@@ -1407,13 +1427,24 @@ function _renderStatusResult(b) {
     ${cancelBtn}`;
 }
 
-function customerConfirm(id) {
+// Confirmação do PAGAMENTO pelo cliente. A mudança de status e o crédito dos
+// pontos foram para o servidor (functions/me.js). Antes rodavam aqui: o
+// navegador gravava `bookings/<id>.status` e somava
+// `clientProfiles/<uid>.points` por conta própria. Como ponto vira desconto,
+// era dinheiro editável no aparelho do cliente — e repetir a chamada creditava
+// de novo. No servidor a posse é conferida, o valor vem do agendamento, a regra
+// vem do `config`, e `pointsAwardedAt` garante crédito único.
+async function customerConfirm(id) {
   const bookings = getBookings();
   const b = bookings.find(x=>x.id===id);
   if(!b) return;
+  try {
+    await chamarMe('confirmar-pagamento', { id });
+  } catch (e) {
+    alert('Não foi possível confirmar: ' + e.message);
+    return;
+  }
   b.status = 'confirmed';
-  updateBooking(b);
-  _awardPoints(b);
   sendEmail('template_update', {
     to_email: b.email, to_name: b.name,
     booking_id: b.id,
@@ -1640,8 +1671,9 @@ async function _tryClientSignupOrLogin(email, pw, name, phone) {
     const cred = await AUTH.createUserWithEmailAndPassword(email, pw);
     const user = cred.user;
     await user.updateProfile({ displayName: name });
-    await _clientProfilesRef.child(user.uid).set({
-      uid: user.uid, email, name, phone,
+    // uid e email não vão no corpo: o servidor os tira do token.
+    await chamarMe('salvar-perfil', {
+      name, phone,
       createdAt: new Date().toISOString(),
       linkedEmails: [email.toLowerCase()],
     });
@@ -1649,7 +1681,7 @@ async function _tryClientSignupOrLogin(email, pw, name, phone) {
   } catch(e) {
     if (e.code === 'auth/email-already-in-use') {
       const cred2 = await AUTH.signInWithEmailAndPassword(email, pw);
-      await _clientProfilesRef.child(cred2.user.uid).update({ lastLoginAt: new Date().toISOString() });
+      await chamarMe('salvar-perfil', { lastLoginAt: new Date().toISOString() });
       return cred2.user;
     }
     // Diferente do Firebase, a conta nova do Cognito nasce pendente: o
@@ -1663,6 +1695,10 @@ async function _tryClientSignupOrLogin(email, pw, name, phone) {
 }
 
 // --- Pontos de fidelidade ---
+// Só o ADMIN credita por aqui, e só no lançamento retroativo de agendamento
+// (saveAdminBooking). A escrita atravessa o /api/admin-data, que exige o grupo
+// `admin` no token. O crédito do CLIENTE, ao confirmar o pagamento, foi para o
+// /api/me — ver customerConfirm().
 function _awardPoints(b) {
   if (!b.clientUid || !_clientProfilesRef) return;
   const price = b.finalPrice || b.price || 0;
@@ -2207,10 +2243,13 @@ function openClientAccount() {
   _clientOnboardingDismissed = false;
   // Always refresh profile + agendamentos from Firebase to avoid race condition on fresh login
   const _show = () => { renderClientAccount(); document.getElementById('clientAccountModal').style.display = 'flex'; };
-  _clientProfilesRef.child(_authUser.uid).once('value', snap => {
-    _clientProfile = snap.val() || { uid: _authUser.uid, email: _authUser.email };
-    _loadMyBookings(_authUser.uid, _show);
-  }).catch(() => { _loadMyBookings(_authUser.uid, _show); });
+  chamarMe('perfil')
+    .then(perfil => { _clientProfile = perfil || { uid: _authUser.uid, email: _authUser.email }; })
+    .catch(e => {
+      console.warn('meu perfil:', e.message);
+      _clientProfile = _clientProfile || { uid: _authUser.uid, email: _authUser.email };
+    })
+    .finally(() => _loadMyBookings(_authUser.uid, _show));
 }
 
 function _getMyBookings() {
@@ -2717,9 +2756,8 @@ async function saveClientOnboarding(isEditMode) {
     renderClientAccount();
   };
   // Fail-open: se o Firebase falhar, nunca trava a tela — mantém os dados anteriores e avisa.
-  if (!_clientProfilesRef) { apply(); return; }
   try {
-    await _clientProfilesRef.child(_authUser.uid).update(payload);
+    await chamarMe('salvar-perfil', payload);
     apply();
   } catch (e) {
     alert('Erro ao salvar: ' + e.message + '\n\nTente novamente — seus dados anteriores foram mantidos.');
@@ -7821,10 +7859,10 @@ _buildHeroCarousel(HERO_FALLBACK);
       // Cliente que já liberou as notificações: mantém o aparelho ligado à conta.
       if (window.pwaEnableClientPush) window.pwaEnableClientPush({ silent: true });
       // Cliente logado — carrega perfil e os próprios agendamentos (via índice)
-      _clientProfilesRef.child(user.uid).once('value', snap => {
-        _clientProfile = snap.val() || { uid: user.uid, email: user.email };
-        _updateClientNavUI();
-      });
+      chamarMe('perfil')
+        .then(perfil => { _clientProfile = perfil || { uid: user.uid, email: user.email }; })
+        .catch(e => console.warn('meu perfil:', e.message))
+        .finally(() => _updateClientNavUI());
       _loadMyBookings(user.uid, () => {
         // Se a tela "Minha conta" já estiver aberta, re-renderiza com os dados
         const m = document.getElementById('clientAccountModal');
