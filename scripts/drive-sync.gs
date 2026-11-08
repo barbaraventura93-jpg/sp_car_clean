@@ -92,6 +92,16 @@ var LARGURA = 1600;
 var MAX_POR_PASTA = 4;
 var MAX_CARROSSEL = 12;
 
+/**
+ * Teto por GRUPO (mesmo nome base, ou seja o mesmo carro/serviço).
+ *
+ * Medido no primeiro ensaio: sem isto o carrossel recebia
+ * "fusca-preto depois 2, 3, 5 e 7" — quatro slides do MESMO Fusca preto, com a
+ * legenda idêntica nos quatro. Teto por pasta não resolve, porque os quatro
+ * estão na mesma pasta E são o mesmo carro.
+ */
+var MAX_POR_GRUPO = 2;
+
 /** Pastas que nunca são fonte, independente do IGNORAR. */
 var PASTAS_FORA = ['unsplash', 'arquivo'];
 
@@ -148,7 +158,11 @@ function executar(ensaio) {
       Logger.log('  [%s] usando as subpastas Antes/Depois', pasta.nome);
       var porNome = {};
       (pasta.subAntes ? listar(pasta.subAntes) : []).forEach(function (f) {
-        if (f.tipo !== 'imagem') { resumo.pulados++; return; }
+        if (f.tipo !== 'imagem') {
+          Logger.log('  [%s/Antes] PULADO (.%s não é exibível): %s', pasta.nome, extensaoDe(f.nome), f.nome);
+          resumo.pulados++;
+          return;
+        }
         var k = baseDoNome(f.nome);
         porNome[k] = porNome[k] || {};
         if (!porNome[k].antes) porNome[k].antes = f;
@@ -161,15 +175,20 @@ function executar(ensaio) {
           resumo.pulados++;
           return;
         }
-        if (f.tipo !== 'imagem') { resumo.pulados++; return; }
+        if (f.tipo !== 'imagem') {
+          Logger.log('  [%s/Depois] PULADO (.%s não é exibível): %s', pasta.nome, extensaoDe(f.nome), f.nome);
+          resumo.pulados++;
+          return;
+        }
         var k = baseDoNome(f.nome);
         porNome[k] = porNome[k] || {};
+        f.grupo = k;
         if (!porNome[k].depois) { porNome[k].depois = f; } else { resultadosSub.push(f); }
       });
       Object.keys(porNome).forEach(function (k) {
         var g = porNome[k];
         if (g.antes && g.depois) enviarPar(pasta, k, g, ensaio, endpoint, segredo, jaImportados, resumo);
-        else if (g.depois) resultadosSub.push(g.depois);
+        else if (g.depois) { g.depois.grupo = k; resultadosSub.push(g.depois); }
         else { Logger.log('  [%s/Antes] PULADO (sem par em Depois): %s', pasta.nome, g.antes.nome); resumo.pulados++; }
       });
       if (resultadosSub.length) candidatasCarrossel[pasta.nome] = { pasta: pasta, fotos: resultadosSub };
@@ -187,7 +206,15 @@ function executar(ensaio) {
         resumo.pulados++;
         return;
       }
-      if (f.tipo !== 'imagem') { resumo.pulados++; return; }
+      if (f.tipo !== 'imagem') {
+        // Antes isto sumia em silêncio, e o relatório não fechava a conta: no
+        // primeiro ensaio, 7 arquivos foram pulados sem nenhuma linha dizendo
+        // por quê. HEIC de iPhone cai aqui, e é informação que importa.
+        Logger.log('  [%s] PULADO (formato que o navegador não exibe: .%s): %s',
+          pasta.nome, extensaoDe(f.nome), f.nome);
+        resumo.pulados++;
+        return;
+      }
       if (emProcesso(f.nome)) {
         Logger.log('  [%s] PULADO (serviço em andamento): %s', pasta.nome, f.nome);
         resumo.pulados++;
@@ -202,8 +229,19 @@ function executar(ensaio) {
         return;
       }
       grupos[m.grupo] = grupos[m.grupo] || {};
-      if (!grupos[m.grupo][m.lado]) grupos[m.grupo][m.lado] = f;
-      else if (m.lado === 'depois' && !pasta.soAntes) resultados.push(f);
+      f.grupo = m.grupo;
+      if (!grupos[m.grupo][m.lado]) {
+        grupos[m.grupo][m.lado] = f;
+      } else if (m.lado === 'depois' && !pasta.soAntes) {
+        resultados.push(f);
+      } else {
+        // Segunda foto do MESMO lado (ex.: "Up Antes.jpg" e "Up Antes costas.jpg").
+        // Antes era descartada calada; agora aparece, para a conta do relatório
+        // fechar.
+        Logger.log('  [%s] PULADO (já existe um "%s" para "%s"): %s',
+          pasta.nome, m.lado, m.grupo, f.nome);
+        resumo.pulados++;
+      }
     });
 
     Object.keys(grupos).forEach(function (nome) {
@@ -213,6 +251,7 @@ function executar(ensaio) {
         return;
       }
       if (g.depois && !pasta.soAntes) {
+        g.depois.grupo = nome;
         resultados.push(g.depois);   // "depois" sozinho É resultado
       } else {
         Logger.log('  [%s] PULADO ("antes" sem par): %s', pasta.nome,
@@ -228,7 +267,7 @@ function executar(ensaio) {
   });
 
   // ── 2. Carrossel variado: intercala as pastas ────────────────────────
-  var escolhidas = intercalar(candidatasCarrossel, MAX_POR_PASTA, MAX_CARROSSEL);
+  var escolhidas = intercalar(candidatasCarrossel, MAX_POR_PASTA, MAX_CARROSSEL, MAX_POR_GRUPO);
   Logger.log('');
   escolhidas.forEach(function (item) {
     if (jaImportados[item.foto.id]) return;
@@ -292,15 +331,30 @@ function enviarPar(pasta, nome, g, ensaio, endpoint, segredo, jaImportados, resu
  * geral — então o carrossel mostra a variedade de serviços, que é o que a
  * vitrine precisa dizer.
  */
-function intercalar(porPasta, maxPorPasta, maxTotal) {
+function intercalar(porPasta, maxPorPasta, maxTotal, maxPorGrupo) {
   var nomes = Object.keys(porPasta).sort();
   var saida = [];
+  var usadoNoGrupo = {};
+  var limiteGrupo = maxPorGrupo || 99;
+  // Cada pasta avança no próprio ritmo: se uma foto é recusada pelo teto do
+  // grupo, a pasta tenta a seguinte em vez de perder a vez.
+  var cursor = {};
+  nomes.forEach(function (n) { cursor[n] = 0; });
+
   for (var rodada = 0; rodada < maxPorPasta && saida.length < maxTotal; rodada++) {
     for (var i = 0; i < nomes.length && saida.length < maxTotal; i++) {
-      var grupo = porPasta[nomes[i]];
-      var foto = grupo.fotos[rodada];
+      var g = porPasta[nomes[i]];
+      var foto = null;
+      while (cursor[nomes[i]] < g.fotos.length) {
+        var candidata = g.fotos[cursor[nomes[i]]++];
+        var chave = candidata.grupo || candidata.nome;
+        if ((usadoNoGrupo[chave] || 0) >= limiteGrupo) continue;
+        usadoNoGrupo[chave] = (usadoNoGrupo[chave] || 0) + 1;
+        foto = candidata;
+        break;
+      }
       if (!foto) continue;
-      saida.push({ pasta: grupo.pasta, foto: foto, legenda: legendaDe(grupo.pasta.nome, foto.nome) });
+      saida.push({ pasta: g.pasta, foto: foto, legenda: legendaDe(g.pasta.nome, foto.nome) });
     }
   }
   return saida;
@@ -395,6 +449,11 @@ function baseDoNome(nome) {
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+}
+
+/** Extensão do arquivo, para o relatório dizer por que algo não serve. */
+function extensaoDe(nome) {
+  return String(String(nome).split('.').pop() || '?').toLowerCase();
 }
 
 /** Serviço em andamento não é resultado. */
