@@ -39,16 +39,23 @@
  *  5. Se a lista estiver boa: Gatilhos (⏰) → Adicionar gatilho → função
  *     `sincronizar`, origem "Baseado no tempo", diariamente.
  *
- * ONDE CADA FOTO VAI
+ * ONDE CADA FOTO VAI — o NOME declara, o script não adivinha
  *
- *   mesma pasta + mesmo nome base, com "antes" e "depois"
+ *   nome com "antes" E nome com "depois", mesmo nome base, mesma pasta
  *        → cartão de antes e depois (os dois JUNTOS, mesmo processo)
- *   foto de resultado
+ *   nome com "depois", sem par "antes"
  *        → carrossel, VARIADO: no máximo MAX_POR_PASTA por serviço, intercalando
  *          as pastas, para o carrossel não virar oito fotos do mesmo serviço
+ *   qualquer outro nome (IMG_20261020_095116.jpg, moto-tanque-preto-01.jpg…)
+ *        → NÃO ENTRA
+ *
+ * A última linha é a regra mais importante deste arquivo. Nome de câmera não diz
+ * se a foto é antes ou depois, e tratar "não sei" como "é resultado" é o que põe
+ * foto de carro sujo na vitrine. Só entra o que o nome declara.
  *
  * O QUE NUNCA ENTRA
  *
+ *   • foto cujo nome não diz "antes" nem "depois" — o script não adivinha
  *   • foto com "antes" no nome e sem par "depois" — carro sujo não é resultado
  *   • qualquer foto de pasta cujo NOME termina em "antes"
  *     (ex.: "Projeto PickupCorsa Uva Antes" — a pasta inteira é o antes)
@@ -60,12 +67,9 @@
  *     Reduzir exigiria transcodificar, que é ferramenta que o projeto não tem.
  *     O script avisa no log quando encontra um, em vez de ignorar calado.
  *
- * ATENÇÃO, e isto é o limite honesto do automático: foto com nome de câmera
- * (IMG_20261020_095116.jpg) não diz se é antes ou depois. O script a trata como
- * resultado. Se alguma foto de "antes" estiver com nome de câmera, ela vai
- * aparecer como resultado — por isso o `testar()` lista tudo com a pasta e o
- * nome, para você conferir uma vez. Renomear a foto, ou pôr a pasta no IGNORAR,
- * resolve.
+ * CONSEQUÊNCIA PRÁTICA: para uma foto entrar no carrossel, o nome dela precisa
+ * ter "depois". Renomear é o que publica. O `testar()` conta quantas ficaram de
+ * fora por isso, em cada pasta, para você saber onde vale renomear.
  *
  * Foto já importada não entra de novo: o servidor guarda os ids já usados.
  */
@@ -73,8 +77,19 @@
 /** Largura que pedimos ao Google. 1600 cobre tela de celular em 2x. */
 var LARGURA = 1600;
 
-/** Variedade do carrossel: teto por serviço e teto geral. */
-var MAX_POR_PASTA = 2;
+/**
+ * Variedade do carrossel.
+ *
+ * `intercalar()` faz rodadas pegando uma foto de cada pasta, então a variedade
+ * vem da ordem, não do teto. O teto por pasta serve só para um serviço não tomar
+ * o carrossel inteiro quando tem muito mais foto nomeada que os outros.
+ *
+ * 4, e não 2, por um motivo medido: hoje as fotos com "depois" no nome estão
+ * todas em "Lavagem Detalhada Carros". Com teto 2 o carrossel teria DUAS fotos —
+ * menos que as 8 estáticas que o site já mostrava. Teto apertado só dá variedade
+ * quando há de onde variar.
+ */
+var MAX_POR_PASTA = 4;
 var MAX_CARROSSEL = 12;
 
 /** Pastas que nunca são fonte, independente do IGNORAR. */
@@ -163,7 +178,7 @@ function executar(ensaio) {
 
     // Organização (a): fotos soltas, identificadas pelo nome.
     var arquivos = listar(pasta.id);
-    var grupos = {}, resultados = [];
+    var grupos = {}, resultados = [], semNome = 0;
 
     arquivos.forEach(function (f) {
       if (f.tipo === 'video') {
@@ -180,19 +195,15 @@ function executar(ensaio) {
       }
 
       var m = classificar(f.nome);
-      if (m) {
-        grupos[m.grupo] = grupos[m.grupo] || {};
-        if (!grupos[m.grupo][m.lado]) grupos[m.grupo][m.lado] = f;
-        else if (m.lado === 'depois' && !pasta.soAntes) resultados.push(f);
-        return;
-      }
-      // Sem antes/depois no nome: é resultado, salvo se a PASTA é um "antes".
-      if (pasta.soAntes) {
-        Logger.log('  [%s] PULADO (pasta de "antes"): %s', pasta.nome, f.nome);
+      if (!m) {
+        // O nome não declara o lado. Não entra — ver a regra no topo.
+        semNome++;
         resumo.pulados++;
         return;
       }
-      resultados.push(f);
+      grupos[m.grupo] = grupos[m.grupo] || {};
+      if (!grupos[m.grupo][m.lado]) grupos[m.grupo][m.lado] = f;
+      else if (m.lado === 'depois' && !pasta.soAntes) resultados.push(f);
     });
 
     Object.keys(grupos).forEach(function (nome) {
@@ -210,6 +221,9 @@ function executar(ensaio) {
       }
     });
 
+    if (semNome) {
+      Logger.log('  [%s] %s foto(s) fora: o nome não diz "antes" nem "depois"', pasta.nome, semNome);
+    }
     if (resultados.length) candidatasCarrossel[pasta.nome] = { pasta: pasta, fotos: resultados };
   });
 

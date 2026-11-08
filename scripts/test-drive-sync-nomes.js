@@ -103,6 +103,27 @@ servicos.forEach((s) => { contagem[s] = (contagem[s] || 0) + 1; });
 assert.ok(Object.values(contagem).every((n) => n <= 2), 'nenhum serviço passa de 2: ' + JSON.stringify(contagem));
 // Teto geral respeitado
 assert.strictEqual(intercalar(porPasta, 5, 3).length, 3, 'teto geral corta');
+
+// O caso REAL do Drive hoje: uma pasta só, com 10 fotos nomeadas "depois".
+// Com teto 2 o carrossel teria duas fotos — menos que as 8 estáticas que o site
+// já mostrava. Com 4 ele enche razoavelmente, e a variedade volta sozinha
+// quando outras pastas tiverem fotos nomeadas.
+const umaPasta = {
+  'Lavagem Detalhada Carros': {
+    pasta: { nome: 'Lavagem Detalhada Carros' },
+    fotos: Array.from({ length: 10 }, (_, i) => foto('fusca-preto depois ' + (i + 1))),
+  },
+};
+assert.strictEqual(intercalar(umaPasta, 2, 12).length, 2, 'teto 2 sufocaria: só 2 fotos');
+assert.strictEqual(intercalar(umaPasta, 4, 12).length, 4, 'teto 4 dá 4 — o escolhido');
+// E com várias pastas o teto não atrapalha a variedade: a 1ª rodada é uma de
+// cada. (`umaPasta` usa a mesma chave de `porPasta`, então o merge dá 3 pastas —
+// é o número de pastas que define o tamanho da 1ª rodada, não o teto.)
+const varias = Object.assign({}, porPasta, umaPasta);
+const nPastas = Object.keys(varias).length;
+const primeiraRodada = intercalar(varias, 4, 12).slice(0, nPastas).map((x) => x.pasta.nome);
+assert.strictEqual(new Set(primeiraRodada).size, nPastas,
+  'a 1ª rodada pega uma de cada pasta: ' + primeiraRodada);
 // Sem o intercalar, as 4 primeiras seriam todas de "Polimento Carro" — é
 // exatamente isso que o teto por pasta evita.
 assert.notDeepStrictEqual(servicos.slice(0, 4),
@@ -132,4 +153,68 @@ assert.strictEqual(baseDoNome('IMG_20261020_095116.jpg'), 'img 20261020 095116',
 assert.notStrictEqual(baseDoNome('Fusca 1.jpg'), baseDoNome('Fusca 2.jpg'),
   'numeração diferente é processo diferente');
 
-console.log('drive-sync (nomes, legendas, variedade e subpastas): todos os testes passaram');
+// ── A REGRA: o nome declara, o script não adivinha ─────────────────────
+// Reproduz a decisão do ramo (a) do executar().
+function rotear(arquivos, pastaSoAntes) {
+  const grupos = {}, carrossel = [], fora = [];
+  for (const nome of arquivos) {
+    const ext = nome.split('.').pop().toLowerCase();
+    if (!['jpg','jpeg','png','webp'].includes(ext)) { fora.push(nome); continue; }
+    if (emProcesso(nome)) { fora.push(nome); continue; }
+    const m = classificar(nome);
+    if (!m) { fora.push(nome); continue; }          // nome não declara: não entra
+    grupos[m.grupo] = grupos[m.grupo] || {};
+    if (!grupos[m.grupo][m.lado]) grupos[m.grupo][m.lado] = nome;
+    else if (m.lado === 'depois' && !pastaSoAntes) carrossel.push(nome);
+  }
+  const pares = [];
+  for (const g of Object.keys(grupos)) {
+    const x = grupos[g];
+    if (x.antes && x.depois) pares.push(g);
+    else if (x.depois && !pastaSoAntes) carrossel.push(x.depois);
+    else fora.push(x.antes || x.depois);
+  }
+  return { pares, carrossel, fora };
+}
+
+// Nome de câmera NÃO ENTRA. É a regra mais importante do arquivo.
+const r1 = rotear([
+  'IMG_20261020_095116.jpg',
+  'Cópia de IMG-20260806-WA0031.jpeg',
+  'Cópia de moto-tanque-preto-01.jpg',
+  'polimento-fusca-capo-brilho.jpg',
+  'roda-chrome-01.jpg',
+]);
+assert.deepStrictEqual(r1.pares, [], 'nenhum par');
+assert.deepStrictEqual(r1.carrossel, [], 'nome de câmera NÃO vai ao carrossel');
+assert.strictEqual(r1.fora.length, 5, 'as cinco ficam de fora');
+
+// "depois" sem par vai ao carrossel; "antes" sem par não vai a lugar nenhum.
+const r2 = rotear([
+  'Cópia de fusca-preto depois 3.jpg',
+  'fusca-preto depois 1.jpg',
+  'roda antes.jpg',
+  'teto-antes.jpg',
+]);
+assert.deepStrictEqual(r2.pares, []);
+assert.strictEqual(r2.carrossel.length, 2, 'as duas "depois" entram: ' + JSON.stringify(r2.carrossel));
+assert.ok(r2.carrossel.every((n) => /depois/i.test(n)), 'tudo no carrossel tem "depois" no nome');
+assert.ok(r2.fora.includes('roda antes.jpg') && r2.fora.includes('teto-antes.jpg'),
+  '"antes" sozinho fica fora');
+
+// Par completo vira cartão, e não aparece também no carrossel.
+const r3 = rotear(['Up Antes.jpg', 'Up Depois.jpg', 'fusca-preto depois 5.jpg']);
+assert.deepStrictEqual(r3.pares, ['up'], 'o par vira cartão');
+assert.deepStrictEqual(r3.carrossel, ['fusca-preto depois 5.jpg'],
+  'o par NÃO se repete no carrossel: ' + JSON.stringify(r3.carrossel));
+
+// Pasta cujo nome termina em "antes": nem o "depois" de dentro entra.
+const r4 = rotear(['Corsa depois.jpg'], true);
+assert.deepStrictEqual(r4.carrossel, [], 'pasta de "antes" não alimenta o carrossel');
+
+// Serviço em andamento fica fora mesmo tendo nome informativo.
+const r5 = rotear(['fusca-preto em processo de polimento.jpg']);
+assert.deepStrictEqual(r5.carrossel, []);
+assert.strictEqual(r5.fora.length, 1);
+
+console.log('drive-sync (nomes, legendas, variedade, subpastas e a regra): todos os testes passaram');
