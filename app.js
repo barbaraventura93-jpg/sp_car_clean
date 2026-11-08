@@ -7077,7 +7077,6 @@ function renderAdminConfig() {
       <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Exportar todos os agendamentos em formato JSON para backup ou integração futura com sistema de gestão.</p>
       <button class="btn-ghost" onclick="exportData()">⬇️ Exportar Dados (JSON)</button>
       &nbsp;<button class="btn-ghost" style="font-size:.78rem" onclick="migrateBookingsToUid()">🔗 Vincular agendamentos a contas</button>
-      &nbsp;<button class="btn-reject" style="font-size:.78rem" onclick="clearAllData()">🗑️ Limpar Todos os Dados</button>
     </div>`;
 }
 
@@ -7874,32 +7873,13 @@ _buildHeroCarousel(HERO_FALLBACK);
 })();
 
 // ============================================================
-// CLEAR ALL DATA
+// DADOS DO SISTEMA
 // ============================================================
-function clearAllData() {
-  if(!confirm('Limpar TODOS os dados? Agendamentos e bloqueios serão removidos do Firebase. Isso não pode ser desfeito!')) return;
-  // Apaga item a item. Apagar o nó inteiro é a operação que a política do
-  // /api/admin-data recusa de propósito — é exatamente a que esvaziaria a base
-  // numa requisição. Item a item dá o mesmo resultado e continua exigindo que
-  // cada exclusão seja autorizada individualmente.
-  const apagarFilhos = async (ref) => {
-    if (!ref) return;
-    const snap = await ref.once('value');
-    const dados = snap.val();
-    if (!dados || typeof dados !== 'object') return;
-    for (const k of Object.keys(dados)) await ref.child(k).remove();
-  };
-  Promise.all([
-    apagarFilhos(_bookingsRef),
-    apagarFilhos(_blockedRef),
-    apagarFilhos(_dayLoadRef),
-    apagarFilhos(_bookingIndexRef),
-  ]).then(() => {
-    _bookings = []; _blocked = []; _dayLoad = {};
-    alert('Dados limpos com sucesso.');
-    doAdminLogout();
-  }).catch(e => { console.error(e); alert('Erro ao limpar dados: ' + e.message); });
-}
+// O botão "Limpar Todos os Dados" (e a função clearAllData) saíram daqui. Ele
+// apagava agendamentos, bloqueios, lotação e índice de clientes de uma vez, não
+// servia a nenhuma operação do dia a dia, e um clique errado custava a base do
+// negócio. Exclusão de agendamento continua existindo onde faz sentido: um por
+// um, em deleteBooking(). O backup diário no S3 é a rede, não a licença.
 
 // ============================================================
 // EMAILJS
