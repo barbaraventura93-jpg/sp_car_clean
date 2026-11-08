@@ -7505,11 +7505,11 @@ function updateWaLink() {
 // fotos avulsas do resultado, sem par de "antes". Fallback: lista estática abaixo
 // (arquivos de assets/portfolio), usada enquanto o nó estiver vazio ou sem resposta.
 // Slides com arquivos ausentes são removidos automaticamente via onerror.
+// `fusca.mp4`, `branco.jpg.jpg` e `moto.jpg.jpg` saíram desta lista: não existem
+// em assets/portfolio/. Davam 404 em toda visita e os slides eram removidos pelo
+// onerror — ou seja, já não apareciam; só sujavam o console e gastavam requisição.
 const HERO_FALLBACK = [
-  {src:'assets/portfolio/fusca.mp4',                       type:'video', alt:'SP Car Clean'},
-  {src:'assets/portfolio/branco.jpg.jpg',                  alt:'Carro branco'},
   {src:'assets/portfolio/estofado.jpg.jpg',                alt:'Higienização de estofado'},
-  {src:'assets/portfolio/moto.jpg.jpg',                    alt:'Moto'},
   {src:'assets/portfolio/antes-e-depois-estofado.jpg.jpg', alt:'Antes e depois estofado'},
   {src:'assets/portfolio/detalhes.jpg.jpg',                alt:'Detalhes'},
   {src:'assets/portfolio/revitalização.jpg.jpg',           alt:'Revitalização'},
@@ -7921,9 +7921,75 @@ async function notifyClientPush(bookingId, title, message) {
 // A função upload-url (só admin) devolve uma URL pré-assinada; o arquivo vai
 // direto do navegador para o bucket. Retorna a URL pública do arquivo.
 const _MEDIA_TYPES = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif', heic:'image/heic', heif:'image/heif', mp4:'video/mp4', mov:'video/quicktime', webm:'video/webm' };
+// Otimiza a imagem no navegador antes de enviar. Três ganhos, nesta ordem:
+//
+//  1. A função upload-url recusa imagem acima de 5 MB. Foto de celular passa
+//     disso com folga (as do Drive vão de 2 a 23 MB), então sem isto a maior
+//     parte do acervo simplesmente não sobe pelo painel.
+//  2. O que sobe é o que o visitante baixa. Uma foto de 8 MB num carrossel de
+//     10 custa o plano de dados de quem abre o site no celular.
+//  3. Recompor a imagem no canvas DESCARTA o EXIF. Em foto tirada na casa do
+//     cliente isso inclui o GPS — ou seja, o endereço dele deixa de ir ao ar.
+//
+// Fora do raster (GIF animado perde a animação, SVG não é foto) e em navegador
+// sem canvas, devolve o arquivo original: a Lambda ainda recusa pelo tamanho, e
+// a mensagem dela é clara. Também devolve o original se a recompressão não
+// reduzir — não faz sentido perder qualidade sem ganhar byte.
+const OTIM_LADO_MAX  = 1600;  // suficiente para tela 2x do carrossel
+const OTIM_QUALIDADE = 0.82;
+const OTIM_PISO_BYTES = 300 * 1024;
+
+async function otimizarImagem(file) {
+  if (!file || !String(file.type || '').startsWith('image/')) return file;
+  if (file.type === 'image/gif' || file.type === 'image/svg+xml') return file;
+  if (typeof createImageBitmap !== 'function') return file;
+
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    return file; // HEIC que o navegador não decodifica, arquivo corrompido
+  }
+
+  const maior  = Math.max(bitmap.width, bitmap.height);
+  const escala = maior > OTIM_LADO_MAX ? OTIM_LADO_MAX / maior : 1;
+  if (escala === 1 && file.size <= OTIM_PISO_BYTES) {
+    if (bitmap.close) bitmap.close();
+    return file; // já pequena e já leve
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = Math.round(bitmap.width  * escala);
+  canvas.height = Math.round(bitmap.height * escala);
+  const ctx = canvas.getContext('2d');
+  if (!ctx || !canvas.toBlob) { if (bitmap.close) bitmap.close(); return file; }
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  if (bitmap.close) bitmap.close();
+
+  let blob = await new Promise(r => canvas.toBlob(r, 'image/webp', OTIM_QUALIDADE));
+  // Navegador sem WebP devolve PNG em SILÊNCIO (não null), e PNG de foto é
+  // enorme — conferir o tipo é o que evita trocar 8 MB por 12 MB.
+  if (!blob || blob.type !== 'image/webp') {
+    blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', OTIM_QUALIDADE));
+  }
+  if (!blob || blob.size >= file.size) return file;
+
+  const tipo = blob.type === 'image/webp' ? 'image/webp' : 'image/jpeg';
+  const ext  = tipo === 'image/webp' ? 'webp' : 'jpg';
+  const base = String(file.name || 'foto').replace(/\.[^.]*$/, '');
+  return new File([blob], `${base}.${ext}`, { type: tipo, lastModified: Date.now() });
+}
+
 async function uploadMedia(file, folder, bookingId, onProgress) {
   const user = AUTH.currentUser;
   if (!user) throw new Error('faça login novamente');
+  // Antes de medir e de pedir a URL pré-assinada: o `size` que vai para a
+  // Lambda tem que ser o do arquivo que será realmente enviado.
+  const _bytesAntes = file && file.size;
+  file = await otimizarImagem(file);
+  if (file && file.size !== _bytesAntes) {
+    console.log(`uploadMedia: ${(_bytesAntes/1048576).toFixed(2)} MB → ${(file.size/1048576).toFixed(2)} MB (${file.type})`);
+  }
   const ext = String(file.name || '').split('.').pop().toLowerCase();
   const contentType = file.type || _MEDIA_TYPES[ext] || '';
   const resp = await fetch('/api/upload-url', {
@@ -8153,26 +8219,12 @@ document.addEventListener('click', function(e) {
 // ============================================================
 // GALERIA ANTES/DEPOIS
 // ============================================================
-const GALLERY_FALLBACK = [
-  {
-    before: 'assets/portfolio/branco.jpg.jpg',
-    after:  'assets/portfolio/branco.jpg.jpg',
-    beforeFilter: 'grayscale(50%) brightness(.72) saturate(.3) contrast(1.1)',
-    caption: 'Polimento Completo — Palio Branco'
-  },
-  {
-    before: 'assets/portfolio/estofado.jpg.jpg',
-    after:  'assets/portfolio/estofado.jpg.jpg',
-    beforeFilter: 'grayscale(40%) brightness(.7) saturate(.25) contrast(1.15)',
-    caption: 'Higienização de Estofado'
-  },
-  {
-    before: 'assets/portfolio/revitalização.jpg.jpg',
-    after:  'assets/portfolio/revitalização.jpg.jpg',
-    beforeFilter: 'grayscale(55%) brightness(.68) saturate(.2) contrast(1.1)',
-    caption: 'Revitalização de Pintura e Plásticos'
-  },
-];
+// Sem fallback, de propósito. O que havia aqui era um antes/depois FALSO: a mesma
+// foto nos dois lados, com um filtro cinza no "antes" simulando sujeira — e uma
+// das três apontava para `branco.jpg.jpg`, que não existe. A seção se chama
+// "Resultados Reais": antes e depois é prova de serviço, e fabricar a prova não
+// se sustenta. Agora a seção só aparece com par real cadastrado na aba Galeria.
+const GALLERY_FALLBACK = [];
 
 function buildGalleryCard(item) {
   const card = document.createElement('div');
@@ -8210,7 +8262,7 @@ function buildGalleryCard(item) {
   caption.textContent = item.caption;
 
   card.append(beforeImg, afterWrap, handle, lblB, lblA, caption);
-  afterImg.addEventListener('error', () => card.remove(), { once: true });
+  afterImg.addEventListener('error', () => { card.remove(); _ajustarSecaoGaleria(); }, { once: true });
 
   function setPos(clientX) {
     const rect = card.getBoundingClientRect();
@@ -8230,11 +8282,19 @@ function buildGalleryCard(item) {
   return card;
 }
 
+// Título "Veja a transformação" sobre espaço vazio é pior que não ter a seção.
+function _ajustarSecaoGaleria() {
+  const grid = document.getElementById('baGrid');
+  const secao = grid && (grid.closest('section') || grid.parentElement);
+  if (secao) secao.style.display = grid.children.length ? '' : 'none';
+}
+
 function renderGalleryCards(items) {
   const grid = document.getElementById('baGrid');
   if (!grid) return;
   grid.innerHTML = '';
   items.forEach(item => grid.appendChild(buildGalleryCard(item)));
+  _ajustarSecaoGaleria();
 }
 
 function reloadGallerySection() {
