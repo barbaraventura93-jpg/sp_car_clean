@@ -528,7 +528,59 @@ window.__ENV = {
       <div class="form-row full"><div class="form-group"><label>Senha</label><input id="adminPass" type="password" placeholder="Digite a senha" onkeydown="if(event.key==='Enter')doAdminLogin()"/></div></div>
       <div id="loginError" style="color:var(--red);font-size:.82rem;margin-bottom:.8rem;display:none">Senha incorreta. Tente novamente.</div>
       <button class="btn-primary" onclick="doAdminLogin()" style="width:100%;justify-content:center">Entrar no Painel</button>
-      <div class="admin-gate-foot"><a onclick="exitAdminGate()">Ver o site</a></div>
+      <div class="admin-gate-foot">
+        <a onclick="openPasswordReset(null)">Esqueci minha senha</a>
+        &nbsp;·&nbsp;
+        <a onclick="exitAdminGate()">Ver o site</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================
+     CÓDIGO POR E-MAIL — redefinir senha e confirmar cadastro
+
+     O Cognito manda CÓDIGO, não link (o Firebase mandava link), e a conta
+     nova nasce pendente de confirmação. Este modal cobre os dois casos: em
+     modo "reset" pede código + senha nova; em modo "confirm", só o código.
+=================================================== -->
+<div id="pwResetModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <div>
+        <h3 id="prTitle">🔑 Definir nova senha</h3>
+        <div class="sub" id="prSub">Enviamos um código para o seu e-mail</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('pwResetModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row full"><div class="form-group">
+        <label>E-mail</label>
+        <input id="prEmail" type="email" autocomplete="email" placeholder="seu@email.com"/>
+      </div></div>
+      <div class="form-row full"><div class="form-group">
+        <label>Código recebido por e-mail</label>
+        <input id="prCode" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="000000"/>
+      </div></div>
+      <div id="prPassWrap">
+        <div class="form-row full"><div class="form-group">
+          <label>Nova senha</label>
+          <input id="prPass" type="password" autocomplete="new-password" placeholder="mínimo 10 caracteres"/>
+        </div></div>
+        <div class="form-row full"><div class="form-group">
+          <label>Repita a nova senha</label>
+          <input id="prPass2" type="password" autocomplete="new-password"
+                 onkeydown="if(event.key==='Enter')doPasswordResetConfirm()"/>
+        </div></div>
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem">
+          Ao menos 10 caracteres, com letra maiúscula, minúscula e número.
+        </div>
+      </div>
+      <div id="prError" style="color:var(--red);font-size:.82rem;margin-bottom:.8rem;display:none"></div>
+      <div id="prOk" style="color:var(--accent);font-size:.82rem;margin-bottom:.8rem;display:none"></div>
+      <button class="btn-primary" id="prSubmit" onclick="doPasswordResetConfirm()"
+              style="width:100%;justify-content:center">Salvar nova senha</button>
+      <div class="admin-gate-foot"><a onclick="doPasswordResetRequest()">Reenviar código</a></div>
     </div>
   </div>
 </div>
@@ -1140,7 +1192,7 @@ window.__ENV = {
 
   async function sendSubscription(sub, extra) {
     const headers = { 'Content-Type': 'application/json' };
-    const user = typeof firebase !== 'undefined' && firebase.auth().currentUser;
+    const user = typeof AUTH !== 'undefined' && AUTH.currentUser;
     if (user) headers.Authorization = 'Bearer ' + await user.getIdToken();
     const resp = await fetch('/api/push-subscription', {
       method: 'POST', headers,
@@ -1153,7 +1205,7 @@ window.__ENV = {
   let _adminPushRegistered = false;
   window.pwaRegisterAdminPush = async function () {
     if (_adminPushRegistered) return;
-    if (typeof firebase === 'undefined' || !firebase.auth().currentUser) return;
+    if (typeof AUTH === 'undefined' || !AUTH.currentUser) return;
     try {
       const sub = await subscribeDevice(true);
       if (sub && await sendSubscription(sub, { audience: 'admin' })) _adminPushRegistered = true;

@@ -1225,7 +1225,7 @@ async function subscribeClientCalendar(btn) {
   btn.disabled = true; btn.textContent = '⏳ Gerando...';
   try {
     const headers = { 'Content-Type': 'application/json' };
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (user && isClient()) headers.Authorization = 'Bearer ' + await user.getIdToken();
     const resp = await fetch('/api/calendar-sync', {
       method: 'POST', headers,
@@ -1614,7 +1614,7 @@ function toggleClientAuthSection(checked) {
 
 async function _tryClientSignupOrLogin(email, pw, name, phone) {
   try {
-    const cred = await firebase.auth().createUserWithEmailAndPassword(email, pw);
+    const cred = await AUTH.createUserWithEmailAndPassword(email, pw);
     const user = cred.user;
     await user.updateProfile({ displayName: name });
     await _clientProfilesRef.child(user.uid).set({
@@ -1625,9 +1625,15 @@ async function _tryClientSignupOrLogin(email, pw, name, phone) {
     return user;
   } catch(e) {
     if (e.code === 'auth/email-already-in-use') {
-      const cred2 = await firebase.auth().signInWithEmailAndPassword(email, pw);
+      const cred2 = await AUTH.signInWithEmailAndPassword(email, pw);
       await _clientProfilesRef.child(cred2.user.uid).update({ lastLoginAt: new Date().toISOString() });
       return cred2.user;
+    }
+    // Diferente do Firebase, a conta nova do Cognito nasce pendente: o
+    // cadastro só vale depois do código que chega por e-mail.
+    if (e.code === 'auth/confirmation-required') {
+      openSignupConfirm(e.email || email, pw);
+      return null;
     }
     throw e;
   }
@@ -2221,10 +2227,10 @@ function doClientLogin() {
   const pass  = document.getElementById('clPass')?.value || '';
   const errEl = document.getElementById('clLoginError');
   errEl.style.display = 'none';
-  firebase.auth().signInWithEmailAndPassword(email, pass)
+  AUTH.signInWithEmailAndPassword(email, pass)
     .then(cred => {
       if (cred.user.email === CFG.adminEmail) {
-        firebase.auth().signOut();
+        AUTH.signOut();
         errEl.textContent = 'Use a Área Restrita para acesso administrativo.';
         errEl.style.display = 'block';
         return;
@@ -2239,16 +2245,156 @@ function doClientLogin() {
 }
 
 function doClientLogout() {
-  firebase.auth().signOut();
+  AUTH.signOut();
   closeModal('clientAccountModal');
 }
 
 function doClientPasswordReset() {
   const email = (document.getElementById('clEmail')?.value || '').trim();
   if (!email) { alert('Digite seu e-mail primeiro.'); return; }
-  firebase.auth().sendPasswordResetEmail(email)
-    .then(() => alert('E-mail de recuperação enviado para ' + email))
-    .catch(e => alert('Erro: ' + e.message));
+  // O Cognito manda CÓDIGO, não link: a redefinição termina no modal.
+  openPasswordReset(email);
+}
+
+// ============================================================
+// CÓDIGO POR E-MAIL — redefinir senha e confirmar cadastro
+//
+// Dois fluxos que o Firebase não exigia e o Cognito exige:
+//   reset   -> código + senha nova (ConfirmForgotPassword)
+//   confirm -> só o código, para ativar conta nova (ConfirmSignUp)
+// Compartilham o mesmo modal porque a diferença é um par de campos.
+// ============================================================
+let _pwMode = 'reset';
+let _pwDesafio = null;   // sessão do NEW_PASSWORD_REQUIRED, quando houver
+let _pwSenhaCadastro = null; // senha já escolhida no cadastro (modo confirm)
+
+function _prMsg(idMostrar, texto) {
+  ['prError', 'prOk'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.display = 'none'; el.textContent = ''; }
+  });
+  if (!idMostrar) return;
+  const el = document.getElementById(idMostrar);
+  if (el) { el.textContent = texto; el.style.display = 'block'; }
+}
+
+/**
+ * Abre o fluxo de código.
+ * @param {string|null} email  preenche o campo; null deixa em branco
+ * @param {Error|null} desafio erro de NEW_PASSWORD_REQUIRED, quando vier do login
+ */
+function openPasswordReset(email, desafio) {
+  _pwMode = 'reset';
+  _pwDesafio = desafio || null;
+  _pwSenhaCadastro = null;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('prEmail', email || '');
+  set('prCode', '');
+  set('prPass', '');
+  set('prPass2', '');
+  const wrap = document.getElementById('prPassWrap');
+  if (wrap) wrap.style.display = 'block';
+  const t = document.getElementById('prTitle');
+  const sub = document.getElementById('prSub');
+  const btn = document.getElementById('prSubmit');
+  if (t) t.textContent = '🔑 Definir nova senha';
+  if (btn) btn.textContent = 'Salvar nova senha';
+  _prMsg(null);
+  closeModal('clientLoginModal');
+  const modal = document.getElementById('pwResetModal');
+  if (modal) modal.style.display = 'flex';
+
+  if (_pwDesafio) {
+    // Conta criada pelo administrador: não há código, é só definir a senha.
+    const codeRow = document.getElementById('prCode');
+    if (codeRow) codeRow.closest('.form-row').style.display = 'none';
+    if (sub) sub.textContent = 'Escolha a senha que você vai usar de agora em diante';
+    return;
+  }
+  const codeRow = document.getElementById('prCode');
+  if (codeRow) codeRow.closest('.form-row').style.display = 'block';
+  if (sub) sub.textContent = 'Enviando um código para o seu e-mail…';
+  if (email) doPasswordResetRequest();
+  else if (sub) sub.textContent = 'Digite seu e-mail e toque em "Reenviar código"';
+}
+
+/** Abre no modo de confirmar cadastro (só código). */
+function openSignupConfirm(email, senha) {
+  openPasswordReset(email);
+  _pwMode = 'confirm';
+  _pwSenhaCadastro = senha || null;
+  const wrap = document.getElementById('prPassWrap');
+  if (wrap) wrap.style.display = 'none';
+  const t = document.getElementById('prTitle');
+  const sub = document.getElementById('prSub');
+  const btn = document.getElementById('prSubmit');
+  if (t) t.textContent = '✉️ Confirmar seu e-mail';
+  if (sub) sub.textContent = 'Enviamos um código para ' + email;
+  if (btn) btn.textContent = 'Confirmar conta';
+}
+
+function doPasswordResetRequest() {
+  const email = (document.getElementById('prEmail')?.value || '').trim();
+  if (!email) { _prMsg('prError', 'Digite seu e-mail.'); return; }
+  const fn = _pwMode === 'confirm'
+    ? AUTH.reenviarCodigo(email)
+    : AUTH.sendPasswordResetEmail(email);
+  _prMsg('prOk', 'Enviando…');
+  fn.then(() => {
+    _prMsg('prOk', 'Código enviado para ' + email + '. Confira a caixa de entrada e o spam.');
+    const sub = document.getElementById('prSub');
+    if (sub) sub.textContent = 'Código enviado para ' + email;
+  }).catch(e => _prMsg('prError', e.message || 'Não foi possível enviar o código.'));
+}
+
+async function doPasswordResetConfirm() {
+  const email = (document.getElementById('prEmail')?.value || '').trim();
+  const code  = (document.getElementById('prCode')?.value || '').trim();
+  const pw    = document.getElementById('prPass')?.value || '';
+  const pw2   = document.getElementById('prPass2')?.value || '';
+  const btn   = document.getElementById('prSubmit');
+
+  if (!email) { _prMsg('prError', 'Digite seu e-mail.'); return; }
+  if (_pwMode === 'confirm') {
+    if (!code) { _prMsg('prError', 'Digite o código que chegou por e-mail.'); return; }
+  } else {
+    if (!_pwDesafio && !code) { _prMsg('prError', 'Digite o código que chegou por e-mail.'); return; }
+    if (pw.length < 10) { _prMsg('prError', 'A senha precisa ter ao menos 10 caracteres.'); return; }
+    if (!/[a-z]/.test(pw) || !/[A-Z]/.test(pw) || !/[0-9]/.test(pw)) {
+      _prMsg('prError', 'A senha precisa ter letra maiúscula, minúscula e número.'); return;
+    }
+    if (pw !== pw2) { _prMsg('prError', 'As senhas não coincidem.'); return; }
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+  try {
+    if (_pwMode === 'confirm') {
+      await AUTH.confirmarCadastro(email, code, _pwSenhaCadastro);
+    } else if (_pwDesafio) {
+      await AUTH.definirSenhaInicial(email, pw, _pwDesafio.sessaoDesafio);
+    } else {
+      await AUTH.confirmarNovaSenha(email, code, pw);
+    }
+    closeModal('pwResetModal');
+    _pwDesafio = null;
+    _pwSenhaCadastro = null;
+    // Já logada: admin vai para o painel, cliente para a conta.
+    if (isAdmin()) {
+      setAdminDevice(true);
+      closeAdminGate();
+      closeModal('adminLoginModal');
+      openAdminPanel();
+    } else {
+      openClientAccount();
+    }
+  } catch (e) {
+    _prMsg('prError', e.message || 'Não foi possível concluir.');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = _pwMode === 'confirm' ? 'Confirmar conta' : 'Salvar nova senha';
+    }
+  }
 }
 
 function renderClientAccount() {
@@ -2521,21 +2667,33 @@ function doAdminLogin() {
   const pw    = document.getElementById('adminPass').value;
   const errEl = document.getElementById('loginError');
   errEl.style.display = 'none';
-  firebase.auth().signInWithEmailAndPassword(CFG.adminEmail, pw)
+  AUTH.signInWithEmailAndPassword(CFG.adminEmail, pw)
     .then(() => {
       setAdminDevice(true);   // a partir daqui, o app deste aparelho abre direto na senha
       closeAdminGate();
       closeModal('adminLoginModal');
       openAdminPanel();
     })
-    .catch(() => {
+    .catch(e => {
+      const campo = document.getElementById('adminPass');
+      // Senha redefinida pelo administrador do Cognito, ou conta recém-criada:
+      // não é senha errada, é senha a definir. Mandar para o fluxo de código
+      // em vez de dizer "senha incorreta", que faria a pessoa tentar de novo
+      // uma senha que não existe mais.
+      if (e && (e.code === 'auth/password-reset-required' || e.code === 'auth/new-password-required')) {
+        if (campo) campo.value = '';
+        openPasswordReset(CFG.adminEmail, e.code === 'auth/new-password-required' ? e : null);
+        return;
+      }
+      errEl.textContent = (e && e.code === 'auth/too-many-requests')
+        ? 'Muitas tentativas. Aguarde alguns minutos.'
+        : 'Senha incorreta. Tente novamente.';
       errEl.style.display = 'block';
-      document.getElementById('adminPass').value = '';
-      document.getElementById('adminPass').focus();
+      if (campo) { campo.value = ''; campo.focus(); }
     });
 }
 function doAdminLogout() {
-  firebase.auth().signOut();
+  AUTH.signOut();
   document.getElementById('adminPanel').style.display = 'none';
   // No app, sair volta para a tela de senha — não para o site.
   if (isStandaloneApp() && appOpensOnAdminGate()) openAdminGate(false);
@@ -6831,8 +6989,10 @@ function renderAdminConfig() {
     </div>
     <div class="admin-panel" style="max-width:520px">
       <h3>Segurança</h3>
-      <div class="form-row full"><div class="form-group"><label>Nova senha de administrador</label><input id="cfgNewPw" type="password" placeholder="Mínimo 8 caracteres"/></div></div>
-      <div class="form-row full"><div class="form-group"><label>Confirmar senha</label><input id="cfgConfPw" type="password" placeholder="Repita a nova senha"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Senha atual</label><input id="cfgCurPw" type="password" autocomplete="current-password" placeholder="Sua senha de hoje"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Nova senha de administrador</label><input id="cfgNewPw" type="password" autocomplete="new-password" placeholder="Mínimo 10 caracteres"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Confirmar senha</label><input id="cfgConfPw" type="password" autocomplete="new-password" placeholder="Repita a nova senha"/></div></div>
+      <div style="font-size:.76rem;color:var(--muted);margin-bottom:.7rem">Ao menos 10 caracteres, com letra maiúscula, minúscula e número.</div>
       <button class="btn-primary" onclick="changePw()">Alterar Senha</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:1.2rem 0"/>
       <h4 style="font-family:Montserrat,sans-serif;font-size:.78rem;font-weight:700;color:var(--text);margin-bottom:.5rem">📱 Este aparelho</h4>
@@ -6996,7 +7156,7 @@ async function copyAdminCalendarLink(btn, kind) {
   try {
     const resp = await fetch('/api/calendar-sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + await firebase.auth().currentUser.getIdToken() },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + await AUTH.currentUser.getIdToken() },
       body: JSON.stringify({ action: 'admin-links' })
     });
     const r = await resp.json().catch(() => ({}));
@@ -7024,17 +7184,26 @@ function toggleAdminDevice(on) {
   msg.style.display = 'block';
 }
 function changePw() {
+  const cur  = document.getElementById('cfgCurPw').value;
   const np   = document.getElementById('cfgNewPw').value;
   const cp   = document.getElementById('cfgConfPw').value;
-  if(np.length < 8) { alert('Senha deve ter pelo menos 8 caracteres.'); return; }
-  if(np !== cp) { alert('As senhas não coincidem.'); return; }
-  const user = firebase.auth().currentUser;
+  // O mínimo é 10 porque é o que a política do pool exige: validar 8 aqui só
+  // adiantaria um erro vindo do servidor, confuso para quem está trocando.
+  if(np.length < 10)  { alert('A senha precisa ter ao menos 10 caracteres.'); return; }
+  if(!/[a-z]/.test(np) || !/[A-Z]/.test(np) || !/[0-9]/.test(np)) {
+    alert('A senha precisa ter letra maiúscula, minúscula e número.'); return;
+  }
+  if(np !== cp)       { alert('As senhas não coincidem.'); return; }
+  // O Cognito exige a senha atual para trocar; o Firebase se apoiava em
+  // "login recente". Pedir a senha vigente é mais seguro que confiar na
+  // idade da sessão.
+  if(!cur)            { alert('Informe sua senha atual.'); return; }
+  const user = AUTH.currentUser;
   if(!user) { alert('Sessão expirada. Faça login novamente.'); return; }
-  user.updatePassword(np)
+  user.updatePassword(np, cur)
     .then(() => {
       alert('Senha alterada com sucesso!');
-      document.getElementById('cfgNewPw').value = '';
-      document.getElementById('cfgConfPw').value = '';
+      ['cfgCurPw','cfgNewPw','cfgConfPw'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     })
     .catch(e => alert('Erro ao alterar senha: ' + e.message));
 }
@@ -7533,7 +7702,7 @@ _buildHeroCarousel(HERO_FALLBACK);
       if (typeof currentAdminTab !== 'undefined' && currentAdminTab === 'avaliacoes') renderAdminFeedback();
     }, e => console.warn('Firebase feedback:', e));
 
-    firebase.auth().onAuthStateChanged(user => {
+    AUTH.onAuthStateChanged(user => {
       _authUser = user;
       // Tela de senha do app: sem sessão de admin restaurada, libera o campo.
       if (_adminGatePending && !isAdmin()) adminGateReady();
@@ -7701,7 +7870,7 @@ function sendEmail(templateId, params) {
 // O destino sai do agendamento no servidor. Best-effort: nunca trava o painel.
 async function notifyClientPush(bookingId, title, message) {
   try {
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user || !isAdmin()) return;
     const body = String(message || '').replace(/\s+/g, ' ').trim().slice(0, 200);
     await fetch('/api/notify-client', {
@@ -7717,7 +7886,7 @@ async function notifyClientPush(bookingId, title, message) {
 // direto do navegador para o bucket. Retorna a URL pública do arquivo.
 const _MEDIA_TYPES = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif', heic:'image/heic', heif:'image/heif', mp4:'video/mp4', mov:'video/quicktime', webm:'video/webm' };
 async function uploadMedia(file, folder, bookingId, onProgress) {
-  const user = firebase.auth().currentUser;
+  const user = AUTH.currentUser;
   if (!user) throw new Error('faça login novamente');
   const ext = String(file.name || '').split('.').pop().toLowerCase();
   const contentType = file.type || _MEDIA_TYPES[ext] || '';
@@ -8057,7 +8226,7 @@ async function iaTriggerRelatorio(btn) {
   btn.disabled = true;
   btn.textContent = '⏳ Gerando...';
   try {
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user) throw new Error('Sessão expirada — faça login novamente');
     const token = await user.getIdToken();
     const resp = await fetch('/api/ai', {
@@ -8093,7 +8262,7 @@ async function iaGerarReativacao() {
   );
   if (coupon === null) return; // cancelou
 
-  const user = firebase.auth().currentUser;
+  const user = AUTH.currentUser;
   if (!user) { alert('Sessão expirada — faça login novamente.'); return; }
   const token = await user.getIdToken();
 
@@ -8187,7 +8356,7 @@ function iaDispatchAgenda(freedDate, cancelledService, cancelledCarSize) {
   if (!freedDate) return;
   firebase.database().ref('aiConfig/agenda').once('value').then(snap => {
     if (!snap.val()?.enabled) return;
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user) return;
     user.getIdToken().then(token => {
       fetch('/api/ai', {
@@ -8447,7 +8616,7 @@ async function iaPingTest() {
   btn.textContent = '⏳ Aguardando...';
   res.textContent = '';
   try {
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user) { res.style.color = '#f87171'; res.textContent = 'Faça login primeiro.'; return; }
     const token = await user.getIdToken();
     const resp  = await fetch('/api/ai', {
@@ -8482,7 +8651,7 @@ async function iaTriggerInsumos(btn) {
   btn.disabled = true;
   btn.textContent = '⏳ Analisando estoque...';
   try {
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user) throw new Error('Sessão expirada — faça login novamente');
     const token = await user.getIdToken();
     const resp = await fetch('/api/ai', {
@@ -8518,7 +8687,7 @@ async function iaGerarLegenda(btn) {
   btn.textContent = '⏳ Gerando legenda...';
 
   try {
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user) throw new Error('Sessão expirada — faça login novamente');
     const token = await user.getIdToken();
 
@@ -8572,7 +8741,7 @@ async function iaDescreveCheckin(btn) {
   btn.textContent = '⏳ Analisando fotos...';
 
   try {
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user) { alert('Faça login para usar esta função.'); return; }
     const token = await user.getIdToken();
 

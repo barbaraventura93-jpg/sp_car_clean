@@ -148,6 +148,38 @@ const AUTH = (function () {
         await garantirValida();
         return _sessao ? _sessao.accessToken : null;
       },
+
+      // Mesma assinatura do Firebase: o app chama
+      // `user.updateProfile({ displayName })` depois do cadastro.
+      updateProfile: async ({ displayName } = {}) => {
+        if (!displayName) return true;
+        await garantirValida();
+        await chamar('UpdateUserAttributes', {
+          AccessToken: _sessao.accessToken,
+          UserAttributes: [{ Name: 'name', Value: String(displayName) }],
+        });
+        _usuario = montarUsuario();
+        return true;
+      },
+
+      // Diferente do Firebase: o Cognito EXIGE a senha atual para trocar.
+      // O Firebase aceitava só a nova (apoiado em "login recente"), e é por
+      // isso que a tela de configurações ganhou o campo de senha atual —
+      // pedir a senha vigente é mais seguro que confiar na idade da sessão.
+      updatePassword: async (nova, atual) => {
+        await garantirValida();
+        if (!atual) {
+          const e = new Error('Informe a senha atual para trocar a senha.');
+          e.code = 'auth/requires-recent-login';
+          throw e;
+        }
+        await chamar('ChangePassword', {
+          AccessToken: _sessao.accessToken,
+          PreviousPassword: atual,
+          ProposedPassword: nova,
+        });
+        return true;
+      },
     };
   }
 
