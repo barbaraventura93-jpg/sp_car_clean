@@ -61,6 +61,11 @@
     "aiLogs":          { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
     "aiRateLimit":     { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
 
+    // Marca quais arquivos do Drive já foram importados, para o cron não
+    // reimportar a cada execução. Escrito e lido só pela função drive-sync, que
+    // usa o segredo do banco — o navegador não tem o que fazer aqui.
+    "driveImports":    { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+
     // `referrals` existe nas regras publicadas e tinha sumido deste arquivo.
     // Sem regra o nó cai no default (negar tudo), que por sorte é o mesmo
     // efeito — mas publicar um arquivo que "esquece" um nó é como se descobre

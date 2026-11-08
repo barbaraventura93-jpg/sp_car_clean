@@ -15,6 +15,7 @@ locals {
     "create-gift-payment",
     "create-payment",
     "create-referral",
+    "drive-sync",
     "infinitepay-webhook",
     "me",
     "notify-booking",
