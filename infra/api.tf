@@ -29,6 +29,9 @@ locals {
     "birthday-check" = "cron(0 12 * * ? *)"
     "reminder-check" = "cron(0 13 * * ? *)"
     "calendar-sync"  = "rate(15 minutes)"
+    # 03h17 de Brasília: fora de pico, e fora do minuto 0 (onde todo mundo
+    # agenda e a fila do scheduler enche).
+    "firebase-backup" = "cron(17 6 * * ? *)"
   }
 
   all_functions = distinct(concat(local.http_functions, keys(local.scheduled_functions)))
@@ -122,15 +125,20 @@ resource "aws_lambda_function" "fn" {
   timeout = contains(local.http_functions, each.key) ? 29 : 120
 
   environment {
-    variables = {
-      FN_NAME              = each.key
-      SSM_PARAM_PATH       = var.ssm_param_path
-      URL                  = local.site_url
-      ORIGIN_VERIFY_SECRET = random_password.origin_verify.result
-      PUSH_TABLE           = aws_dynamodb_table.push.name
-      MEDIA_BUCKET         = aws_s3_bucket.media.bucket
-      MEDIA_BASE_URL       = local.media_base_url
-    }
+    # BACKUP_BUCKET só na função que grava o backup: posto no mapa comum, ele
+    # alteraria a configuração das 15 funções a cada apply, sem necessidade.
+    variables = merge(
+      {
+        FN_NAME              = each.key
+        SSM_PARAM_PATH       = var.ssm_param_path
+        URL                  = local.site_url
+        ORIGIN_VERIFY_SECRET = random_password.origin_verify.result
+        PUSH_TABLE           = aws_dynamodb_table.push.name
+        MEDIA_BUCKET         = aws_s3_bucket.media.bucket
+        MEDIA_BASE_URL       = local.media_base_url
+      },
+      each.key == "firebase-backup" ? { BACKUP_BUCKET = aws_s3_bucket.backups.bucket } : {}
+    )
   }
 
   lifecycle {
@@ -143,6 +151,7 @@ resource "aws_lambda_function" "fn" {
     aws_iam_role_policy.lambda_ssm,
     aws_iam_role_policy.lambda_push,
     aws_iam_role_policy.lambda_media,
+    aws_iam_role_policy.lambda_backup,
     aws_ssm_parameter.vapid_private_key,
   ]
 }
