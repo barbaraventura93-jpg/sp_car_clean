@@ -1,0 +1,64 @@
+{
+  "rules": {
+    "bookings": {".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      "$id": {
+        ".read":  true,
+        ".write": "newData.exists()"
+      }
+    },
+    "dayLoad":        { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "bookingIndex": {
+      "$uid": {
+        ".read":  "auth != null && (auth.uid == $uid || auth.token.email == 'spcarclean0@gmail.com')",
+        ".write": "auth != null && (auth.uid == $uid || auth.token.email == 'spcarclean0@gmail.com')"
+      }
+    },
+    "blocked":        { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "config":         { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "services":       { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "combos":         { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "gallery":        { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "clientNotes":    { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "clientLinks":            { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "clientLinkDismissals":   { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "clientOverrides":        { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "coupons":        { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "waitlist":       { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": true },
+    "clientProfiles": {
+      ".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      "$uid": {
+        ".read":  "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "feedback": {
+      ".read":  true,
+      ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      ".indexOn": ["status"],
+      "$id": { ".write": "newData.exists()" }
+    },
+    "giftcards": {
+      ".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      "$code": {
+        ".read":  true,
+        ".write": "newData.exists()"
+      }
+    },
+    "portfolio": { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+      
+      "stock":           { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "stockRecipes":    { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+    "adminPushTokens": { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+"aiConfig": {".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'","concierge": { "enabled": { ".read": true } }},
+"aiUsage":  { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
+"aiLogs":   { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },  
+
+    "referrals": {
+      ".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'"
+    },
+  }
+}
