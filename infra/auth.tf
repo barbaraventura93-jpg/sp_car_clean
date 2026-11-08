@@ -17,7 +17,7 @@
 #    pelo vínculo de e-mail canônico (GSI2 em data.tf), não pelo uid.
 #
 # A senha do admin NÃO passa por aqui nem pelo state: o Cognito envia uma
-# temporária por e-mail para `var.admin_email`, e a troca é obrigatória no
+# temporária por e-mail para cada `var.admin_emails`, e a troca é obrigatória no
 # primeiro acesso.
 # =====================================================================
 
@@ -141,14 +141,20 @@ resource "aws_cognito_user_group" "admin" {
   precedence   = 1
 }
 
-# Usuário admin. O Cognito envia a senha temporária por e-mail para
-# `var.admin_email` — ela não passa pelo Terraform state nem por log.
+# Usuários admin. O Cognito envia a senha temporária por e-mail — ela não passa
+# pelo Terraform state nem por log.
+#
+# É uma lista, não um endereço só, de propósito: enquanto o acesso pelo novo
+# e-mail não for confirmado, o anterior continua valendo. Perder o painel por
+# depender de um único caminho foi exatamente o que aconteceu em 08/11/2026.
 resource "aws_cognito_user" "admin" {
+  for_each = toset(var.admin_emails)
+
   user_pool_id = aws_cognito_user_pool.users.id
-  username     = var.admin_email
+  username     = each.value
 
   attributes = {
-    email          = var.admin_email
+    email          = each.value
     email_verified = true
   }
 
@@ -162,7 +168,9 @@ resource "aws_cognito_user" "admin" {
 }
 
 resource "aws_cognito_user_in_group" "admin" {
+  for_each = aws_cognito_user.admin
+
   user_pool_id = aws_cognito_user_pool.users.id
   group_name   = aws_cognito_user_group.admin.name
-  username     = aws_cognito_user.admin.username
+  username     = each.value.username
 }

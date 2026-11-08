@@ -81,9 +81,9 @@ output "migracao_proximos_passos" {
     │ Tabela ............: ${aws_dynamodb_table.data.name}
     │ User Pool .........: ${aws_cognito_user_pool.users.id}
     │ App client (web) ..: ${aws_cognito_user_pool_client.web.id}
-    │ Admin .............: ${var.admin_email}
+    │ Admin(s) ..........: ${join(", ", var.admin_emails)}
     └─────────────────────────────────────────────────────────────
-    1. O Cognito enviou uma senha temporária para ${var.admin_email}.
+    1. O Cognito enviou senha temporária para: ${join(", ", var.admin_emails)}.
        Ela expira em 7 dias e a troca é obrigatória no primeiro acesso.
     2. Importar os dados:  node scripts/migrate-firebase-to-dynamo.js
     3. Conferir a importação item a item contra a cópia do Firebase.
