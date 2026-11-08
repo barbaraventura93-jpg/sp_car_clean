@@ -45,3 +45,48 @@ output "github_secrets_para_configurar" {
       FIREBASE_API_KEY, EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY
   EOT
 }
+
+output "waf_web_acl_arn" {
+  description = "ARN do web ACL do site. Vazio se enable_waf=false. Necessário para assinar o plano de tarifa fixa do CloudFront (ver infra/README.md)."
+  value       = var.enable_waf ? aws_wafv2_web_acl.site[0].arn : ""
+}
+
+output "cloudfront_distribution_arn" {
+  description = "ARN da distribuição CloudFront. Necessário, junto do waf_web_acl_arn, para assinar o plano de tarifa fixa."
+  value       = aws_cloudfront_distribution.site.arn
+}
+
+output "data_table" {
+  description = "Nome da tabela DynamoDB que substitui o Firebase (ver docs/migracao-aws.md)."
+  value       = aws_dynamodb_table.data.name
+}
+
+output "cognito_user_pool_id" {
+  description = "ID do User Pool do Cognito."
+  value       = aws_cognito_user_pool.users.id
+}
+
+output "cognito_web_client_id" {
+  description = "ID do app client do navegador. Público por natureza — vai no frontend, como a chave do Firebase ia."
+  value       = aws_cognito_user_pool_client.web.id
+}
+
+output "migracao_proximos_passos" {
+  description = "O que fazer depois do apply da Fase 0."
+  value       = <<-EOT
+
+    ┌─────────────────────────────────────────────────────────────
+    │ FASE 0 aplicada. Nada em produção aponta para isso ainda.
+    ├─────────────────────────────────────────────────────────────
+    │ Tabela ............: ${aws_dynamodb_table.data.name}
+    │ User Pool .........: ${aws_cognito_user_pool.users.id}
+    │ App client (web) ..: ${aws_cognito_user_pool_client.web.id}
+    │ Admin(s) ..........: ${join(", ", var.admin_emails)}
+    └─────────────────────────────────────────────────────────────
+    1. O Cognito enviou senha temporária para: ${join(", ", var.admin_emails)}.
+       Ela expira em 7 dias e a troca é obrigatória no primeiro acesso.
+    2. Importar os dados:  node scripts/migrate-firebase-to-dynamo.js
+    3. Conferir a importação item a item contra a cópia do Firebase.
+    O site continua no Firebase até a Fase 1.
+  EOT
+}

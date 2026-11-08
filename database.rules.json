@@ -46,7 +46,7 @@
       ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
       "$code": {
         ".read":  true,
-        ".write": "newData.exists()"
+        ".write": "newData.exists() && ((!data.exists() && newData.child('status').val() == 'pending' && newData.child('balance').val() == 0 && newData.child('amount').isNumber() && newData.child('amount').val() > 0) || (data.exists() && data.child('status').val() == 'active' && newData.child('amount').val() == data.child('amount').val() && newData.child('code').val() == data.child('code').val() && newData.child('balance').isNumber() && newData.child('balance').val() >= 0 && newData.child('balance').val() <= data.child('balance').val() && (newData.child('status').val() == 'active' || newData.child('status').val() == 'depleted')))"
       }
     },
     "stock":           { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },

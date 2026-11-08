@@ -8,6 +8,7 @@ locals {
 
   # Chamadas pelo site / webhooks externos → rota /api/<nome>.
   http_functions = [
+    "admin-data",
     "ai",
     "booking-status",
     "calendar-sync",
@@ -22,11 +23,16 @@ locals {
   ]
 
   # Horários em UTC (07h30, 08h, 09h e 10h em Brasília).
+  # calendar-sync não tem hora fixa: roda de 15 em 15 min o dia todo.
   scheduled_functions = {
     "admin-alerts"   = "cron(30 10 * * ? *)"
     "ai-dispatcher"  = "cron(0 11 * * ? *)"
     "birthday-check" = "cron(0 12 * * ? *)"
     "reminder-check" = "cron(0 13 * * ? *)"
+    "calendar-sync"  = "rate(15 minutes)"
+    # 03h17 de Brasília: fora de pico, e fora do minuto 0 (onde todo mundo
+    # agenda e a fila do scheduler enche).
+    "firebase-backup" = "cron(17 6 * * ? *)"
   }
 
   all_functions = distinct(concat(local.http_functions, keys(local.scheduled_functions)))
@@ -120,15 +126,27 @@ resource "aws_lambda_function" "fn" {
   timeout = contains(local.http_functions, each.key) ? 29 : 120
 
   environment {
-    variables = {
-      FN_NAME              = each.key
-      SSM_PARAM_PATH       = var.ssm_param_path
-      URL                  = local.site_url
-      ORIGIN_VERIFY_SECRET = random_password.origin_verify.result
-      PUSH_TABLE           = aws_dynamodb_table.push.name
-      MEDIA_BUCKET         = aws_s3_bucket.media.bucket
-      MEDIA_BASE_URL       = local.media_base_url
-    }
+    # BACKUP_BUCKET só na função que grava o backup: posto no mapa comum, ele
+    # alteraria a configuração das 15 funções a cada apply, sem necessidade.
+    variables = merge(
+      {
+        FN_NAME              = each.key
+        SSM_PARAM_PATH       = var.ssm_param_path
+        URL                  = local.site_url
+        ORIGIN_VERIFY_SECRET = random_password.origin_verify.result
+        PUSH_TABLE           = aws_dynamodb_table.push.name
+        MEDIA_BUCKET         = aws_s3_bucket.media.bucket
+        MEDIA_BASE_URL       = local.media_base_url
+
+        # Ids do Cognito para functions/lib/admin-auth.js validar o token:
+        # valida a assinatura contra o JWKS do pool e exige o grupo `admin`.
+        # Nenhum dos dois é segredo — o client id vai no frontend, como a
+        # chave do Firebase ia.
+        COGNITO_USER_POOL_ID = aws_cognito_user_pool.users.id
+        COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web.id
+      },
+      each.key == "firebase-backup" ? { BACKUP_BUCKET = aws_s3_bucket.backups.bucket } : {}
+    )
   }
 
   lifecycle {
@@ -141,6 +159,7 @@ resource "aws_lambda_function" "fn" {
     aws_iam_role_policy.lambda_ssm,
     aws_iam_role_policy.lambda_push,
     aws_iam_role_policy.lambda_media,
+    aws_iam_role_policy.lambda_backup,
     aws_ssm_parameter.vapid_private_key,
   ]
 }

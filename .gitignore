@@ -18,3 +18,4 @@ infra/.build/
 
 # Config local do backend do Terraform (gerada por scripts/aws-bootstrap-tfstate.sh)
 infra/backend.hcl
+infra/tfplan
