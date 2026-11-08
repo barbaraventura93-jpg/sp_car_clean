@@ -17,9 +17,9 @@ const path = require('path');
 // Carrega o .gs inteiro e devolve as funções puras. As declarações ficam
 // intactas (nada é transformado em expressão), senão uma não veria a outra.
 const fonte = fs.readFileSync(path.join(__dirname, 'drive-sync.gs'), 'utf8');
-const puras = ['classificar', 'legendaDe', 'limparPrefixos', 'emProcesso', 'intercalar', 'maiuscula'];
+const puras = ['classificar', 'legendaDe', 'limparPrefixos', 'emProcesso', 'intercalar', 'maiuscula', 'baseDoNome'];
 const mod = new Function(fonte + '\nreturn {' + puras.join(',') + '};')();
-const { classificar, legendaDe, limparPrefixos, emProcesso, intercalar } = mod;
+const { classificar, legendaDe, limparPrefixos, emProcesso, intercalar, baseDoNome } = mod;
 
 // ── ruído que o Drive e o WhatsApp acrescentam ─────────────────────────
 assert.strictEqual(limparPrefixos('Cópia de fusca-preto depois 3.jpg'), 'fusca-preto depois 3.jpg');
@@ -117,4 +117,19 @@ assert.strictEqual(soAntes.test('Polimento Carro'), false);
 assert.strictEqual(soAntes.test('Lavagem Detalhada Motos'), false);
 assert.strictEqual(soAntes.test('Retirada de Insulfilm'), false);
 
-console.log('drive-sync (nomes, legendas e variedade): todos os testes passaram');
+// ── organização (b): subpastas Antes/Depois ────────────────────────────
+// Aqui o nome do arquivo não precisa dizer nada: a subpasta diz. O pareamento é
+// pelo nome base, e tem que casar nos dois sentidos.
+assert.strictEqual(baseDoNome('Fusca 1.jpg'), 'fusca 1');
+assert.strictEqual(baseDoNome('Cópia de Fusca 1.jpg'), 'fusca 1', 'ruído do Drive não quebra o par');
+assert.strictEqual(baseDoNome('Fusca antes.jpg'), 'fusca', 'a palavra sai do nome base');
+assert.strictEqual(baseDoNome('Fusca depois.jpg'), 'fusca');
+assert.strictEqual(baseDoNome('Fusca antes.jpg'), baseDoNome('Fusca depois.jpg'),
+  'dentro das subpastas, "Fusca antes" e "Fusca depois" ainda casam');
+assert.strictEqual(baseDoNome('fusca-preto de costas 8.jpg'), 'fusca preto 8');
+assert.strictEqual(baseDoNome('IMG_20261020_095116.jpg'), 'img 20261020 095116',
+  'nome de câmera também pareia, se o mesmo nome estiver nas duas subpastas');
+assert.notStrictEqual(baseDoNome('Fusca 1.jpg'), baseDoNome('Fusca 2.jpg'),
+  'numeração diferente é processo diferente');
+
+console.log('drive-sync (nomes, legendas, variedade e subpastas): todos os testes passaram');

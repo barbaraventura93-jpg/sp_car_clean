@@ -10,6 +10,16 @@
  * existem dentro de "SP Car Clean_Fotos Instagram". A pasta é o serviço, e é
  * dela que sai a legenda que o cliente lê no site.
  *
+ * DUAS ORGANIZAÇÕES, as duas atendidas — a do Drive decide, não um palpite meu:
+ *
+ *   (a) fotos soltas na pasta do serviço, identificadas pelo NOME
+ *       ("Up antes.jpg" + "Up depois.jpg")          ← é como está hoje
+ *   (b) subpastas "Antes" e "Depois" dentro da pasta do serviço, e aí o nome do
+ *       arquivo não precisa dizer nada: tudo que está em "Depois" é resultado,
+ *       e pareia com o mesmo nome base em "Antes"
+ *
+ * Se as subpastas existirem, elas mandam. Se não, vale o nome do arquivo.
+ *
  * COMO INSTALAR
  *
  *  1. script.google.com → Novo projeto → cole este arquivo inteiro
@@ -116,6 +126,42 @@ function executar(ensaio) {
   var candidatasCarrossel = {};
 
   pastas.forEach(function (pasta) {
+    // Organização (b): subpastas Antes/Depois. Tudo que está em "Depois" é
+    // resultado, e pareia com o mesmo nome base em "Antes" — sem depender de a
+    // palavra estar no nome do arquivo.
+    if (pasta.subDepois || pasta.subAntes) {
+      Logger.log('  [%s] usando as subpastas Antes/Depois', pasta.nome);
+      var porNome = {};
+      (pasta.subAntes ? listar(pasta.subAntes) : []).forEach(function (f) {
+        if (f.tipo !== 'imagem') { resumo.pulados++; return; }
+        var k = baseDoNome(f.nome);
+        porNome[k] = porNome[k] || {};
+        if (!porNome[k].antes) porNome[k].antes = f;
+      });
+      var resultadosSub = [];
+      (pasta.subDepois ? listar(pasta.subDepois) : []).forEach(function (f) {
+        if (f.tipo === 'video') {
+          Logger.log('  [%s/Depois] PULADO (vídeo, %s MB): %s', pasta.nome,
+            (f.bytes / 1048576).toFixed(0), f.nome);
+          resumo.pulados++;
+          return;
+        }
+        if (f.tipo !== 'imagem') { resumo.pulados++; return; }
+        var k = baseDoNome(f.nome);
+        porNome[k] = porNome[k] || {};
+        if (!porNome[k].depois) { porNome[k].depois = f; } else { resultadosSub.push(f); }
+      });
+      Object.keys(porNome).forEach(function (k) {
+        var g = porNome[k];
+        if (g.antes && g.depois) enviarPar(pasta, k, g, ensaio, endpoint, segredo, jaImportados, resumo);
+        else if (g.depois) resultadosSub.push(g.depois);
+        else { Logger.log('  [%s/Antes] PULADO (sem par em Depois): %s', pasta.nome, g.antes.nome); resumo.pulados++; }
+      });
+      if (resultadosSub.length) candidatasCarrossel[pasta.nome] = { pasta: pasta, fotos: resultadosSub };
+      return;
+    }
+
+    // Organização (a): fotos soltas, identificadas pelo nome.
     var arquivos = listar(pasta.id);
     var grupos = {}, resultados = [];
 
@@ -258,11 +304,22 @@ function subpastas(idRaiz, ignorar) {
       Logger.log('Pasta ignorada: %s', nome);
       continue;
     }
+    // Duas organizações possíveis, e o script aceita as duas:
+    //
+    //   (a) as fotos soltas na pasta do serviço, identificadas pelo NOME
+    //       ("Up antes.jpg" / "Up depois.jpg")  ← é como o Drive está hoje
+    //   (b) subpastas "Antes" e "Depois" dentro da pasta do serviço
+    //
+    // Nenhuma das duas exige criar pasta: (a) funciona com o que já existe, e
+    // (b) passa a valer sozinha se um dia a organização mudar.
+    var dentro = pastasAntesDepois(f);
     out.push({
       id: f.getId(),
       nome: nome,
       // Pasta cujo nome termina em "antes": tudo dentro é foto de antes.
       soAntes: /\bantes\s*$/i.test(nome),
+      subAntes: dentro.antes,
+      subDepois: dentro.depois,
     });
   }
   out.sort(function (a, b) { return a.nome.localeCompare(b.nome); });
@@ -270,6 +327,25 @@ function subpastas(idRaiz, ignorar) {
     return p.nome + (p.soAntes ? ' (só antes)' : '');
   }).join(' · '));
   return out;
+}
+
+/**
+ * Procura subpastas "Antes" e "Depois" dentro de uma pasta de serviço.
+ *
+ * Existe porque a instrução admitia duas leituras — "as fotos de depois que
+ * estão nas pastas" e "as pastas de Depois" — e escolher uma seria apostar. Com
+ * as duas atendidas, a organização do Drive decide, não o meu palpite.
+ */
+function pastasAntesDepois(pastaServico) {
+  var r = { antes: null, depois: null };
+  var it = pastaServico.getFolders();
+  while (it.hasNext()) {
+    var sub = it.next();
+    var n = sub.getName().trim().toLowerCase();
+    if (n === 'antes') r.antes = sub.getId();
+    else if (n === 'depois') r.depois = sub.getId();
+  }
+  return r;
 }
 
 /** Arquivos da pasta, do mais novo para o mais antigo. */
@@ -287,6 +363,24 @@ function listar(idPasta) {
   }
   out.sort(function (a, b) { return b.em - a.em; });
   return out;
+}
+
+/**
+ * Nome base para parear entre as subpastas Antes e Depois.
+ *
+ * Tira extensão, ruído, numeração e as próprias palavras antes/depois — assim
+ * "Fusca 1.jpg" em Antes casa com "Fusca 1.jpg" em Depois, e "Fusca antes.jpg"
+ * casa com "Fusca depois.jpg" mesmo dentro das subpastas.
+ */
+function baseDoNome(nome) {
+  return limparPrefixos(nome)
+    .replace(/\.[^.]*$/, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s*\b(antes|depois)\b\s*/gi, ' ')
+    .replace(/\s*\bde\s+costas\b\s*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 }
 
 /** Serviço em andamento não é resultado. */
