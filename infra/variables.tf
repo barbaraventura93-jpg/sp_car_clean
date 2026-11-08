@@ -69,3 +69,25 @@ variable "waf_rate_limit" {
   type        = number
   default     = 2000
 }
+
+variable "admin_email" {
+  description = "E-mail da conta admin no Cognito. O Cognito envia a senha temporária para cá — então tem de ser uma caixa que você acessa HOJE. Atenção: o admin antigo era spcarclean0@gmail.com, a conta Google cujo acesso foi perdido em 08/11/2026; se você não entra mais nela, use outro e-mail. Sem valor padrão de propósito: é decisão sua, e errar manda a senha para uma caixa que você não lê."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.admin_email))
+    error_message = "admin_email precisa ser um endereço de e-mail válido."
+  }
+}
+
+variable "data_deletion_protection" {
+  description = "Proteção contra exclusão da tabela sp-car-clean-data. Deixe true: os dados do negócio vivem lá. Para um destroy proposital, mude para false e aplique antes."
+  type        = bool
+  default     = true
+}
+
+variable "auth_deletion_protection" {
+  description = "Proteção contra exclusão do User Pool do Cognito. Deixe true: apagá-lo elimina as contas de todos os clientes, e elas não têm como ser recriadas a partir de backup."
+  type        = bool
+  default     = true
+}
