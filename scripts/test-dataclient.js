@@ -81,12 +81,24 @@ assert.deepStrictEqual([...chaves].sort(), chaves, 'ordem lexicográfica = ordem
   const snap2 = await DB.ref('bookings').once('value');
   assert.deepStrictEqual(snap2.val(), fb);
 
-  // erro com callback vai para o erroCb, sem rejeição órfã
+  // erro COM callback de erro: vai para o erroCb
   global.fetch = async () => ({ ok: false, status: 403, json: async () => ({ ok: false, error: 'negado' }) });
   const msg = await new Promise((ok) => {
     DB.ref('bookings').once('value', () => ok('NÃO DEVERIA CHAMAR'), (e) => ok(e.message));
   });
   assert.strictEqual(msg, 'negado');
+
+  // erro SEM callback de erro: a promessa REJEITA, para o `.catch()` da própria
+  // chamada funcionar. É disso que `openClientAccount()` depende para abrir a
+  // tela de "Minha Conta" quando a leitura do perfil é negada; engolir o erro
+  // aqui deixava a tela sem abrir e sem nada no console.
+  let caiuNoCatch = false;
+  await new Promise((pronto) => {
+    DB.ref('bookings').once('value', () => { /* não chamado */ })
+      .catch(() => { caiuNoCatch = true; })
+      .then(pronto);
+  });
+  assert.strictEqual(caiuNoCatch, true, 'once sem erroCb rejeita, como no Firebase');
 
   // ── escritas viram as ops certas ────────────────────────────────────
   const ops = [];
