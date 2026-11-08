@@ -17,9 +17,9 @@ const path = require('path');
 // Carrega o .gs inteiro e devolve as funções puras. As declarações ficam
 // intactas (nada é transformado em expressão), senão uma não veria a outra.
 const fonte = fs.readFileSync(path.join(__dirname, 'drive-sync.gs'), 'utf8');
-const puras = ['classificar', 'legendaDe', 'limparPrefixos', 'emProcesso', 'intercalar', 'maiuscula', 'baseDoNome'];
+const puras = ['classificar', 'legendaDe', 'limparPrefixos', 'emProcesso', 'intercalar', 'maiuscula', 'baseDoNome', 'extensaoDe'];
 const mod = new Function(fonte + '\nreturn {' + puras.join(',') + '};')();
-const { classificar, legendaDe, limparPrefixos, emProcesso, intercalar, baseDoNome } = mod;
+const { classificar, legendaDe, limparPrefixos, emProcesso, intercalar, baseDoNome, extensaoDe } = mod;
 
 // ── ruído que o Drive e o WhatsApp acrescentam ─────────────────────────
 assert.strictEqual(limparPrefixos('Cópia de fusca-preto depois 3.jpg'), 'fusca-preto depois 3.jpg');
@@ -91,7 +91,7 @@ const porPasta = {
   'Lavagem Detalhada Carros': { pasta: { nome: 'Lavagem Detalhada Carros' }, fotos: [foto('ld1'), foto('ld2')] },
   'Polimento Moto':           { pasta: { nome: 'Polimento Moto' },           fotos: [foto('pm1')] },
 };
-const esc = intercalar(porPasta, 2, 12);
+const esc = intercalar(porPasta, 2, 12, 99);
 const servicos = esc.map((x) => x.pasta.nome);
 // Primeira rodada: uma de cada pasta, em ordem alfabética. Só então a segunda.
 assert.deepStrictEqual(servicos.slice(0, 3),
@@ -102,7 +102,7 @@ const contagem = {};
 servicos.forEach((s) => { contagem[s] = (contagem[s] || 0) + 1; });
 assert.ok(Object.values(contagem).every((n) => n <= 2), 'nenhum serviço passa de 2: ' + JSON.stringify(contagem));
 // Teto geral respeitado
-assert.strictEqual(intercalar(porPasta, 5, 3).length, 3, 'teto geral corta');
+assert.strictEqual(intercalar(porPasta, 5, 3, 99).length, 3, 'teto geral corta');
 
 // O caso REAL do Drive hoje: uma pasta só, com 10 fotos nomeadas "depois".
 // Com teto 2 o carrossel teria duas fotos — menos que as 8 estáticas que o site
@@ -114,14 +114,14 @@ const umaPasta = {
     fotos: Array.from({ length: 10 }, (_, i) => foto('fusca-preto depois ' + (i + 1))),
   },
 };
-assert.strictEqual(intercalar(umaPasta, 2, 12).length, 2, 'teto 2 sufocaria: só 2 fotos');
-assert.strictEqual(intercalar(umaPasta, 4, 12).length, 4, 'teto 4 dá 4 — o escolhido');
+assert.strictEqual(intercalar(umaPasta, 2, 12, 99).length, 2, 'teto 2 sufocaria: só 2 fotos');
+assert.strictEqual(intercalar(umaPasta, 4, 12, 99).length, 4, 'teto 4 dá 4 — o escolhido');
 // E com várias pastas o teto não atrapalha a variedade: a 1ª rodada é uma de
 // cada. (`umaPasta` usa a mesma chave de `porPasta`, então o merge dá 3 pastas —
 // é o número de pastas que define o tamanho da 1ª rodada, não o teto.)
 const varias = Object.assign({}, porPasta, umaPasta);
 const nPastas = Object.keys(varias).length;
-const primeiraRodada = intercalar(varias, 4, 12).slice(0, nPastas).map((x) => x.pasta.nome);
+const primeiraRodada = intercalar(varias, 4, 12, 99).slice(0, nPastas).map((x) => x.pasta.nome);
 assert.strictEqual(new Set(primeiraRodada).size, nPastas,
   'a 1ª rodada pega uma de cada pasta: ' + primeiraRodada);
 // Sem o intercalar, as 4 primeiras seriam todas de "Polimento Carro" — é
@@ -217,4 +217,56 @@ const r5 = rotear(['fusca-preto em processo de polimento.jpg']);
 assert.deepStrictEqual(r5.carrossel, []);
 assert.strictEqual(r5.fora.length, 1);
 
-console.log('drive-sync (nomes, legendas, variedade, subpastas e a regra): todos os testes passaram');
+// ── teto por GRUPO: o caso REAL do primeiro ensaio ─────────────────────
+// Sem ele, o carrossel recebeu "fusca-preto depois 2, 3, 5 e 7": quatro slides
+// do MESMO Fusca preto, com legenda idêntica nos quatro. Teto por pasta não
+// resolve, porque os quatro estão na mesma pasta E são o mesmo carro.
+const comGrupo = (n, g) => ({ id: 'id-' + n, nome: n + '.jpg', grupo: g });
+const ensaioReal = {
+  'Lavagem Detalhada Carros': {
+    pasta: { nome: 'Lavagem Detalhada Carros' },
+    fotos: [
+      comGrupo('fusca-preto depois 7', 'fusca-preto'),
+      comGrupo('fusca-preto depois 2', 'fusca-preto'),
+      comGrupo('fusca-preto depois 3', 'fusca-preto'),
+      comGrupo('fusca-preto depois 5', 'fusca-preto'),
+    ],
+  },
+};
+assert.strictEqual(intercalar(ensaioReal, 4, 12, 99).length, 4, 'sem teto de grupo: os 4 do mesmo carro');
+const comTeto = intercalar(ensaioReal, 4, 12, 2);
+assert.strictEqual(comTeto.length, 2, 'com teto 2: no máximo 2 do mesmo carro');
+assert.strictEqual(new Set(comTeto.map((x) => x.legenda)).size, 1,
+  'as duas têm a mesma legenda, o que é esperado — são o mesmo carro');
+
+// E o teto de grupo não atrapalha quando os carros são diferentes.
+const carrosDiferentes = {
+  'Polimento Carro': {
+    pasta: { nome: 'Polimento Carro' },
+    fotos: [
+      comGrupo('fusca depois', 'fusca'),
+      comGrupo('civic depois', 'civic'),
+      comGrupo('up depois', 'up'),
+      comGrupo('corsa depois', 'corsa'),
+    ],
+  },
+};
+assert.strictEqual(intercalar(carrosDiferentes, 4, 12, 2).length, 4,
+  'carros diferentes: o teto de grupo não corta nada');
+
+// A pasta não perde a vez quando uma foto é recusada pelo teto: ela tenta a
+// seguinte. Sem isso, "fusca, fusca, civic" devolveria só 1 em duas rodadas.
+const misto = {
+  'X': { pasta: { nome: 'X' }, fotos: [
+    comGrupo('a1 depois', 'a'), comGrupo('a2 depois', 'a'),
+    comGrupo('a3 depois', 'a'), comGrupo('b1 depois', 'b')] },
+};
+const r = intercalar(misto, 4, 12, 1).map((x) => x.foto.grupo);
+assert.deepStrictEqual(r, ['a', 'b'], 'avança dentro da pasta em vez de perder a vez: ' + r);
+
+// ── extensão, para o relatório dizer por que algo não serve ────────────
+assert.strictEqual(extensaoDe('foto.HEIC'), 'heic', 'minúscula');
+assert.strictEqual(extensaoDe('fusca-preto.jpg.heic'), 'heic', 'vale a última');
+assert.strictEqual(extensaoDe('semponto'), 'semponto');
+
+console.log('drive-sync (nomes, legendas, variedade, subpastas, a regra e o teto de grupo): todos passaram');
