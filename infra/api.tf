@@ -16,6 +16,7 @@ locals {
     "create-payment",
     "create-referral",
     "infinitepay-webhook",
+    "me",
     "notify-booking",
     "notify-client",
     "push-subscription",
