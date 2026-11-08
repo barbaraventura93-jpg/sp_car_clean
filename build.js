@@ -35,12 +35,15 @@ function replaceOnce(src, from, to, file) {
 
 html = replaceOnce(html, 'href="styles.css"', `href="styles.css?v=${version}"`, 'index.html');
 html = replaceOnce(html, 'src="app.js"',      `src="app.js?v=${version}"`,      'index.html');
+// Sem versão, o cognito.js ficaria 7 dias em cache (o deploy publica os
+// estáticos com max-age=604800) e uma correção no login não chegaria.
+html = replaceOnce(html, 'src="cognito.js"',  `src="cognito.js?v=${version}"`,  'index.html');
 fs.writeFileSync(path.join('dist', 'index.html'), html);
 
 const sw = replaceOnce(fs.readFileSync('sw.js', 'utf8'), "'spcc-v1'", `'spcc-${version}'`, 'sw.js');
 fs.writeFileSync(path.join('dist', 'sw.js'), sw);
 
-for (const f of ['manifest.webmanifest', 'admin.webmanifest', 'styles.css', 'app.js']) {
+for (const f of ['manifest.webmanifest', 'admin.webmanifest', 'styles.css', 'app.js', 'cognito.js']) {
   if (fs.existsSync(f)) fs.copyFileSync(f, path.join('dist', f));
 }
 
