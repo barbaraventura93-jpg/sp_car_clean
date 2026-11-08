@@ -220,6 +220,77 @@ acontece em um lugar, e o diff fica revisável.
 As 11 Lambdas passam para o DynamoDB. O SDK do Firebase sai do frontend. O
 Firebase fica só-leitura por um período de segurança e depois é desligado.
 
+## Restauração do painel — o que já está feito
+
+A Fase 1 foi executada em quatro passos, cada um verificado antes do seguinte.
+Isto é registro do que está no código, não plano.
+
+### Passo 1 — login pelo Cognito
+
+`cognito.js` expõe um objeto `AUTH` com a **mesma interface do Firebase Auth**
+(`signInWithEmailAndPassword`, `onAuthStateChanged`, `currentUser`…), e as 21
+chamadas `firebase.auth()` do `app.js` passaram a usar `AUTH`. Duas contas no
+grupo `admin`. Fluxos novos que o Cognito exige e o Firebase não tinha:
+confirmação de cadastro, senha temporária e redefinição por código.
+
+### Passo 2 — validação do token no servidor
+
+`functions/lib/admin-auth.js` verifica a **assinatura RS256** do token contra o
+JWKS do pool (cache de 1 h) e exige o grupo `admin`. Antes, "é admin" era o
+e-mail do token igual a uma constante; agora é um grupo atribuído no Cognito e
+assinado pela AWS. O caminho antigo do Firebase ficou como rede de transição.
+
+### Passo 3 — endpoint de dados administrativos
+
+`functions/admin-data.js` (`POST /api/admin-data`) fala com o Firebase usando o
+`FIREBASE_DATABASE_SECRET`, que ignora as regras do banco. O navegador nunca
+recebe o segredo. **Não é proxy genérico**: cada nó declara quais operações
+aceita, separadamente na raiz e no item, e o que não está declarado é recusado.
+Substituir ou apagar um nó inteiro — a operação que esvaziaria a base de uma vez
+— só está liberado onde o app realmente faz isso.
+
+### Passo 4 — o painel voltou a ler e gravar
+
+`dataclient.js` expõe `DB.ref()` **com a mesma interface da ref do Firebase** e
+é injetado no único lugar onde as refs são criadas. Por isso o diff no `app.js`
+é de uma linha por ref, e não das 187 chamadas de dados.
+
+Roteamento:
+
+| | nó de leitura pública | nó restrito |
+|---|---|---|
+| **visitante** | Firebase direto | Firebase direto (as regras decidem) |
+| **admin** | Firebase direto | pela Lambda |
+
+Escrita vai pela Lambda sempre que há admin logado, e direto caso contrário —
+este segundo caso é necessário: visitante criando agendamento, entrando na lista
+de espera ou comprando gift card escreve anonimamente, e as regras do RTDB
+permitem. Mandar essas escritas para a Lambda as faria falhar por falta de token.
+
+O critério de "é admin" no frontend é o **mesmo do servidor**: grupo `admin` no
+token. Usar o e-mail deixaria a segunda conta administrativa de fora, com
+escritas indo direto ao Firebase e sendo recusadas sem explicação.
+
+Três ajustes que a auditoria dos pontos de escrita exigiu, porque a política do
+`admin-data` recusa substituir um nó inteiro:
+
+- `setBookings()` gravava o nó `bookings` completo a cada alteração. Passou a
+  gravar **só o agendamento que mudou** (`set` no filho tem o mesmo efeito).
+  Também resolve o teto de 256 KB do corpo da requisição.
+- os dois *seeds* (serviços padrão, receitas de estoque) passaram de `set` para
+  `update`: mesclam em vez de substituir, que é o que já queriam fazer.
+- `clearAllData()` apaga item a item.
+
+Limite conhecido e aceito: `on('value')` em nó restrito **não é tempo real** — a
+Lambda não empurra evento. Faz uma leitura imediata e repete a cada 45 s. Para
+um painel usado por uma pessoa isso basta.
+
+Verificação: `node scripts/test-dataclient.js` (roteamento, consultas, chaves de
+push, tradução das operações) e navegador real sobre o `dist/` — com sessão de
+admin as leituras restritas e as escritas saem por `/api/admin-data` com token,
+o painel renderiza os agendamentos vindos de lá, e sem sessão **nenhuma**
+chamada a `/api/admin-data` acontece e o site público segue lendo o Firebase.
+
 ## O que depende de você
 
 - definir a senha do admin no Cognito no fim da Fase 0;

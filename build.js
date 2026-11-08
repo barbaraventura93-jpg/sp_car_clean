@@ -22,7 +22,7 @@ html = html.replace('%%EMAILJS_PUBLIC_KEY%%', ejsPublicKey);
 // (o S3 serve esses arquivos com cache de 7 dias — URL nova = navegador baixa de novo)
 // e no CACHE_VERSION do service worker (sw.js muda → SW novo apaga os caches antigos).
 const hash = crypto.createHash('sha256');
-for (const f of ['app.js', 'styles.css']) hash.update(fs.readFileSync(f));
+for (const f of ['app.js', 'cognito.js', 'dataclient.js', 'styles.css']) hash.update(fs.readFileSync(f));
 const version = hash.digest('hex').slice(0, 10);
 
 function replaceOnce(src, from, to, file) {
@@ -38,12 +38,13 @@ html = replaceOnce(html, 'src="app.js"',      `src="app.js?v=${version}"`,      
 // Sem versão, o cognito.js ficaria 7 dias em cache (o deploy publica os
 // estáticos com max-age=604800) e uma correção no login não chegaria.
 html = replaceOnce(html, 'src="cognito.js"',  `src="cognito.js?v=${version}"`,  'index.html');
+html = replaceOnce(html, 'src="dataclient.js"', `src="dataclient.js?v=${version}"`, 'index.html');
 fs.writeFileSync(path.join('dist', 'index.html'), html);
 
 const sw = replaceOnce(fs.readFileSync('sw.js', 'utf8'), "'spcc-v1'", `'spcc-${version}'`, 'sw.js');
 fs.writeFileSync(path.join('dist', 'sw.js'), sw);
 
-for (const f of ['manifest.webmanifest', 'admin.webmanifest', 'styles.css', 'app.js', 'cognito.js']) {
+for (const f of ['manifest.webmanifest', 'admin.webmanifest', 'styles.css', 'app.js', 'cognito.js', 'dataclient.js']) {
   if (fs.existsSync(f)) fs.copyFileSync(f, path.join('dist', f));
 }
 

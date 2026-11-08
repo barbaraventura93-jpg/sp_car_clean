@@ -976,6 +976,10 @@ window.__ENV = {
 <!-- Autenticação pelo Cognito (substitui o Firebase Auth — ver docs/migracao-aws.md).
      Precisa vir ANTES do app.js: expõe o objeto AUTH que o app usa. -->
 <script src="cognito.js"></script>
+<!-- Acesso a dados: emula a interface da ref do Firebase e roteia o que é
+     administrativo pela Lambda /api/admin-data. Também precisa vir ANTES do
+     app.js: expõe o objeto DB usado na criação das refs. -->
+<script src="dataclient.js"></script>
 <script src="app.js"></script>
 
 <!-- ===================================================

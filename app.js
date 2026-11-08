@@ -65,6 +65,9 @@ let _checkinBookingId = null;
 let _checkinPhotos    = {};
 
 let _bookings = [];
+// Espelho do que já está no banco, por id, para o setBookings gravar só o
+// que mudou. Preenchido pelo listener de /bookings.
+let _bookingsRemotos = {};
 let _blocked  = [];
 let _dayLoad  = {};   // lotação pública por dia { 'YYYY-MM-DD': nº de vagas ocupadas } — sem dados pessoais
 let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef, _stockRef, _stockRecipesRef, _dayLoadRef, _bookingIndexRef, _portfolioRef, _referralsRef;
@@ -257,12 +260,30 @@ const isClient = () => _authUser != null && _authUser.email !== CFG.adminEmail;
 function getBookings() { return _bookings; }
 function getBlocked()  { return _blocked; }
 
+// Grava agendamento por agendamento, não o nó inteiro. Três razões, todas
+// medidas: a política do /api/admin-data proíbe substituir `bookings` por
+// completo (é a operação que apagaria a base de uma vez), o corpo da
+// requisição tem teto de 256 KB, e nenhum dos oito pontos que chamam isto
+// remove agendamento por aqui — todos alteram um só, e a exclusão tem caminho
+// próprio (`child(id).remove()`). Como `set` no filho substitui o agendamento
+// inteiro, o efeito é idêntico ao do `set` na raiz.
 function setBookings(arr) {
   _bookings = arr;
   if(!_fbDB) return;
-  const obj = {};
-  arr.forEach(b => { obj[b.id] = b; });
-  _bookingsRef.set(obj).catch(e => console.error('Firebase setBookings:', e));
+  const atual = {};
+  arr.forEach(b => { atual[b.id] = JSON.stringify(b); });
+  Object.keys(atual).forEach(id => {
+    if (_bookingsRemotos[id] === atual[id]) return;
+    _bookingsRef.child(id).set(JSON.parse(atual[id]))
+      .then(() => { _bookingsRemotos[id] = atual[id]; })
+      .catch(e => console.error('Firebase setBookings:', e));
+  });
+  // Id que saiu do array sai do banco — mesma semântica do `set` na raiz.
+  Object.keys(_bookingsRemotos).forEach(id => {
+    if (atual[id] !== undefined) return;
+    delete _bookingsRemotos[id];
+    _bookingsRef.child(id).remove().catch(e => console.error('Firebase setBookings (remover):', e));
+  });
 }
 
 function updateBooking(b) {
@@ -320,7 +341,9 @@ function setBlocked(arr) {
   if(!_fbDB) return;
   const obj = {};
   arr.forEach(d => { obj[d] = true; });
-  _blockedRef.set(arr.length ? obj : null).catch(e => console.error('Firebase setBlocked:', e));
+  // `{}` em vez de `null`: no RTDB os dois apagam o nó, mas pela Lambda `null`
+  // vira 'apagar' na raiz, que a política recusa. O resultado no banco é o mesmo.
+  _blockedRef.set(arr.length ? obj : {}).catch(e => console.error('Firebase setBlocked:', e));
 }
 
 // ============================================================
@@ -6177,7 +6200,10 @@ async function seedServicesFromDefault() {
     'reparo-trinca':       { name:'Reparo de Trinca',           icon:'🔧',  cat:'Serviços Especiais', active:true, daysExtra:0, desc:'Resina estrutural + cura UV. Economize até 90% vs trocar o vidro.',        pricing:{pq:{cost:0,sale:80},  gr:{cost:0,sale:150}} },
   };
   try {
-    await _servicesRef.set(defaults);
+    // `update`, não `set`: a política recusa substituir o nó `services` inteiro,
+    // e mesclar é o que esta função quer de fato — importar os padrões sem
+    // apagar serviço que já exista fora da lista.
+    await _servicesRef.update(defaults);
     alert('✅ 9 serviços importados! Agora preencha os custos para ver as margens.');
   } catch(e) { alert('Erro: ' + e.message); }
 }
@@ -6944,7 +6970,7 @@ async function _doSeedStockDefaults() {
       };
     });
     await _stockRef.update(stockUpd);
-    await _stockRecipesRef.set(RECIPE_DEFAULTS);
+    await _stockRecipesRef.update(RECIPE_DEFAULTS);  // idem: mescla, não substitui o nó
     uiAlert('✅ Lista padrão carregada', 'Agora configure saldo e custo de cada insumo clicando em ✏️.');
     renderAdminEstoque();
   } catch(e) { uiAlert('Erro', e.message); }
@@ -7600,27 +7626,42 @@ _buildHeroCarousel(HERO_FALLBACK);
   try {
     firebase.initializeApp(firebaseConfig);
     _fbDB        = firebase.database();
-    _bookingsRef = _fbDB.ref('bookings');
-    _dayLoadRef  = _fbDB.ref('dayLoad');       // nó público só com a lotação por dia
-    _bookingIndexRef = _fbDB.ref('bookingIndex'); // índice bookingIndex/$uid/$id → cliente lê os próprios
-    _portfolioRef = _fbDB.ref('portfolio');    // carrossel "Nossas Obras" gerenciado pelo admin
-    _blockedRef  = _fbDB.ref('blocked');
-    _cfgRef      = _fbDB.ref('config');
-    _galleryRef  = _fbDB.ref('gallery');
-    _servicesRef = _fbDB.ref('services');
-    _combosRef   = _fbDB.ref('combos');
-    _clientNotesRef    = _fbDB.ref('clientNotes');
-    _clientProfilesRef = _fbDB.ref('clientProfiles');
-    _couponsRef        = _fbDB.ref('coupons');
-    _referralsRef      = _fbDB.ref('referrals');   // programa Indique um Amigo
-    _giftcardsRef      = _fbDB.ref('giftcards');
-    _waitlistRef       = _fbDB.ref('waitlist');
-    _feedbackRef       = _fbDB.ref('feedback');
-    _stockRef          = _fbDB.ref('stock');
-    _stockRecipesRef   = _fbDB.ref('stockRecipes');
-    _clientLinksRef    = _fbDB.ref('clientLinks');
-    _clientLinkDismissalsRef = _fbDB.ref('clientLinkDismissals');
-    _clientOverridesRef = _fbDB.ref('clientOverrides');
+    // Roteia o acesso a dados: nó restrito com admin logado vai pela Lambda
+    // /api/admin-data (que fala com o Firebase usando o segredo do banco); o
+    // resto continua indo direto, preservando tempo real e latência do site.
+    // O critério de "é admin" é o MESMO do servidor — grupo `admin` no token do
+    // Cognito, o que o functions/lib/admin-auth.js exige. Usar isAdmin() (e-mail
+    // igual a CFG.adminEmail) deixaria a segunda conta administrativa de fora:
+    // as escritas dela iriam direto ao Firebase e seriam recusadas sem explicação.
+    DB.configurar({
+      firebaseDb: _fbDB,
+      ehAdmin: () => {
+        const u = AUTH.currentUser;
+        return !!u && Array.isArray(u.grupos) && u.grupos.includes('admin');
+      },
+      pegarToken: () => (AUTH.currentUser ? AUTH.currentUser.getIdToken() : Promise.resolve(null)),
+    });
+    _bookingsRef = DB.ref('bookings');
+    _dayLoadRef  = DB.ref('dayLoad');       // nó público só com a lotação por dia
+    _bookingIndexRef = DB.ref('bookingIndex'); // índice bookingIndex/$uid/$id → cliente lê os próprios
+    _portfolioRef = DB.ref('portfolio');    // carrossel "Nossas Obras" gerenciado pelo admin
+    _blockedRef  = DB.ref('blocked');
+    _cfgRef      = DB.ref('config');
+    _galleryRef  = DB.ref('gallery');
+    _servicesRef = DB.ref('services');
+    _combosRef   = DB.ref('combos');
+    _clientNotesRef    = DB.ref('clientNotes');
+    _clientProfilesRef = DB.ref('clientProfiles');
+    _couponsRef        = DB.ref('coupons');
+    _referralsRef      = DB.ref('referrals');   // programa Indique um Amigo
+    _giftcardsRef      = DB.ref('giftcards');
+    _waitlistRef       = DB.ref('waitlist');
+    _feedbackRef       = DB.ref('feedback');
+    _stockRef          = DB.ref('stock');
+    _stockRecipesRef   = DB.ref('stockRecipes');
+    _clientLinksRef    = DB.ref('clientLinks');
+    _clientLinkDismissalsRef = DB.ref('clientLinkDismissals');
+    _clientOverridesRef = DB.ref('clientOverrides');
     // clientNotes/clientLinks/clientLinkDismissals/clientOverrides são admin-only nas regras
     // do RTDB. Ler aqui (antes de onAuthStateChanged restaurar a sessão) era negado em
     // silêncio e as mesclagens/anotações "sumiam" a cada visita — por isso a carga fica em
@@ -7666,6 +7707,10 @@ _buildHeroCarousel(HERO_FALLBACK);
       _bookingsRef.on('value', snap => {
         const data = snap.val();
         _bookings = data ? Object.values(data) : [];
+        // Espelho do que está no banco: é o que deixa o setBookings gravar só o
+        // agendamento alterado em vez de reenviar a coleção inteira.
+        _bookingsRemotos = {};
+        Object.entries(data || {}).forEach(([id, b]) => { _bookingsRemotos[id] = JSON.stringify(b); });
         // Mantém a lotação pública (dayLoad) sincronizada a cada mudança
         _recomputeDayLoad();
         // Vincula agendamentos órfãos a contas de clientes (1x por sessão, sem interação)
@@ -7833,11 +7878,22 @@ _buildHeroCarousel(HERO_FALLBACK);
 // ============================================================
 function clearAllData() {
   if(!confirm('Limpar TODOS os dados? Agendamentos e bloqueios serão removidos do Firebase. Isso não pode ser desfeito!')) return;
+  // Apaga item a item. Apagar o nó inteiro é a operação que a política do
+  // /api/admin-data recusa de propósito — é exatamente a que esvaziaria a base
+  // numa requisição. Item a item dá o mesmo resultado e continua exigindo que
+  // cada exclusão seja autorizada individualmente.
+  const apagarFilhos = async (ref) => {
+    if (!ref) return;
+    const snap = await ref.once('value');
+    const dados = snap.val();
+    if (!dados || typeof dados !== 'object') return;
+    for (const k of Object.keys(dados)) await ref.child(k).remove();
+  };
   Promise.all([
-    _bookingsRef ? _bookingsRef.remove() : Promise.resolve(),
-    _blockedRef  ? _blockedRef.remove()  : Promise.resolve(),
-    _dayLoadRef  ? _dayLoadRef.remove()  : Promise.resolve(),
-    _bookingIndexRef ? _bookingIndexRef.remove() : Promise.resolve(),
+    apagarFilhos(_bookingsRef),
+    apagarFilhos(_blockedRef),
+    apagarFilhos(_dayLoadRef),
+    apagarFilhos(_bookingIndexRef),
   ]).then(() => {
     _bookings = []; _blocked = []; _dayLoad = {};
     alert('Dados limpos com sucesso.');
@@ -8354,7 +8410,7 @@ function iaEnviarReativacao(email, name, text) {
 // --- 1.3 Agente de agenda (waitlist) ---
 function iaDispatchAgenda(freedDate, cancelledService, cancelledCarSize) {
   if (!freedDate) return;
-  firebase.database().ref('aiConfig/agenda').once('value').then(snap => {
+  DB.ref('aiConfig/agenda').once('value').then(snap => {
     if (!snap.val()?.enabled) return;
     const user = AUTH.currentUser;
     if (!user) return;
@@ -8445,9 +8501,9 @@ async function renderAdminIA() {
     await iaEnsureConfigs();
     const month = new Date().toISOString().slice(0, 7);
     const [cfgSnap, usageSnap, logsSnap] = await Promise.all([
-      firebase.database().ref('aiConfig').once('value'),
-      firebase.database().ref(`aiUsage/${month}`).once('value'),
-      firebase.database().ref('aiLogs').orderByKey().limitToLast(20).once('value')
+      DB.ref('aiConfig').once('value'),
+      DB.ref(`aiUsage/${month}`).once('value'),
+      DB.ref('aiLogs').orderByKey().limitToLast(20).once('value')
     ]);
     const configs = cfgSnap.val()   || {};
     const usages  = usageSnap.val() || {};
@@ -8567,11 +8623,11 @@ async function renderAdminIA() {
 }
 
 async function iaEnsureConfigs() {
-  const snap = await firebase.database().ref('aiConfig').once('value');
+  const snap = await DB.ref('aiConfig').once('value');
   const existing = snap.val() || {};
   for (const [id, def] of Object.entries(IA_DEFAULTS)) {
     if (!existing[id]) {
-      await firebase.database().ref(`aiConfig/${id}`).set({
+      await DB.ref(`aiConfig/${id}`).set({
         enabled: false,
         monthlyBudgetCalls: def.monthlyBudgetCalls,
         maxTokens: def.maxTokens,
@@ -8585,7 +8641,7 @@ async function iaEnsureConfigs() {
 
 async function iaToggle(agentId, enabled) {
   try {
-    await firebase.database().ref(`aiConfig/${agentId}`).update({
+    await DB.ref(`aiConfig/${agentId}`).update({
       enabled,
       disabledReason: enabled ? null : 'manual',
       updatedAt: new Date().toISOString()
@@ -8599,7 +8655,7 @@ async function iaToggle(agentId, enabled) {
 async function iaUpdateBudget(agentId, value) {
   if (!value || value < 1) return;
   try {
-    await firebase.database().ref(`aiConfig/${agentId}`).update({
+    await DB.ref(`aiConfig/${agentId}`).update({
       monthlyBudgetCalls: value,
       updatedAt: new Date().toISOString()
     });
@@ -8783,7 +8839,7 @@ async function iaDescreveCheckin(btn) {
 
 // --- 2.2 Widget Concierge ---
 (function initConciergeWidget() {
-  firebase.database().ref('aiConfig/concierge/enabled').once('value').then(snap => {
+  DB.ref('aiConfig/concierge/enabled').once('value').then(snap => {
     if (!snap.val()) return;
     document.getElementById('concierge-fab').style.display = 'flex';
   }).catch(() => {});
