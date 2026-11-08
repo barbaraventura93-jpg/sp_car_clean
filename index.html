@@ -529,7 +529,7 @@ window.__ENV = {
       <div id="loginError" style="color:var(--red);font-size:.82rem;margin-bottom:.8rem;display:none">Senha incorreta. Tente novamente.</div>
       <button class="btn-primary" onclick="doAdminLogin()" style="width:100%;justify-content:center">Entrar no Painel</button>
       <div class="admin-gate-foot">
-        <a onclick="openPasswordReset(null)">Esqueci minha senha</a>
+        <a onclick="openPasswordReset(CFG.adminEmail)">Esqueci minha senha</a>
         &nbsp;·&nbsp;
         <a onclick="exitAdminGate()">Ver o site</a>
       </div>
@@ -580,7 +580,7 @@ window.__ENV = {
       <div id="prOk" style="color:var(--accent);font-size:.82rem;margin-bottom:.8rem;display:none"></div>
       <button class="btn-primary" id="prSubmit" onclick="doPasswordResetConfirm()"
               style="width:100%;justify-content:center">Salvar nova senha</button>
-      <div class="admin-gate-foot"><a onclick="doPasswordResetRequest()">Reenviar código</a></div>
+      <div class="admin-gate-foot"><a id="prResend" onclick="doPasswordResetRequest()">Enviar código</a></div>
     </div>
   </div>
 </div>

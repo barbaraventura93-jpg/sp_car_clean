@@ -2337,8 +2337,12 @@ function openPasswordReset(email, desafio) {
   const codeRow = document.getElementById('prCode');
   if (codeRow) codeRow.closest('.form-row').style.display = 'block';
   if (sub) sub.textContent = 'Enviando um código para o seu e-mail…';
+  // Com e-mail em mãos o código já sai; o rótulo do link só vira "Reenviar"
+  // depois que houve um envio — "reenviar" antes do primeiro envio faz a pessoa
+  // procurar na caixa de entrada um e-mail que nunca foi mandado.
+  _prRotuloEnvio(false);
   if (email) doPasswordResetRequest();
-  else if (sub) sub.textContent = 'Digite seu e-mail e toque em "Reenviar código"';
+  else if (sub) sub.textContent = 'Digite seu e-mail e toque em "Enviar código"';
 }
 
 /** Abre no modo de confirmar cadastro (só código). */
@@ -2356,6 +2360,12 @@ function openSignupConfirm(email, senha) {
   if (btn) btn.textContent = 'Confirmar conta';
 }
 
+// Alterna o rótulo do link de envio do código conforme já tenha havido envio.
+function _prRotuloEnvio(jaEnviou) {
+  const a = document.getElementById('prResend');
+  if (a) a.textContent = jaEnviou ? 'Reenviar código' : 'Enviar código';
+}
+
 function doPasswordResetRequest() {
   const email = (document.getElementById('prEmail')?.value || '').trim();
   if (!email) { _prMsg('prError', 'Digite seu e-mail.'); return; }
@@ -2365,6 +2375,7 @@ function doPasswordResetRequest() {
   _prMsg('prOk', 'Enviando…');
   fn.then(() => {
     _prMsg('prOk', 'Código enviado para ' + email + '. Confira a caixa de entrada e o spam.');
+    _prRotuloEnvio(true);
     const sub = document.getElementById('prSub');
     if (sub) sub.textContent = 'Código enviado para ' + email;
   }).catch(e => _prMsg('prError', e.message || 'Não foi possível enviar o código.'));
