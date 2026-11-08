@@ -1,11 +1,24 @@
 /**
  * SP Car Clean — fotos do Drive para o site, sozinho.
  *
- * Roda no Apps Script, na conta Google que é dona das pastas. Escolha
- * deliberada: assim não existe conta de serviço, nem chave JSON, nem projeto no
- * Google Cloud. A documentação do Google recomenda evitar chave de conta de
- * serviço justamente para carga que roda fora do Google Cloud — e a nossa Lambda
- * está na AWS.
+ * Roda no Apps Script, na conta Google que é dona das pastas. Assim não existe
+ * conta de serviço, nem chave JSON, nem projeto no Google Cloud — a documentação
+ * do Google recomenda evitar chave de conta de serviço justamente para carga que
+ * roda fora do Google Cloud, e a nossa Lambda está na AWS.
+ *
+ * NÃO PRECISA CRIAR PASTA NENHUMA. A fonte são as pastas de serviço que já
+ * existem dentro de "SP Car Clean_Fotos Instagram". A pasta é o serviço, e é
+ * dela que sai a legenda que o cliente lê no site.
+ *
+ * DUAS ORGANIZAÇÕES, as duas atendidas — a do Drive decide, não um palpite meu:
+ *
+ *   (a) fotos soltas na pasta do serviço, identificadas pelo NOME
+ *       ("Up antes.jpg" + "Up depois.jpg")          ← é como está hoje
+ *   (b) subpastas "Antes" e "Depois" dentro da pasta do serviço, e aí o nome do
+ *       arquivo não precisa dizer nada: tudo que está em "Depois" é resultado,
+ *       e pareia com o mesmo nome base em "Antes"
+ *
+ * Se as subpastas existirem, elas mandam. Se não, vale o nome do arquivo.
  *
  * COMO INSTALAR
  *
@@ -13,32 +26,50 @@
  *  2. Serviços (+) → "Drive API" → Adicionar     (precisa para a miniatura)
  *  3. Configurações do projeto → Propriedades do script → adicione:
  *
- *       ENDPOINT             https://spcarclean.com.br/api/drive-sync
- *       SEGREDO              (o mesmo valor que está no SSM)
- *       PASTA_CARROSSEL      (id da pasta "Site/Carrossel")
- *       PASTA_ANTES_DEPOIS   (id da pasta "Site/Antes e Depois")
+ *       ENDPOINT     https://spcarclean.com.br/api/drive-sync
+ *       SEGREDO      (o mesmo valor que está no SSM)
+ *       PASTA_RAIZ   (id da pasta "SP Car Clean_Fotos Instagram")
  *
- *     O id da pasta é o trecho final da URL quando ela está aberta no Drive:
- *     drive.google.com/drive/folders/ESTE_PEDACO_AQUI
+ *       IGNORAR      (opcional) nomes de pasta a pular, separados por vírgula
  *
- *  4. Rode `testar()` primeiro. Ele NÃO envia nada: só mostra no log o que faria
- *     e o tamanho real das miniaturas. É assim que a gente confirma que a
- *     miniatura serve, porque o tamanho dela é a única parte deste desenho que a
- *     documentação do Google não especifica.
- *  5. Se o log estiver bom: Gatilhos (⏰) → Adicionar gatilho → função
+ *  4. Rode `testar()`. Ele NÃO envia nada: lista exatamente o que entraria, de
+ *     qual pasta, com qual legenda, e o tamanho real de cada miniatura.
+ *     Leia essa lista antes de ligar o gatilho — é a curadoria, e quem conhece
+ *     as fotos é você.
+ *  5. Se a lista estiver boa: Gatilhos (⏰) → Adicionar gatilho → função
  *     `sincronizar`, origem "Baseado no tempo", diariamente.
  *
- * A REGRA DO QUE ENTRA NO SITE
+ * ONDE CADA FOTO VAI — o NOME declara, o script não adivinha
  *
- *   Site/Carrossel        → cada foto vira um item do carrossel ("só o depois")
- *   Site/Antes e Depois   → pares, pelo NOME do arquivo:
- *                             "Fusca antes.jpg"  +  "Fusca depois.jpg"
- *                           viram um cartão de antes/depois (os dois juntos)
+ *   nome com "antes" E nome com "depois", mesmo nome base, mesma pasta
+ *        → cartão de antes e depois (os dois JUNTOS, mesmo processo)
+ *   nome com "depois", sem par "antes"
+ *        → carrossel, VARIADO: no máximo MAX_POR_PASTA por serviço, intercalando
+ *          as pastas, para o carrossel não virar oito fotos do mesmo serviço
+ *   qualquer outro nome (IMG_20261020_095116.jpg, moto-tanque-preto-01.jpg…)
+ *        → NÃO ENTRA
  *
- * O par é pelo nome porque o nome é a única coisa que diz qual foto é qual —
- * `IMG_20261020_095116.jpg` não diz nada. Arquivo sem par, ou com nome fora do
- * padrão, é PULADO e aparece no log. Preferi pular e avisar a adivinhar: foto de
- * "antes" entrando como resultado é o contrário de uma vitrine.
+ * A última linha é a regra mais importante deste arquivo. Nome de câmera não diz
+ * se a foto é antes ou depois, e tratar "não sei" como "é resultado" é o que põe
+ * foto de carro sujo na vitrine. Só entra o que o nome declara.
+ *
+ * O QUE NUNCA ENTRA
+ *
+ *   • foto cujo nome não diz "antes" nem "depois" — o script não adivinha
+ *   • foto com "antes" no nome e sem par "depois" — carro sujo não é resultado
+ *   • qualquer foto de pasta cujo NOME termina em "antes"
+ *     (ex.: "Projeto PickupCorsa Uva Antes" — a pasta inteira é o antes)
+ *   • foto com "processo" ou "andamento" no nome — serviço em andamento
+ *   • as pastas "Unsplash" (banco de imagem de terceiros, não é trabalho seu) e
+ *     "Arquivo"
+ *   • vídeo. Não é esquecimento: vídeo de celular tem dezenas ou centenas de MB,
+ *     e servir isso custaria o plano de dados de quem abre o site no celular.
+ *     Reduzir exigiria transcodificar, que é ferramenta que o projeto não tem.
+ *     O script avisa no log quando encontra um, em vez de ignorar calado.
+ *
+ * CONSEQUÊNCIA PRÁTICA: para uma foto entrar no carrossel, o nome dela precisa
+ * ter "depois". Renomear é o que publica. O `testar()` conta quantas ficaram de
+ * fora por isso, em cada pasta, para você saber onde vale renomear.
  *
  * Foto já importada não entra de novo: o servidor guarda os ids já usados.
  */
@@ -46,118 +77,292 @@
 /** Largura que pedimos ao Google. 1600 cobre tela de celular em 2x. */
 var LARGURA = 1600;
 
-/** Extensões que aceitamos. HEIC fica fora: o navegador não exibe. */
-var EXTENSOES = ['jpg', 'jpeg', 'png', 'webp'];
+/**
+ * Variedade do carrossel.
+ *
+ * `intercalar()` faz rodadas pegando uma foto de cada pasta, então a variedade
+ * vem da ordem, não do teto. O teto por pasta serve só para um serviço não tomar
+ * o carrossel inteiro quando tem muito mais foto nomeada que os outros.
+ *
+ * 4, e não 2, por um motivo medido: hoje as fotos com "depois" no nome estão
+ * todas em "Lavagem Detalhada Carros". Com teto 2 o carrossel teria DUAS fotos —
+ * menos que as 8 estáticas que o site já mostrava. Teto apertado só dá variedade
+ * quando há de onde variar.
+ */
+var MAX_POR_PASTA = 4;
+var MAX_CARROSSEL = 12;
+
+/** Pastas que nunca são fonte, independente do IGNORAR. */
+var PASTAS_FORA = ['unsplash', 'arquivo'];
+
+/** Extensões que o navegador exibe. HEIC fica fora: Chrome e Firefox não abrem. */
+var IMAGENS = ['jpg', 'jpeg', 'png', 'webp'];
+var VIDEOS = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v'];
 
 // ---------------------------------------------------------------------
 // Entradas
 // ---------------------------------------------------------------------
 
 /** Execução de verdade. É esta que o gatilho diário chama. */
-function sincronizar() {
-  executar(false);
-}
+function sincronizar() { executar(false); }
 
-/** Ensaio: não envia nada, só relata. Rode esta primeiro. */
-function testar() {
-  executar(true);
-}
+/** Ensaio: não envia nada, só lista o que entraria. Rode esta primeiro. */
+function testar() { executar(true); }
 
 // ---------------------------------------------------------------------
 
-function cfg(nome) {
+function cfg(nome, opcional) {
   var v = PropertiesService.getScriptProperties().getProperty(nome);
-  if (!v) throw new Error('Falta a propriedade do script: ' + nome);
-  return v;
+  if (!v && !opcional) throw new Error('Falta a propriedade do script: ' + nome);
+  return v || '';
 }
 
 function executar(ensaio) {
   var endpoint = cfg('ENDPOINT');
   var segredo = cfg('SEGREDO');
 
-  var jaImportados = {};
-  if (ensaio) {
-    Logger.log('ENSAIO — nada será enviado.');
-  }
-  // Mesmo no ensaio consultamos o estado: saber o que JÁ está no site é metade
-  // da informação útil do relatório.
+  if (ensaio) Logger.log('ENSAIO — nada será enviado.');
+
   var estado = chamar(endpoint, segredo, { op: 'estado' });
+  var jaImportados = {};
   (estado.ids || []).forEach(function (id) { jaImportados[id] = true; });
-  Logger.log('Já no site: %s foto(s).', (estado.ids || []).length);
+  Logger.log('Já no site: %s foto(s).\n', (estado.ids || []).length);
 
-  var resumo = { carrossel: 0, pares: 0, pulados: 0, erros: 0 };
+  var ignorar = cfg('IGNORAR', true).split(',').map(function (s) {
+    return s.trim().toLowerCase();
+  }).filter(Boolean);
 
-  // ── Carrossel: foto avulsa do resultado ──────────────────────────────
-  var doCarrossel = listar(cfg('PASTA_CARROSSEL'));
-  Logger.log('--- Carrossel: %s arquivo(s) na pasta', doCarrossel.length);
-  doCarrossel.forEach(function (f) {
-    if (jaImportados[f.id]) return;
+  var pastas = subpastas(cfg('PASTA_RAIZ'), ignorar);
+  var resumo = { carrossel: 0, pares: 0, pulados: 0, erros: 0, enviados: 0 };
+
+  // ── 1. Pares de antes/depois, dentro de cada pasta ───────────────────
+  // Mesmo processo = mesma pasta + mesmo nome base. Cruzar pastas juntaria o
+  // "antes" de um carro com o "depois" de outro.
+  var candidatasCarrossel = {};
+
+  pastas.forEach(function (pasta) {
+    // Organização (b): subpastas Antes/Depois. Tudo que está em "Depois" é
+    // resultado, e pareia com o mesmo nome base em "Antes" — sem depender de a
+    // palavra estar no nome do arquivo.
+    if (pasta.subDepois || pasta.subAntes) {
+      Logger.log('  [%s] usando as subpastas Antes/Depois', pasta.nome);
+      var porNome = {};
+      (pasta.subAntes ? listar(pasta.subAntes) : []).forEach(function (f) {
+        if (f.tipo !== 'imagem') { resumo.pulados++; return; }
+        var k = baseDoNome(f.nome);
+        porNome[k] = porNome[k] || {};
+        if (!porNome[k].antes) porNome[k].antes = f;
+      });
+      var resultadosSub = [];
+      (pasta.subDepois ? listar(pasta.subDepois) : []).forEach(function (f) {
+        if (f.tipo === 'video') {
+          Logger.log('  [%s/Depois] PULADO (vídeo, %s MB): %s', pasta.nome,
+            (f.bytes / 1048576).toFixed(0), f.nome);
+          resumo.pulados++;
+          return;
+        }
+        if (f.tipo !== 'imagem') { resumo.pulados++; return; }
+        var k = baseDoNome(f.nome);
+        porNome[k] = porNome[k] || {};
+        if (!porNome[k].depois) { porNome[k].depois = f; } else { resultadosSub.push(f); }
+      });
+      Object.keys(porNome).forEach(function (k) {
+        var g = porNome[k];
+        if (g.antes && g.depois) enviarPar(pasta, k, g, ensaio, endpoint, segredo, jaImportados, resumo);
+        else if (g.depois) resultadosSub.push(g.depois);
+        else { Logger.log('  [%s/Antes] PULADO (sem par em Depois): %s', pasta.nome, g.antes.nome); resumo.pulados++; }
+      });
+      if (resultadosSub.length) candidatasCarrossel[pasta.nome] = { pasta: pasta, fotos: resultadosSub };
+      return;
+    }
+
+    // Organização (a): fotos soltas, identificadas pelo nome.
+    var arquivos = listar(pasta.id);
+    var grupos = {}, resultados = [], semNome = 0;
+
+    arquivos.forEach(function (f) {
+      if (f.tipo === 'video') {
+        Logger.log('  [%s] PULADO (vídeo, %s MB): %s', pasta.nome,
+          (f.bytes / 1048576).toFixed(0), f.nome);
+        resumo.pulados++;
+        return;
+      }
+      if (f.tipo !== 'imagem') { resumo.pulados++; return; }
+      if (emProcesso(f.nome)) {
+        Logger.log('  [%s] PULADO (serviço em andamento): %s', pasta.nome, f.nome);
+        resumo.pulados++;
+        return;
+      }
+
+      var m = classificar(f.nome);
+      if (!m) {
+        // O nome não declara o lado. Não entra — ver a regra no topo.
+        semNome++;
+        resumo.pulados++;
+        return;
+      }
+      grupos[m.grupo] = grupos[m.grupo] || {};
+      if (!grupos[m.grupo][m.lado]) grupos[m.grupo][m.lado] = f;
+      else if (m.lado === 'depois' && !pasta.soAntes) resultados.push(f);
+    });
+
+    Object.keys(grupos).forEach(function (nome) {
+      var g = grupos[nome];
+      if (g.antes && g.depois) {
+        enviarPar(pasta, nome, g, ensaio, endpoint, segredo, jaImportados, resumo);
+        return;
+      }
+      if (g.depois && !pasta.soAntes) {
+        resultados.push(g.depois);   // "depois" sozinho É resultado
+      } else {
+        Logger.log('  [%s] PULADO ("antes" sem par): %s', pasta.nome,
+          (g.antes || g.depois).nome);
+        resumo.pulados++;
+      }
+    });
+
+    if (semNome) {
+      Logger.log('  [%s] %s foto(s) fora: o nome não diz "antes" nem "depois"', pasta.nome, semNome);
+    }
+    if (resultados.length) candidatasCarrossel[pasta.nome] = { pasta: pasta, fotos: resultados };
+  });
+
+  // ── 2. Carrossel variado: intercala as pastas ────────────────────────
+  var escolhidas = intercalar(candidatasCarrossel, MAX_POR_PASTA, MAX_CARROSSEL);
+  Logger.log('');
+  escolhidas.forEach(function (item) {
+    if (jaImportados[item.foto.id]) return;
+    resumo.enviados++;
     try {
-      var foto = miniatura(f);
-      Logger.log('  %s → %s KB', f.nome, Math.round(foto.bytes / 1024));
+      var foto = miniatura(item.foto);
+      Logger.log('  CARROSSEL  [%s]  %s  → %s KB  (legenda: "%s")',
+        item.pasta.nome, item.foto.nome, Math.round(foto.bytes / 1024), item.legenda);
       if (ensaio) { resumo.carrossel++; return; }
       chamar(endpoint, segredo, {
         op: 'carrossel',
-        arquivoId: f.id,
-        nome: f.nome,
-        legenda: legendaDe(f.nome),
+        arquivoId: item.foto.id,
+        nome: item.foto.nome,
+        legenda: item.legenda,
         conteudoBase64: foto.base64,
       });
       resumo.carrossel++;
     } catch (e) {
-      Logger.log('  ERRO em %s: %s', f.nome, e.message);
+      Logger.log('  ERRO em %s: %s', item.foto.nome, e.message);
       resumo.erros++;
     }
   });
 
-  // ── Antes e depois: pares pelo nome ──────────────────────────────────
-  var doPar = listar(cfg('PASTA_ANTES_DEPOIS'));
-  Logger.log('--- Antes e Depois: %s arquivo(s) na pasta', doPar.length);
-  var grupos = {};
-  doPar.forEach(function (f) {
-    var m = classificar(f.nome);
-    if (!m) {
-      Logger.log('  PULADO (nome sem "antes"/"depois"): %s', f.nome);
-      resumo.pulados++;
-      return;
-    }
-    grupos[m.grupo] = grupos[m.grupo] || {};
-    grupos[m.grupo][m.lado] = f;
-  });
-
-  Object.keys(grupos).forEach(function (nome) {
-    var g = grupos[nome];
-    if (!g.antes || !g.depois) {
-      Logger.log('  PULADO (par incompleto): %s — tem só o %s', nome, g.antes ? 'antes' : 'depois');
-      resumo.pulados++;
-      return;
-    }
-    if (jaImportados[g.antes.id] || jaImportados[g.depois.id]) return;
-    try {
-      var a = miniatura(g.antes);
-      var d = miniatura(g.depois);
-      Logger.log('  par "%s" → antes %s KB, depois %s KB', nome,
-        Math.round(a.bytes / 1024), Math.round(d.bytes / 1024));
-      if (ensaio) { resumo.pares++; return; }
-      chamar(endpoint, segredo, {
-        op: 'antes-depois',
-        legenda: legendaDe(nome),
-        antes: { arquivoId: g.antes.id, nome: g.antes.nome, conteudoBase64: a.base64 },
-        depois: { arquivoId: g.depois.id, nome: g.depois.nome, conteudoBase64: d.base64 },
-      });
-      resumo.pares++;
-    } catch (e) {
-      Logger.log('  ERRO no par %s: %s', nome, e.message);
-      resumo.erros++;
-    }
-  });
-
+  Logger.log('');
+  if (!resumo.enviados && !resumo.pares) Logger.log('Nada novo para importar.');
   Logger.log('=== %s: %s no carrossel, %s par(es), %s pulado(s), %s erro(s)',
     ensaio ? 'ENSAIO' : 'FEITO', resumo.carrossel, resumo.pares, resumo.pulados, resumo.erros);
-  if (ensaio) Logger.log('Nada foi enviado. Se os tamanhos acima estiverem bons, crie o gatilho diário.');
+  if (ensaio) {
+    Logger.log('Nada foi enviado. Confira a lista acima — se estiver boa, crie o gatilho diário.');
+  }
 }
 
-/** Arquivos de imagem da pasta, do mais novo para o mais antigo. */
+function enviarPar(pasta, nome, g, ensaio, endpoint, segredo, jaImportados, resumo) {
+  if (jaImportados[g.antes.id] || jaImportados[g.depois.id]) return;
+  resumo.enviados++;
+  var legenda = legendaDe(pasta.nome, nome);
+  try {
+    var a = miniatura(g.antes);
+    var d = miniatura(g.depois);
+    Logger.log('  ANTES/DEPOIS  [%s]  "%s"  → %s + %s KB  (legenda: "%s")',
+      pasta.nome, nome, Math.round(a.bytes / 1024), Math.round(d.bytes / 1024), legenda);
+    if (ensaio) { resumo.pares++; return; }
+    chamar(endpoint, segredo, {
+      op: 'antes-depois',
+      legenda: legenda,
+      antes: { arquivoId: g.antes.id, nome: g.antes.nome, conteudoBase64: a.base64 },
+      depois: { arquivoId: g.depois.id, nome: g.depois.nome, conteudoBase64: d.base64 },
+    });
+    resumo.pares++;
+  } catch (e) {
+    Logger.log('  ERRO no par "%s" [%s]: %s', nome, pasta.nome, e.message);
+    resumo.erros++;
+  }
+}
+
+/**
+ * Intercala as pastas para o carrossel ficar variado.
+ *
+ * Pegar as N mais recentes daria oito fotos do serviço que foi fotografado por
+ * último. Aqui cada rodada pega uma de cada pasta, até o teto por pasta e o teto
+ * geral — então o carrossel mostra a variedade de serviços, que é o que a
+ * vitrine precisa dizer.
+ */
+function intercalar(porPasta, maxPorPasta, maxTotal) {
+  var nomes = Object.keys(porPasta).sort();
+  var saida = [];
+  for (var rodada = 0; rodada < maxPorPasta && saida.length < maxTotal; rodada++) {
+    for (var i = 0; i < nomes.length && saida.length < maxTotal; i++) {
+      var grupo = porPasta[nomes[i]];
+      var foto = grupo.fotos[rodada];
+      if (!foto) continue;
+      saida.push({ pasta: grupo.pasta, foto: foto, legenda: legendaDe(grupo.pasta.nome, foto.nome) });
+    }
+  }
+  return saida;
+}
+
+/** Subpastas da raiz que servem como fonte. */
+function subpastas(idRaiz, ignorar) {
+  var it = DriveApp.getFolderById(idRaiz).getFolders();
+  var out = [];
+  while (it.hasNext()) {
+    var f = it.next();
+    var nome = f.getName().trim();
+    var chave = nome.toLowerCase();
+    if (PASTAS_FORA.indexOf(chave) !== -1 || ignorar.indexOf(chave) !== -1) {
+      Logger.log('Pasta ignorada: %s', nome);
+      continue;
+    }
+    // Duas organizações possíveis, e o script aceita as duas:
+    //
+    //   (a) as fotos soltas na pasta do serviço, identificadas pelo NOME
+    //       ("Up antes.jpg" / "Up depois.jpg")  ← é como o Drive está hoje
+    //   (b) subpastas "Antes" e "Depois" dentro da pasta do serviço
+    //
+    // Nenhuma das duas exige criar pasta: (a) funciona com o que já existe, e
+    // (b) passa a valer sozinha se um dia a organização mudar.
+    var dentro = pastasAntesDepois(f);
+    out.push({
+      id: f.getId(),
+      nome: nome,
+      // Pasta cujo nome termina em "antes": tudo dentro é foto de antes.
+      soAntes: /\bantes\s*$/i.test(nome),
+      subAntes: dentro.antes,
+      subDepois: dentro.depois,
+    });
+  }
+  out.sort(function (a, b) { return a.nome.localeCompare(b.nome); });
+  Logger.log('Pastas usadas: %s', out.map(function (p) {
+    return p.nome + (p.soAntes ? ' (só antes)' : '');
+  }).join(' · '));
+  return out;
+}
+
+/**
+ * Procura subpastas "Antes" e "Depois" dentro de uma pasta de serviço.
+ *
+ * Existe porque a instrução admitia duas leituras — "as fotos de depois que
+ * estão nas pastas" e "as pastas de Depois" — e escolher uma seria apostar. Com
+ * as duas atendidas, a organização do Drive decide, não o meu palpite.
+ */
+function pastasAntesDepois(pastaServico) {
+  var r = { antes: null, depois: null };
+  var it = pastaServico.getFolders();
+  while (it.hasNext()) {
+    var sub = it.next();
+    var n = sub.getName().trim().toLowerCase();
+    if (n === 'antes') r.antes = sub.getId();
+    else if (n === 'depois') r.depois = sub.getId();
+  }
+  return r;
+}
+
+/** Arquivos da pasta, do mais novo para o mais antigo. */
 function listar(idPasta) {
   var it = DriveApp.getFolderById(idPasta).getFiles();
   var out = [];
@@ -165,34 +370,91 @@ function listar(idPasta) {
     var f = it.next();
     var nome = f.getName();
     var ext = String(nome.split('.').pop() || '').toLowerCase();
-    if (EXTENSOES.indexOf(ext) === -1) continue;
-    out.push({ id: f.getId(), nome: nome, em: f.getDateCreated() });
+    out.push({
+      id: f.getId(), nome: nome, bytes: f.getSize(), em: f.getDateCreated(),
+      tipo: IMAGENS.indexOf(ext) !== -1 ? 'imagem' : (VIDEOS.indexOf(ext) !== -1 ? 'video' : 'outro'),
+    });
   }
   out.sort(function (a, b) { return b.em - a.em; });
   return out;
 }
 
 /**
- * "Fusca antes.jpg" → { grupo: "fusca", lado: "antes" }
+ * Nome base para parear entre as subpastas Antes e Depois.
  *
- * Exige a palavra antes/depois no nome. Nome que não traz isso é pulado, nunca
- * adivinhado — ver o comentário do topo.
+ * Tira extensão, ruído, numeração e as próprias palavras antes/depois — assim
+ * "Fusca 1.jpg" em Antes casa com "Fusca 1.jpg" em Depois, e "Fusca antes.jpg"
+ * casa com "Fusca depois.jpg" mesmo dentro das subpastas.
+ */
+function baseDoNome(nome) {
+  return limparPrefixos(nome)
+    .replace(/\.[^.]*$/, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s*\b(antes|depois)\b\s*/gi, ' ')
+    .replace(/\s*\bde\s+costas\b\s*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/** Serviço em andamento não é resultado. */
+function emProcesso(nome) {
+  return /\b(em\s+)?(processo|andamento|aplicando|fazendo)\b/i.test(limparPrefixos(nome));
+}
+
+/**
+ * "Up Antes.jpg" → { grupo: "up", lado: "antes" }
+ * "fusca-preto depois 3.jpg" → { grupo: "fusca-preto", lado: "depois" }
+ *
+ * Só reconhece a palavra no FIM do nome (antes de "de costas"/"costas" e de uma
+ * numeração opcional). Nome que não traz isso não é classificado.
  */
 function classificar(nome) {
-  var semExt = nome.replace(/\.[^.]*$/, '');
-  var m = semExt.match(/^(.*?)[\s_-]*(antes|depois)[\s_-]*(\d+)?$/i);
+  var semExt = limparPrefixos(nome).replace(/\.[^.]*$/, '');
+  var m = semExt.match(/^(.*?)[\s_-]*(antes|depois)[\s_-]*(?:de\s+costas|costas)?[\s_-]*(\d+)?$/i);
   if (!m) return null;
-  var grupo = String(m[1] || '').trim().toLowerCase();
+  var grupo = String(m[1] || '').trim().toLowerCase().replace(/[\s_-]+$/, '');
   if (!grupo) return null;
   return { grupo: grupo, lado: m[2].toLowerCase() };
 }
 
-/** Legenda a partir do nome do arquivo: tira extensão, hífens e numeração. */
-function legendaDe(nome) {
-  var s = String(nome).replace(/\.[^.]*$/, '').replace(/[_-]+/g, ' ')
+/** Tira o ruído que o Drive e o WhatsApp acrescentam ao nome. */
+function limparPrefixos(nome) {
+  return String(nome)
+    .replace(/^c[óo]pia\s+de\s+/i, '')
+    .replace(/^copy\s+of\s+/i, '')
+    .replace(/\s*\(\d+\)\s*$/, '');
+}
+
+/**
+ * Legenda que o cliente lê no site.
+ *
+ * A PASTA manda, porque ela é o serviço: "Polimento Carro" diz algo, e
+ * "Img 20261020 095116" não diz nada. O nome do arquivo só entra quando
+ * acrescenta informação — o carro, por exemplo: "Polimento Carro — Fusca preto".
+ */
+function legendaDe(nomePasta, nomeArquivo) {
+  var servico = String(nomePasta || '').trim();
+  var detalhe = limparPrefixos(nomeArquivo || '')
+    .replace(/\.[^.]*$/, '')
+    .replace(/[_-]+/g, ' ')
     .replace(/\s*\b(antes|depois)\b\s*/gi, ' ')
-    .replace(/\s+\d+$/, '').replace(/\s+/g, ' ').trim();
-  if (!s) return '';
+    .replace(/\s*\bde\s+costas\b\s*/gi, ' ')
+    .replace(/\s+\d+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  var inutil = !detalhe
+    || /^(img|vid|dsc|pxl|photo|image|wa)\b/i.test(detalhe)
+    || /^\d+$/.test(detalhe)
+    || detalhe.toLowerCase() === servico.toLowerCase();
+
+  if (!servico) return inutil ? 'SP Car Clean' : maiuscula(detalhe);
+  if (inutil) return servico;
+  return servico + ' — ' + maiuscula(detalhe);
+}
+
+function maiuscula(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
@@ -213,8 +475,6 @@ function miniatura(f) {
   if (!meta || !meta.thumbnailLink) {
     throw new Error('sem miniatura disponível (o Drive ainda pode estar processando o arquivo)');
   }
-  // O link vem com um sufixo de tamanho, tipo "=s220". Trocamos pela largura
-  // que queremos; se o formato mudar, acrescentamos.
   var url = /=s\d+/.test(meta.thumbnailLink)
     ? meta.thumbnailLink.replace(/=s\d+.*$/, '=s' + LARGURA)
     : meta.thumbnailLink + '=s' + LARGURA;
@@ -226,8 +486,7 @@ function miniatura(f) {
   if (resp.getResponseCode() !== 200) {
     throw new Error('miniatura respondeu HTTP ' + resp.getResponseCode());
   }
-  var blob = resp.getBlob();
-  var bytes = blob.getBytes();
+  var bytes = resp.getBlob().getBytes();
   if (!bytes.length) throw new Error('miniatura veio vazia');
   return { bytes: bytes.length, base64: Utilities.base64Encode(bytes) };
 }

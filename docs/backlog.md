@@ -42,23 +42,51 @@ cron job no Unix" e que "sempre roda sob a conta de quem o criou".
 > re-codificada, o que também descarta o EXIF (e com ele o GPS de foto tirada na
 > casa do cliente).
 
-A regra do negócio virou a estrutura de pastas, porque o nome do arquivo não diz
-nada (`IMG_20261020_095116.jpg`):
+A fonte são as **pastas de serviço que já existem** — não precisa criar pasta
+nenhuma. Decidido em 08/11/2026, corrigindo um desenho meu que pedia duas pastas
+novas:
 
-| pasta no Drive | vira |
+> "O carrossel deveria buscar as fotos já existentes nas pastas de Depois de
+> forma variada, e o antes e depois deveria buscar as fotos com nome antes e
+> depois se referenciando ao mesmo processo nas pastas, sem ter que criar mais
+> uma pasta para isso."
+
+| o que entra | de onde |
 |---|---|
-| `Site/Carrossel` | item do carrossel — o caso "só o depois" |
-| `Site/Antes e Depois` | par `X antes.jpg` + `X depois.jpg` — os dois juntos |
+| cartão de antes e depois | mesma pasta + mesmo nome base, com "antes" e "depois" — mesmo processo |
+| carrossel | fotos de resultado, **intercalando as pastas**: no máximo 2 por serviço, 12 no total |
 
-Arquivo sem par, ou com nome fora do padrão, é **pulado e registrado no log** —
-nunca adivinhado. Foto de "antes" entrando como resultado é o contrário de uma
-vitrine.
+A **pasta é o serviço**, e é dela que sai a legenda: "Polimento Carro" em vez de
+"Img 20261020 095116". O nome do arquivo só entra quando acrescenta informação —
+"Polimento Carro — Fusca preto".
+
+O que a estrutura real do Drive ensinou, e que eu teria errado supondo:
+
+- **`Projeto PickupCorsa Uva Antes`** — o *nome da pasta* diz "Antes". Tudo nela
+  é foto de antes, e pasta cujo nome termina em "antes" nunca alimenta o
+  carrossel.
+- **`Unsplash`** é banco de imagem de terceiros e **`Arquivo`** é arquivo morto:
+  nenhum dos dois é trabalho dela. Ficam fora por padrão.
+- Foto com "processo" ou "andamento" no nome é serviço em andamento, não
+  resultado.
+
+Nunca entra: "antes" sem par, qualquer foto de pasta de "antes", serviço em
+andamento, e vídeo (dezenas ou centenas de MB; reduzir exigiria transcodificar).
+
+**O limite honesto do automático:** foto com nome de câmera
+(`IMG_20261020_095116.jpg`) não diz se é antes ou depois, e é tratada como
+resultado. Se uma foto de "antes" estiver com nome de câmera, ela aparece como
+resultado. Por isso o `testar()` lista tudo com pasta, nome e legenda: a
+curadoria é de quem conhece as fotos. Renomear, ou pôr a pasta no `IGNORAR`,
+resolve.
 
 ### O que falta, e é dela
 
-1. Criar as duas pastas no Drive e mover para lá as fotos que devem aparecer
-2. Gerar um segredo e guardá-lo em `/sp-car-clean/DRIVE_SYNC_SECRET` (SecureString)
-3. Instalar o Apps Script e rodar `testar()` — ensaio que não envia nada
+1. Gerar um segredo e guardá-lo em `/sp-car-clean/DRIVE_SYNC_SECRET` (SecureString)
+2. Instalar o Apps Script e rodar `testar()` — ensaio que não envia nada
+3. Ler a lista do ensaio e dizer o que não deveria estar lá
+
+Nenhuma pasta precisa ser criada ou movida.
 
 ### O risco conhecido, por escrito
 
