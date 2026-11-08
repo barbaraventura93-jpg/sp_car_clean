@@ -1,6 +1,6 @@
 # Migração do Firebase para AWS (DynamoDB + Cognito)
 
-> Status: **plano aprovado, Fase 0 não iniciada.** Documento vivo — cada fase
+> Status: **plano aprovado, decisões de escopo tomadas, Fase 0 não iniciada.** Documento vivo — cada fase
 > concluída volta aqui com o que mudou e o que foi verificado.
 
 ## Por que
@@ -235,11 +235,132 @@ Firebase fica só-leitura por um período de segurança e depois é desligado.
   privado e criptografado (`functions/firebase-backup.js`, `infra/backup.tf`);
 - o Firebase permanece intacto e servindo durante todas as fases.
 
-## Decisões em aberto
+## Decisões tomadas
 
-1. **Horizonte de agendamento** — importar os 12.150 `blocked` como estão
-   (padrão) ou trocar por regra de horizonte?
-2. **Moderação de avaliação** — hoje qualquer um publica. Passa a exigir sua
-   aprovação, ou aprovação automática com possibilidade de remover?
-3. **Dados de IA** — `aiLogs` (154) e `aiUsage` entram na migração ou ficam só
-   no backup? Sugestão: importar com TTL de 90 dias.
+### 1. Disponibilidade: regra, não 12 mil registros
+
+**Correção factual importante:** o bloqueio em massa **não começa em 2028, começa
+em 27/02/2027** — o último dia livre da série é 26/02/2027. O problema atinge o
+agendamento em três meses, não em catorze.
+
+Medição que embasa a regra nova:
+
+| Ano | seg–sex bloqueados | sábado | domingo |
+|---|---|---|---|
+| 2026 | 20–27% (folgas reais) | **97%** | **100%** |
+| 2027 | 85% | 100% | 100% |
+| 2028+ | 100% | 100% | 100% |
+
+E **todos os 10 agendamentos reais caíram em dia de semana** (seg, ter, qua, qui,
+sex). Fim de semana fechado é a prática, não uma suposição.
+
+Então a disponibilidade deixa de ser uma lista de datas e passa a ser:
+
+1. **fim de semana fechado** — sábado e domingo, por regra;
+2. **feriado fechado** — calculados, não digitados:
+   - **nacionais fixos:** 1/jan, 21/abr, 1/mai, 7/set, 12/out, 2/nov, 15/nov,
+     25/dez e **20/nov** (Consciência Negra, feriado nacional desde a Lei
+     14.759/2023);
+   - **nacionais móveis**, derivados da Páscoa por algoritmo: Carnaval
+     (terça, −47 dias), Sexta-feira Santa (−2) e Corpus Christi (+60);
+   - **estadual de SP:** 9 de julho (Revolução Constitucionalista);
+   - **municipal de Guarulhos:** 8 de dezembro (aniversário da cidade /
+     Nossa Senhora da Conceição) — a empresa fica em Guarulhos, não na capital;
+3. **exceções explícitas** — uma lista curta e editável no painel, para folga,
+   férias, ou para **abrir** um sábado específico.
+
+As 105 datas de 2026 e as 40 de 2027 que são folga real **são importadas como
+exceções**, para não perder informação. O que sai são os ~11.900 registros que só
+expressavam "não atendo depois de fevereiro de 2027".
+
+Carnaval e Corpus Christi são formalmente ponto facultativo, não feriado legal.
+Entram como fechados por padrão (coerente com o histórico de folgas), e são
+destraváveis pela lista de exceções.
+
+### 2. Avaliações: aprovação sempre, e o cliente avalia o que já fez
+
+- **Nenhuma avaliação é publicada sem aprovação sua.** O endpoint público grava
+  como `pending`; o site só exibe `approved`.
+- **Novo:** o cliente logado vê os serviços que **já concluiu** e pode avaliar
+  cada um. Endpoints: `GET /api/me/reviewable` (agendamentos `completed` do
+  cliente, sem avaliação ainda) e `POST /api/me/review`. A regra no servidor
+  garante que só o dono do agendamento avalia, só se o status for `completed`,
+  e **uma avaliação por agendamento**.
+- A moderação entra em `/api/admin/feedback` (aprovar, reprovar, remover).
+
+Isso também conserta o agente `satisfacao`, que hoje roda todo dia e não tem o que
+analisar: com volume real de avaliação, ele passa a ter função.
+
+### 3. Dados de IA: importar com expiração de 90 dias
+
+`aiLogs` e `aiRateLimit` entram com TTL de 90 dias no DynamoDB — o próprio banco
+apaga, sem cron de limpeza. `aiConfig` e `aiUsage` entram sem TTL (são histórico
+de configuração e de consumo).
+
+## A estrutura de IA: o que medi e o que proponho
+
+Você pediu para repensar isso na migração. Medi antes de opinar.
+
+### Custo não é o problema
+
+| | |
+|---|---|
+| Chamadas reais de IA em out/2026 | **12** (de 39 disparos) |
+| Tokens | 12.847 entrada / 3.080 saída |
+| Custo com `claude-sonnet-4-6` (o atual) | **US$ 0,08/mês** |
+| Custo otimizado por tarefa | US$ 0,03/mês |
+| Economia de otimizar modelo | **US$ 0,67 por ANO** |
+
+A IA custa oito centavos por mês. **Otimizar por custo é perda de tempo.** O
+problema é utilidade.
+
+### O que está desligado da tomada
+
+| Agente | `schedule` | Rodou | Diagnóstico |
+|---|---|---|---|
+| `satisfacao` | `daily:08` | 92× | roda todo dia, **0 tokens** — não há avaliação para analisar |
+| `relatorio` | `weekly:mon:08` | 21× | funcionando |
+| `insumos` | `weekly:mon:08` | 21× | funcionando — alerta reposição de estoque |
+| `concierge` | — | 11× (HTTP) | chat público; ~3 usos/mês |
+| `ping` | — | 9× (HTTP) | 2 erros 400 na API |
+| `conteudo` | **nenhum** | **0×** | gera legenda de Instagram do antes/depois |
+| `checkin` | **nenhum** | **0×** | descreve avarias a partir das fotos |
+| `orcamento` | **nenhum** | **0×** | orçamento por foto |
+| `upsell` | **nenhum** | **0×** | orçamento de 300 chamadas/mês |
+| `reativacao` | **nenhum** | **0×** | — |
+| `agenda` | **nenhum** | **0×** | — |
+
+O `ai-dispatcher.js:22` só roda agente com `schedule` definido. **Seis agentes
+nunca rodaram porque não têm gatilho nenhum** — são HTTP, acionados pelo painel
+admin, que está inacessível. Não são inúteis: estão desconectados. E os
+orçamentos não têm relação com a realidade (`upsell` tem teto de 300
+chamadas/mês e nunca foi chamado).
+
+### Proposta
+
+**Manter e consertar (valor comprovado):** `insumos` e `relatorio` rodam e
+servem. `satisfacao` passa a disparar **só quando houver avaliação nova**, em vez
+de todo dia no vazio.
+
+**Conectar (valor provável, hoje desperdiçado):** `conteudo` gera legenda de
+Instagram a partir do par antes/depois — e existe rotina semanal de arte de
+Instagram feita à mão neste repositório (PR #50). É o maior valor parado.
+`checkin` e `orcamento` ganham gatilho no painel novo.
+
+**Decidir com você:** `concierge` (3 usos/mês — vale manter o chat público?),
+`upsell`, `reativacao` e `agenda` (nunca rodaram, sem comentário no código que
+explique a intenção).
+
+**Modelo por tarefa**, não um para tudo: `claude-haiku-5-5` nos resumos e alertas
+(30× mais barato que o atual), `claude-sonnet-5-5` na conversa com cliente e nas
+tarefas com visão. Note que `claude-sonnet-4-6`, usado hoje em tudo, é ao mesmo
+tempo mais antigo **e mais caro** que o `claude-sonnet-5-5`. A troca de geração
+tem mudanças de contrato (configuração de `thinking`, `tool_choice` forçado,
+prefill), então é passo próprio e testado — não troca de string.
+
+**Orçamentos ancorados no uso real**, não em números escolhidos no escuro.
+
+## Decisões ainda em aberto
+
+1. `concierge`, `upsell`, `reativacao` e `agenda`: manter, conectar ou aposentar?
+2. Carnaval e Corpus Christi fechados por padrão — confirma?
