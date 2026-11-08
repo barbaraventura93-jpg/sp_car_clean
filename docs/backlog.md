@@ -7,58 +7,69 @@ medido**, não só o desejo, para que quem pegar depois não precise redescobrir
 
 ---
 
-## 1. Fotos do site vindas do Google Drive, sem tela de upload
+## 1. Fotos do site vindas do Google Drive — CONSTRUÍDO, falta instalar
 
-**O pedido (08/11/2026):** tirar a tela de input de fotos do painel e puxar do
-Drive. O argumento é de operação, e é bom: o admin já joga as fotos no Drive
-para os posts do Instagram, e não vai lembrar de voltar ao site para subir de
-novo. Uma tela que depende de lembrar é uma tela que fica desatualizada.
+**Decidido em 08/11/2026.** O argumento que fechou a questão: o admin já joga as
+fotos no Drive para o Instagram e não vai lembrar de voltar ao site. Tela que
+depende de lembrar é tela que fica desatualizada.
 
-**O que já está medido:**
+### Por que NÃO foi pelo Google Cloud
 
-- A pasta é `SP Car Clean_Fotos Instagram`, com subpastas por serviço (Lavagem
-  Detalhada Carros/Motos, Polimento Carro/Moto, Higienização de Tecidos,
-  Lavagem de Motor, Retirada de Insulfilm, Arquivo).
-- Os arquivos vão de 84 KB a 23 MB; vídeos chegam a 1,5 GB.
-- Os nomes são inconsistentes: alguns dizem "antes"/"depois" (`Up Antes.jpg`,
-  `fusca-preto depois 1.jpg`), a maioria é nome de câmera
-  (`IMG_20261020_095116.jpg`), e vários são literalmente `image.jpg`.
-- No acervo inteiro, só **12 fotos** têm "depois" no nome e **nenhuma** tem
-  "antes e depois". Os compostos que o site mostra foram feitos fora do Drive.
+O desenho inicial era uma Lambda com conta de serviço. A documentação do Google
+derrubou isso: para carga que roda **fora** do Google Cloud — a nossa Lambda está
+na AWS — ela recomenda Workload Identity Federation em vez de chave, porque chave
+não expira e carrega ônus de segurança. E organizações criadas depois de
+maio/2024 já vêm com **criação de chave bloqueada por padrão**: daria para fazer
+todos os passos e descobrir no fim que o botão não existe.
 
-**Desenho proposto:** uma Lambda em cron diário que lê uma pasta designada,
-pega o que é novo, redimensiona, grava no bucket de mídia e atualiza
-`/portfolio` e `/gallery`. A pessoa continua fazendo o que já faz — jogar foto
-no Drive — e o site acompanha sozinho.
+Somado a isso, o projeto do site não aparece no console do Google Cloud da conta
+dela (ver item 5), então depender do Cloud era depender de um acesso que ela não
+tem hoje.
 
-**O bloqueio real, que precisa de decisão:** a Lambda precisa de credencial do
-Google. Duas formas:
+### O que foi construído
 
-| forma | como funciona | o que exige |
-|---|---|---|
-| conta de serviço | compartilhar a pasta com o e-mail da conta de serviço | criar a conta no Google Cloud e guardar o JSON no SSM |
-| token OAuth | autorizar uma vez no navegador, guardar o refresh token | criar um cliente OAuth no Google Cloud |
+**Apps Script** (`scripts/drive-sync.gs`) na conta Google que é dona das pastas.
+Lê o Drive com a própria conta: **sem conta de serviço, sem chave, sem projeto no
+Google Cloud**. Gatilho diário, que a documentação descreve como "semelhante a um
+cron job no Unix" e que "sempre roda sob a conta de quem o criou".
 
-As duas passam pelo **console do Google Cloud**. O console do Firebase já não
-mostra o projeto, então é preciso confirmar se o acesso ao Google Cloud
-(`console.cloud.google.com`) ainda funciona para o projeto `sp-car-clean` — o
-banco responde, então o projeto existe.
+**`functions/drive-sync.js`** recebe e grava. E ninguém redimensiona imagem:
 
-**Por que não dá para fazer de dentro de uma sessão do Claude:** o conector do
-Drive devolve o arquivo como texto base64 pela conversa. Para fotos de
-megabytes isso é inviável, e não há credencial do Google no ambiente para
-transferir direto para disco.
+> As funções deste projeto não têm dependência de terceiros — o `lib/s3.js` chega
+> a assinar SigV4 à mão para não usar o SDK — e decodificar JPEG exige
+> biblioteca. Então quem reduz é o próprio Google: o Apps Script pede a
+> **miniatura grande** do arquivo, que chega com algumas centenas de KB e já
+> re-codificada, o que também descarta o EXIF (e com ele o GPS de foto tirada na
+> casa do cliente).
 
-**Convenção que o automático vai exigir:** como o nome do arquivo não diz se é
-antes ou depois, a pasta precisa dizer. Por exemplo `Site/Carrossel` (só fotos
-do resultado) e `Site/Antes e Depois` (pares `X antes.jpg` / `X depois.jpg`).
-É uma disciplina pequena, e substitui a tela de upload.
+A regra do negócio virou a estrutura de pastas, porque o nome do arquivo não diz
+nada (`IMG_20261020_095116.jpg`):
 
-**Enquanto não houver automático:** a tela de upload fica. Ela já otimiza
-sozinha (foto de 20 MB vira ~650 KB, sem EXIF), o que era o impedimento para o
-acervo do Drive ser usado.
+| pasta no Drive | vira |
+|---|---|
+| `Site/Carrossel` | item do carrossel — o caso "só o depois" |
+| `Site/Antes e Depois` | par `X antes.jpg` + `X depois.jpg` — os dois juntos |
 
----
+Arquivo sem par, ou com nome fora do padrão, é **pulado e registrado no log** —
+nunca adivinhado. Foto de "antes" entrando como resultado é o contrário de uma
+vitrine.
+
+### O que falta, e é dela
+
+1. Criar as duas pastas no Drive e mover para lá as fotos que devem aparecer
+2. Gerar um segredo e guardá-lo em `/sp-car-clean/DRIVE_SYNC_SECRET` (SecureString)
+3. Instalar o Apps Script e rodar `testar()` — ensaio que não envia nada
+
+### O risco conhecido, por escrito
+
+O sufixo de tamanho do `thumbnailLink` **não está na documentação do Google**. É
+a única parte deste desenho que não dá para confirmar sem rodar. Por isso o
+`testar()` existe e imprime o tamanho real de cada miniatura: é o ensaio que
+confirma antes de ligar o gatilho. Se a miniatura vier pequena demais, o plano B
+é redimensionar no servidor — e aí a conversa sobre dependência volta.
+
+A função **estoura em vez de mandar o original** se a miniatura falhar: original
+de 23 MB seria recusado de um jeito bem menos claro.
 
 ## 2. Agentes de IA: mais úteis no dia a dia, sem painel de liga/desliga
 
@@ -117,3 +128,26 @@ Dado antigo não quebra: `costPerUnit` continua sendo o que as receitas leem.
 
 `upsell`, `reativacao` e `agenda` ficaram para o fim do backlog por decisão de
 30/10/2026. Avaliar com o mesmo critério do item 2.
+
+---
+
+## 5. Acesso ao projeto do Firebase/Google Cloud do site
+
+O projeto **não aparece** no console do Google Cloud da conta da Bárbara. Mas ele
+**existe e está vivo**: em 08/11/2026 a leitura com o segredo respondeu 200, a
+leitura das regras respondeu 200, e a publicação de regras novas funcionou — nada
+disso é possível em projeto apagado. Um projeto inexistente devolve 404.
+
+Número do projeto: **726947312422** (está no `app.js`). O id é `sp-car-clean`.
+
+O que isso significa hoje: ninguém pode trocar as regras pelo console, rodar o
+segredo do banco, ver consumo, ou recuperar o projeto. O único caminho é o
+segredo guardado no SSM. Funciona, mas é ponto único de falha.
+
+Hipótese não descartada: o projeto foi criado em **outra conta Google**. As
+pastas do Drive têm dois donos (`barbaraventura93@` e `sidrpeixoto@`), e o e-mail
+administrativo do site é um terceiro (`spcarclean0@`). Vale procurar pelo número
+do projeto logada em cada uma.
+
+Mitigações já em pé: backup diário no S3, e a migração para DynamoDB, que elimina
+a dependência.
