@@ -8,6 +8,7 @@ locals {
 
   # Chamadas pelo site / webhooks externos → rota /api/<nome>.
   http_functions = [
+    "admin-data",
     "ai",
     "booking-status",
     "calendar-sync",
