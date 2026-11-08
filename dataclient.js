@@ -227,16 +227,19 @@ const DB = (function () {
           ? chamarLambda('ler', caminho).then((v) => snapshot(aplicarConsulta(v, q)))
           : Promise.resolve(consultaFirebase(caminho, q).once('value'));
         if (typeof cb !== 'function') return p;
-        // Com callback, o erro vai para erroCb (ou ao console) e a promessa
-        // não fica rejeitada sem dono — que viraria unhandledrejection.
-        return p.then(
-          (snap) => { cb(snap); return snap; },
-          (e) => {
-            if (typeof erroCb === 'function') erroCb(e);
-            else console.warn('DB.once', caminho, e.message);
-            return undefined;
-          }
-        );
+        // Com callback de erro, ele recebe a falha e a promessa não fica
+        // rejeitada sem dono. SEM callback de erro a promessa REJEITA, como no
+        // Firebase — e isso importa: `openClientAccount()` trata a negação no
+        // `.catch()` da própria chamada. A primeira versão disto engolia o erro
+        // "para evitar unhandledrejection", e o efeito foi a tela de "Minha
+        // Conta" nunca abrir para o cliente, sem nada no console.
+        if (typeof erroCb === 'function') {
+          return p.then(
+            (snap) => { cb(snap); return snap; },
+            (e) => { erroCb(e); return undefined; }
+          );
+        }
+        return p.then((snap) => { cb(snap); return snap; });
       },
 
       on(evento, cb, erroCb) {

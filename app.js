@@ -2274,7 +2274,19 @@ function doClientLogout() {
 
 function doClientPasswordReset() {
   const email = (document.getElementById('clEmail')?.value || '').trim();
+  const errEl = document.getElementById('clLoginError');
   if (!email) { alert('Digite seu e-mail primeiro.'); return; }
+  // Mesma guarda do doClientLogin: a conta administrativa não se recupera pela
+  // tela do cliente. Sem isto, "Esqueci minha senha" daqui virava uma segunda
+  // porta para o painel — redefinia, logava e abria a gestão —, justamente o
+  // que a guarda do login existe para impedir. A Área Restrita é a única porta.
+  if (email.toLowerCase() === CFG.adminEmail.toLowerCase()) {
+    if (errEl) {
+      errEl.textContent = 'Use a Área Restrita para acesso administrativo.';
+      errEl.style.display = 'block';
+    }
+    return;
+  }
   // O Cognito manda CÓDIGO, não link: a redefinição termina no modal.
   openPasswordReset(email);
 }
@@ -2289,7 +2301,8 @@ function doClientPasswordReset() {
 // ============================================================
 let _pwMode = 'reset';
 let _pwDesafio = null;   // sessão do NEW_PASSWORD_REQUIRED, quando houver
-let _pwSenhaCadastro = null; // senha já escolhida no cadastro (modo confirm)
+let _pwSenhaCadastro = null;
+let _pwOrigem = 'cliente';   // 'admin' só quando a redefinição parte da Área Restrita // senha já escolhida no cadastro (modo confirm)
 
 function _prMsg(idMostrar, texto) {
   ['prError', 'prOk'].forEach(id => {
@@ -2306,8 +2319,11 @@ function _prMsg(idMostrar, texto) {
  * @param {string|null} email  preenche o campo; null deixa em branco
  * @param {Error|null} desafio erro de NEW_PASSWORD_REQUIRED, quando vier do login
  */
-function openPasswordReset(email, desafio) {
+function openPasswordReset(email, desafio, origem) {
   _pwMode = 'reset';
+  // De onde a redefinição partiu. Só 'admin' (Área Restrita / tela cheia do app)
+  // pode terminar no painel; qualquer outro ponto termina na conta do cliente.
+  _pwOrigem = origem === 'admin' ? 'admin' : 'cliente';
   _pwDesafio = desafio || null;
   _pwSenhaCadastro = null;
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
@@ -2408,6 +2424,19 @@ async function doPasswordResetConfirm() {
       await AUTH.definirSenhaInicial(email, pw, _pwDesafio.sessaoDesafio);
     } else {
       await AUTH.confirmarNovaSenha(email, code, pw);
+    }
+    // A senha já foi trocada e a sessão já existe. Se a conta é a do admin mas a
+    // redefinição NÃO partiu da Área Restrita, encerra a sessão aqui: abrir o
+    // painel a partir da tela do cliente seria um segundo caminho de entrada na
+    // gestão. Defesa em profundidade — a guarda do doClientPasswordReset já
+    // barra na entrada, e esta cobre qualquer outro ponto que venha a chamar
+    // este fluxo com o e-mail administrativo.
+    if (isAdmin() && _pwOrigem !== 'admin') {
+      await AUTH.signOut();
+      _prMsg('prOk', 'Senha atualizada. Para entrar no painel, use o link "Área Restrita" no rodapé do site.');
+      _pwDesafio = null;
+      _pwSenhaCadastro = null;
+      return;
     }
     closeModal('pwResetModal');
     _pwDesafio = null;
@@ -2716,7 +2745,7 @@ function doAdminLogin() {
       // uma senha que não existe mais.
       if (e && (e.code === 'auth/password-reset-required' || e.code === 'auth/new-password-required')) {
         if (campo) campo.value = '';
-        openPasswordReset(CFG.adminEmail, e.code === 'auth/new-password-required' ? e : null);
+        openPasswordReset(CFG.adminEmail, e.code === 'auth/new-password-required' ? e : null, 'admin');
         return;
       }
       errEl.textContent = (e && e.code === 'auth/too-many-requests')
