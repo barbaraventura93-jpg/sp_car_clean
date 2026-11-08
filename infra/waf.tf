@@ -20,7 +20,7 @@
 # Aplique e assine o plano em seguida (comando no README), ou mantenha
 # enable_waf=false até querer assinar.
 #
-# O tier Free permite 5 regras; usamos 3.
+# O tier Free permite 5 regras; usamos 4.
 # =====================================================================
 
 resource "aws_wafv2_web_acl" "site" {
@@ -127,14 +127,43 @@ resource "aws_wafv2_web_acl" "site" {
     }
   }
 
-  # Prioridade 2 — teto de requisições por IP numa janela de 5 minutos.
+  # Prioridade 2 — entradas conhecidamente maliciosas: sondagem de /.env,
+  # /.git, host header injection, Log4Shell, desserialização Java. É o grupo
+  # que cobre justamente o tipo de varredura que o CommonRuleSet não pegou
+  # (em 07/11 /.env e /wp-admin responderam 404 do S3, não 403 do WAF).
+  # Grupo gerenciado gratuito, coberto pelo plano. Se a Central de IA passar
+  # a dar 403, suspeite de Log4JRCE_BODY ou JavaDeserializationRCE_BODY e
+  # mova a regra específica para count com rule_action_override.
+  rule {
+    name     = "known-bad-inputs"
+    priority = 2
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        vendor_name = "AWS"
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "known-bad-inputs"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  # Prioridade 3 — teto de requisições por IP numa janela de 5 minutos.
   # É rede de segurança contra pico/DDoS de origem única, NÃO o remédio da
   # varredura atual: diluída em 24h ela fica abaixo deste teto, e quem a pega
   # são as duas regras acima. O tráfego normal do site era ~390 req/DIA no
   # total, então 2.000 por IP a cada 5 min sobra com folga para gente real.
   rule {
     name     = "rate-limit"
-    priority = 2
+    priority = 3
 
     action {
       block {}

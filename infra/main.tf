@@ -108,6 +108,17 @@ resource "aws_cloudfront_function" "api_router" {
   EOT
 }
 
+# Cabeçalhos de segurança injetados pelo CloudFront (nosniff, X-Frame-Options
+# SAMEORIGIN, Referrer-Policy, X-XSS-Protection e HSTS de 1 ano).
+# Tem de ser a política GERENCIADA: política própria é "custom response header
+# rules", recurso de tier Business para cima, e deixaria a distribuição
+# inelegível para o plano de tarifa fixa. A gerenciada não define CSP — montar
+# uma exigiria mapear tudo que o site carrega (gstatic/Firebase, EmailJS,
+# InfinitePay) e fica para um passo próprio.
+data "aws_cloudfront_response_headers_policy" "security_headers" {
+  name = "Managed-SecurityHeadersPolicy"
+}
+
 resource "aws_cloudfront_distribution" "site" {
   enabled             = true
   is_ipv6_enabled     = true
@@ -187,35 +198,38 @@ resource "aws_cloudfront_distribution" "site" {
 
   # Mídia: cada arquivo tem nome único (nunca muda) → cache longo.
   ordered_cache_behavior {
-    path_pattern           = "/media/*"
-    target_origin_id       = "s3-media"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-    cached_methods         = ["GET", "HEAD"]
-    compress               = true
-    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
+    path_pattern               = "/media/*"
+    target_origin_id           = "s3-media"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD"]
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.optimized.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security_headers.id
   }
 
   # Estáticos (assets, css, js): cache otimizado.
   default_cache_behavior {
-    target_origin_id       = "s3-site"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-    cached_methods         = ["GET", "HEAD"]
-    compress               = true
-    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
+    target_origin_id           = "s3-site"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD"]
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.optimized.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security_headers.id
   }
 
   # index.html sempre revalida:
   # após um deploy ninguém fica preso a uma versão antiga do app.
   ordered_cache_behavior {
-    path_pattern           = "/index.html"
-    target_origin_id       = "s3-site"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-    cached_methods         = ["GET", "HEAD"]
-    compress               = true
-    cache_policy_id        = data.aws_cloudfront_cache_policy.disabled.id
+    path_pattern               = "/index.html"
+    target_origin_id           = "s3-site"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD"]
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security_headers.id
   }
 
   # Sem custom_error_response: ela vale para a distribuição inteira e trocaria
