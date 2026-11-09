@@ -166,9 +166,30 @@ para criar outra**. Serviço novo nascia sem uso cadastrado, sem como cadastrar,
 e sem custo. A baixa automática de estoque (`deductStock`) também não o
 alcançava.
 
-Em ambas as telas há uma opção visível para informar o valor à mão — granel,
-mão de obra, serviço sem insumo — e o preço pago fica guardado
-(`purchasePrice`), então reabrir mostra R$ 180, não 0,036.
+**Sem opção de informar o custo à mão, nas duas telas** (pedido explícito,
+repetido: *"sempre fazer o cálculo do custo pelos insumos, não deve ter essa
+flag"*). Duas origens para o mesmo número é como o custo do serviço passa a
+discordar do que foi pago. Quem compra a granel usa múltiplo 1 e o preço de uma
+unidade — mão de obra vira "1 h custa R$ 35", que dá exatamente o mesmo custo
+que estava salvo. Insumo antigo abre já assim, então tirar a opção não obrigou
+a recadastrar nada.
+
+**Saldo e mínimo passaram a ser contados na unidade de compra, com decimal**:
+"17,5 L", não "17500 ml". A tela mostra as duas leituras e quantas embalagens
+são. O armazenado continua em unidade de uso, que é onde a receita desconta.
+
+**Quando comprar.** O saldo já era baixado pelas vendas (`deductStock`, ao
+concluir o agendamento). O que faltava era projetar: `consumoPorDia` mede o
+ritmo real nos serviços **concluídos** dos últimos 60 dias — janela larga
+porque insumo de polimento pareceria ter consumo zero num mês fraco — e
+`previsaoCompra` diz em quantos dias o insumo chega no mínimo. A tela ganhou a
+coluna "Dura até" e um aviso de **comprar nos próximos 14 dias**. Sem consumo
+medido não inventa prazo: diz "sem consumo registrado", que é diferente de
+"acaba hoje".
+
+Um defeito foi corrigido junto: dois serviços do mesmo agendamento usando o
+mesmo insumo faziam o segundo **sobrescrever** o primeiro na baixa — o consumo
+de um sumia, e o sistema achava ter mais produto do que a prateleira.
 
 `costPerUnit` continua sendo o que as receitas leem: dado antigo não mudou, e
 abrir a tela de um produto antigo não altera o custo salvo.

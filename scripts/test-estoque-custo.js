@@ -76,8 +76,14 @@ assert.strictEqual(_spPrecoInicial({ purchaseConversionFactor: 5000, costPerUnit
 const antigo = { purchaseConversionFactor: 5000, costPerUnit: 0.03 };
 assert.strictEqual(_spCustoDerivado(_spPrecoInicial(antigo), antigo.purchaseConversionFactor),
   antigo.costPerUnit, 'ida e volta fecha');
-// Produto antigo SEM conversão (granel, mão de obra): campo de preço vazio.
-assert.strictEqual(_spPrecoInicial({ costPerUnit: 35 }), '', 'sem conversão, sem preço a mostrar');
+// Produto antigo SEM conversão (granel, mão de obra): o múltiplo inicial é 1 da
+// unidade de uso, então o preço mostrado é o próprio custo — "1 h custa R$35".
+// É o que permite ter tirado a opção de informar o custo à mão sem obrigar a
+// recadastrar a compra de cada insumo antigo antes de poder salvar qualquer um.
+assert.strictEqual(_spPrecoInicial({ costPerUnit: 35 }), 35, 'vira "1 unidade custa R$35"');
+assert.strictEqual(_spPrecoInicial({ costPerUnit: 0.03, unit: 'ml' }), 0.03, '1 ml custa R$0,03');
+// E a ida e volta fecha: o custo salvo não muda só por abrir a tela.
+assert.strictEqual(_spCustoDerivado(_spPrecoInicial({ costPerUnit: 35 }), 1), 35);
 assert.strictEqual(_spPrecoInicial({}), '', 'produto novo');
 assert.strictEqual(_spPrecoInicial({ purchaseConversionFactor: 5000 }), '', 'conversão sem custo');
 

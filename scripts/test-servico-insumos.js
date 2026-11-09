@@ -47,7 +47,6 @@ const INSUMOS = {
       pq: document.getElementById('sfCostPq').value,
       gr: document.getElementById('sfCostGr').value,
       travado: document.getElementById('sfCostPq').readOnly,
-      auto: document.getElementById('sfCostAuto').checked,
       nota: document.getElementById('sfCostNota').textContent,
       linhas: document.querySelectorAll('[id^="recRow"]').length,
       receita: window._getRecipeRows(),
@@ -58,8 +57,11 @@ const INSUMOS = {
     await pg.waitForSelector('#sfRecipeList', { state: 'attached' });
     let r = await ler();
     assert.strictEqual(r.linhas, 0, 'serviço novo começa sem insumos');
-    assert.strictEqual(r.auto, false, 'sem insumos, o custo é o digitado');
-    assert.match(r.nota, /Cadastre os insumos/, 'a tela diz o que fazer: ' + r.nota);
+    // Não há opção de digitar o custo: ele é sempre a soma dos insumos.
+    assert.strictEqual(await pg.locator('#sfCostAuto').count(), 0, 'a opção não existe mais');
+    assert.strictEqual(r.travado, true, 'o custo nunca é digitável');
+    assert.strictEqual(parseFloat(r.pq), 0, 'sem insumos, custo zero — não um palpite');
+    assert.match(r.nota, /Sem insumos cadastrados/, 'e a tela diz isso: ' + r.nota);
     // E existe como cadastrar — que é o que não existia.
     await pg.click('button:has-text("+ Adicionar insumo")');
     assert.strictEqual((await ler()).linhas, 1, 'dá para acrescentar insumo');
@@ -71,7 +73,6 @@ const INSUMOS = {
     }, INSUMOS);
     await pg.waitForFunction(() => document.querySelectorAll('[id^="recRow"]').length === 1);
     r = await ler();
-    assert.strictEqual(r.auto, true, 'serviço com receita abre calculando');
     assert.strictEqual(parseFloat(r.pq), 9,    '300 ml × R$0,03 = R$9,00: ' + r.pq);
     assert.strictEqual(parseFloat(r.gr), 13.5, '450 ml × R$0,03 = R$13,50: ' + r.gr);
     assert.strictEqual(r.travado, true, 'campo calculado não aceita digitação');
@@ -112,15 +113,13 @@ const INSUMOS = {
     assert.strictEqual(parseFloat(r.pq), Math.round((600 * 0.03 + 15 * 0.48) * 100) / 100,
       'e o custo reflete a soma: ' + r.pq);
 
-    // ── a saída manual continua existindo e é respeitada ────────────────
-    await pg.uncheck('#sfCostAuto');
+    // ── o custo acompanha a receita, sempre ─────────────────────────────
+    // Não há como travá-lo num valor digitado: mexer na receita move o custo.
+    await pg.fill('#sfRecPq0', '700');
     r = await ler();
-    assert.strictEqual(r.travado, false, 'o modo manual libera os campos');
-    await pg.fill('#sfCostPq', '99');
-    await pg.fill('#sfRecPq0', '700');   // mexer na receita não atropela
-    r = await ler();
-    assert.strictEqual(parseFloat(r.pq), 99, 'o valor digitado permanece: ' + r.pq);
-    assert.match(r.nota, /Custo digitado à mão/, 'e a tela diz isso: ' + r.nota);
+    assert.strictEqual(r.travado, true, 'segue calculado');
+    assert.strictEqual(parseFloat(r.pq), Math.round((700 * 0.03 + 15 * 0.48) * 100) / 100,
+      'o custo acompanhou a receita: ' + r.pq);
 
     assert.deepStrictEqual(erros, [], 'console sem erro: ' + erros.join(' | '));
     console.log('serviço: o custo vem dos insumos cadastrados — todos passaram');

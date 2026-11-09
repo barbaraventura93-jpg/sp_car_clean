@@ -38,13 +38,17 @@ const _spArredonda = v => Math.round(v * 1e6) / 1e6;  // igual ao do app.js
       custo:  document.getElementById('spCost').value,
       somenteLeitura: document.getElementById('spCost').readOnly,
       nota:   document.getElementById('spCostNota').textContent,
-      auto:   document.getElementById('spCostAuto').checked,
+      saldoUn: document.getElementById('spQtyUn').textContent,
+      saldoNota: document.getElementById('spQtyNota').textContent,
     }));
 
-    // ── estado inicial: nada preenchido, custo livre ────────────────────
+    // ── estado inicial: o custo nunca é digitável ───────────────────────
+    // Não existe opção de informá-lo à mão: duas origens para o mesmo número é
+    // como o custo do serviço passa a discordar do que ela pagou.
     let r = await ler();
-    assert.strictEqual(r.somenteLeitura, false, 'sem preço, o custo é digitável');
-    assert.match(r.nota, /Informado direto/, 'a tela diz de onde vem o número: ' + r.nota);
+    assert.strictEqual(r.somenteLeitura, true, 'o custo é sempre calculado');
+    assert.strictEqual(await pg.locator('#spCostAuto').count(), 0, 'a opção não existe mais');
+    assert.match(r.nota, /Preencha o múltiplo/, 'a tela diz o que falta: ' + r.nota);
 
     // ── o caso do pedido, digitado como ela digitaria ───────────────────
     await pg.fill('#spName', 'Shampoo Automotivo');
@@ -59,8 +63,18 @@ const _spArredonda = v => Math.round(v * 1e6) / 1e6;  // igual ao do app.js
     // A conversão aparece inteira — é a parte que ela deixou de calcular.
     assert.ok(r.nota.includes('180,00') && r.nota.includes('5 L = 5000 ml') && r.nota.includes('0,0360'),
       'a nota mostra a conversão e a divisão: ' + r.nota);
-    // O modo fica VISÍVEL na tela, não escondido num botão de mão única.
-    assert.strictEqual(r.auto, true, 'o seletor mostra que está calculando');
+    assert.strictEqual(r.somenteLeitura, true, 'continua calculado');
+
+    // ── o saldo é contado na UNIDADE de compra, e aceita decimal ────────
+    // "Tenho 17 litros e meio", não "tenho 17500 ml" nem "3,5 embalagens".
+    assert.strictEqual(r.saldoUn, 'L', 'o rótulo do saldo é a unidade: ' + r.saldoUn);
+    await pg.fill('#spQty', '17.5');
+    await pg.fill('#spMin', '2.5');
+    r = await ler();
+    assert.ok(r.saldoNota.includes('17500') && r.saldoNota.includes('2500'),
+      'a tela mostra quanto é em ml: ' + r.saldoNota);
+    // E quantas embalagens isso representa, que é como ela vê na prateleira.
+    assert.ok(r.saldoNota.includes('3.5 × 5 L'), 'e em embalagens: ' + r.saldoNota);
 
     // ── mudar o preço recalcula na hora ─────────────────────────────────
     await pg.fill('#spPurchasePrice', '200');
@@ -75,6 +89,7 @@ const _spArredonda = v => Math.round(v * 1e6) / 1e6;  // igual ao do app.js
     await pg.selectOption('#spPurchaseUnit', 'kg');
     r = await ler();
     assert.strictEqual(parseFloat(r.custo), 0.04, '5 kg a R$200 = R$0,04/g: ' + r.custo);
+    assert.strictEqual(r.saldoUn, 'kg', 'o rótulo do saldo acompanha: ' + r.saldoUn);
     // E de volta para volume, sem sobrar "kg" no seletor.
     await pg.selectOption('#spUnit', 'ml');
     const opcoesVolume = await pg.$$eval('#spPurchaseUnit option', os => os.map(o => o.value));
@@ -85,61 +100,28 @@ const _spArredonda = v => Math.round(v * 1e6) / 1e6;  // igual ao do app.js
     await pg.fill('#spPurchaseMult', '');
     r = await ler();
     assert.match(r.nota, /Falta o múltiplo de compra/, 'instrução do que falta: ' + r.nota);
-    assert.strictEqual(r.somenteLeitura, false, 'sem poder calcular, devolve o campo');
+    assert.strictEqual(parseFloat(r.custo), 0, 'sem poder calcular, o custo não é inventado');
+    assert.strictEqual(r.somenteLeitura, true, 'e o campo segue calculado, nunca digitável');
     // E salvar neste estado é barrado, em vez de gravar um custo errado.
     await pg.evaluate(() => window.saveProduct(null));
     const avisoVisivel = await pg.evaluate(() => {
       const t = document.body.innerText || '';
-      return /Falta o múltiplo de compra|vêm na embalagem/i.test(t);
+      return /Falta a compra deste insumo|vêm na embalagem/i.test(t);
     });
-    assert.ok(avisoVisivel, 'salvar sem a conversão avisa em vez de gravar custo errado');
+    assert.ok(avisoVisivel, 'salvar sem a compra avisa em vez de gravar custo zero');
     // O aviso é um modal por cima do formulário; fechar é parte do fluxo real.
     await pg.click('#confirmModalOk');
     await pg.waitForSelector('#confirmModal', { state: 'hidden' });
 
-    // ── granel: a saída manual existe e funciona ────────────────────────
-    await pg.fill('#spPurchaseMult', '5');
+    // ── a granel: múltiplo 1 e o preço de 1 unidade ─────────────────────
+    // É a saída que substitui o antigo "informar o custo à mão": quem compra
+    // sem embalagem fixa diz quanto custa uma unidade de uso.
+    await pg.selectOption('#spPurchaseUnit', 'ml');
+    await pg.fill('#spPurchaseMult', '1');
+    await pg.fill('#spPurchasePrice', '0.0275');
     r = await ler();
-    assert.strictEqual(r.somenteLeitura, true, 'voltou a calcular');
-    await pg.uncheck('#spCostAuto');
-    r = await ler();
-    assert.strictEqual(r.somenteLeitura, false, 'o modo manual libera o campo');
-    assert.strictEqual(r.auto, false, 'e o seletor reflete isso');
-    await pg.fill('#spCost', '0.0275');
-    r = await ler();
-    assert.strictEqual(parseFloat(r.custo), 0.0275, 'o valor digitado permanece');
-
-    // ── o valor digitado à mão NÃO é sobrescrito pelo automático ────────
-    // Este caso foi encontrado por este teste: antes, mexer no preço depois de
-    // escolher o modo manual apagava o número que ela acabara de digitar, sem
-    // aviso e sem a tela mostrar que o modo havia mudado.
-    await pg.fill('#spPurchasePrice', '999');
-    r = await ler();
-    assert.strictEqual(parseFloat(r.custo), 0.0275,
-      'registrar o preço pago não apaga o custo digitado: ' + r.custo);
-    assert.strictEqual(r.auto, false, 'e o modo continua manual');
-    // Mas a tela OFERECE a conta, para a escolha não ficar escondida.
-    assert.ok(r.nota.includes('999,00') && r.nota.includes('Marque'),
-      'a tela mostra a conta disponível: ' + r.nota);
-
-    // Marcar o seletor é decisão explícita: aí sim o cálculo assume.
-    await pg.check('#spCostAuto');
-    r = await ler();
-    assert.strictEqual(parseFloat(r.custo), _spArredonda(999 / 5000), 'assume ao ser marcado: ' + r.custo);
-    assert.strictEqual(r.somenteLeitura, true);
-
-    // ── produto antigo: preço novo supera o custo que veio do banco ─────
-    // Diferente do caso acima — ninguém digitou custo nesta edição, então o
-    // preço novo manda. É como atualizar preço de insumo que subiu.
-    await pg.evaluate(() => window.openProductForm());
-    await pg.waitForSelector('#spPurchasePrice', { state: 'visible' });
-    await pg.evaluate(() => { document.getElementById('spCost').value = '0.03'; });
-    await pg.fill('#spPurchaseMult', '5');
-    await pg.selectOption('#spPurchaseUnit', 'L');
-    await pg.fill('#spPurchasePrice', '200');
-    r = await ler();
-    assert.strictEqual(parseFloat(r.custo), 0.04,
-      'custo vindo do banco é legitimamente superado pelo preço novo: ' + r.custo);
+    assert.strictEqual(parseFloat(r.custo), 0.0275, 'granel: 1 ml custa R$0,0275: ' + r.custo);
+    assert.strictEqual(r.saldoUn, 'ml', 'e o saldo volta a ser contado em ml: ' + r.saldoUn);
 
     assert.deepStrictEqual(erros, [], 'console sem erro: ' + erros.join(' | '));
     console.log('estoque (formulário): o preço da unidade de compra é o caminho — todos passaram');
