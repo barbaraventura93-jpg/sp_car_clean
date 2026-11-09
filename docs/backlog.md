@@ -141,13 +141,34 @@ fica ligado.
 
 ## 3. Estoque: preço pela unidade de compra — FEITO em 09/11/2026
 
-**Entregue.** O formulário de insumo pede "Galão 5L custa R$ 180" e deriva o
-custo por ml, com a conta à vista para conferência: *"Calculado: R$ 180,00 ÷
-5000 ml = R$ 0,0360 por ml"*. Uma opção visível na tela ("Calcular o custo pelo
-preço da unidade de compra") liga e desliga o cálculo — quem compra a granel ou
-cobra por hora continua informando o custo direto. O preço pago fica guardado
-(`purchasePrice`), então reabrir a tela mostra R$ 180, não 0,036. A lista de
-insumos mostra "R$ 180,00 / Galão 5L" abaixo do custo por unidade.
+**Entregue, e maior do que o item original.** O pedido foi refinado em
+09/11/2026: *"deixar um campo de múltiplo de compra e outro de unidade de compra
+(kg, L, ml, g), e outro de preço de compra, e com esses ele já vai fazer os
+cálculos para a unidade de medida de uso por produto"* e *"emendar isso no
+cálculo de custo por serviço ao invés de incluir manualmente"*.
+
+**No insumo:** três campos — múltiplo (5), unidade de compra (L) e preço
+(R$ 180). O sistema converte sozinho, porque sabe que 1 L são 1000 ml, e mostra
+a conta inteira: *"Calculado: R$ 180,00 ÷ (5 L = 5000 ml) = R$ 0,0360 por ml"*.
+Ela não digita 5000 em lugar nenhum. A lista de unidades oferecida é só a da
+mesma família do uso: kg não aparece para um insumo medido em ml, porque
+converter massa em volume exigiria a densidade do produto.
+
+**No serviço:** o custo era digitado à mão (`pricing.pq.cost`) enquanto a tela
+de Estoque calculava o mesmo número pelas receitas — dois números para a mesma
+coisa, e a margem dos cards saía do digitado. Agora o formulário de serviço tem
+a seção **Insumos consumidos** (insumo, quantidade do pequeno, quantidade do
+grande) e o custo vem de `Σ quantidade × custo por unidade`.
+
+Isso fechou um buraco que ninguém tinha notado: a receita só existia para os 9
+serviços que já vinham prontos (`RECIPE_DEFAULTS`), e **não havia tela nenhuma
+para criar outra**. Serviço novo nascia sem uso cadastrado, sem como cadastrar,
+e sem custo. A baixa automática de estoque (`deductStock`) também não o
+alcançava.
+
+Em ambas as telas há uma opção visível para informar o valor à mão — granel,
+mão de obra, serviço sem insumo — e o preço pago fica guardado
+(`purchasePrice`), então reabrir mostra R$ 180, não 0,036.
 
 `costPerUnit` continua sendo o que as receitas leem: dado antigo não mudou, e
 abrir a tela de um produto antigo não altera o custo salvo.

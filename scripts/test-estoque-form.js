@@ -48,17 +48,17 @@ const _spArredonda = v => Math.round(v * 1e6) / 1e6;  // igual ao do app.js
 
     // ── o caso do pedido, digitado como ela digitaria ───────────────────
     await pg.fill('#spName', 'Shampoo Automotivo');
-    await pg.fill('#spPurchaseLabel', 'Galão 5L');
-    await pg.fill('#spPurchaseFactor', '5000');
+    await pg.fill('#spPurchaseMult', '5');
+    await pg.selectOption('#spPurchaseUnit', 'L');
     await pg.fill('#spPurchasePrice', '180');
 
     r = await ler();
     assert.strictEqual(parseFloat(r.custo), 0.036, 'custo por ml calculado: ' + r.custo);
     assert.strictEqual(r.somenteLeitura, true, 'campo calculado não aceita digitação');
     // A conta à vista é o que permite conferir sem confiar: 180 ÷ 5000.
-    assert.ok(r.nota.includes('180,00') && r.nota.includes('5000') && r.nota.includes('0,0360'),
-      'a nota mostra a conta inteira: ' + r.nota);
-    assert.ok(r.nota.includes('ml'), 'a nota diz a unidade: ' + r.nota);
+    // A conversão aparece inteira — é a parte que ela deixou de calcular.
+    assert.ok(r.nota.includes('180,00') && r.nota.includes('5 L = 5000 ml') && r.nota.includes('0,0360'),
+      'a nota mostra a conversão e a divisão: ' + r.nota);
     // O modo fica VISÍVEL na tela, não escondido num botão de mão única.
     assert.strictEqual(r.auto, true, 'o seletor mostra que está calculando');
 
@@ -67,22 +67,30 @@ const _spArredonda = v => Math.round(v * 1e6) / 1e6;  // igual ao do app.js
     r = await ler();
     assert.strictEqual(parseFloat(r.custo), 0.04, 'preço novo, custo novo: ' + r.custo);
 
-    // ── mudar a unidade de medida reaparece na nota ─────────────────────
+    // ── trocar a unidade de uso refaz as opções de compra ───────────────
+    // Deixar "L" selecionado com uso em gramas daria uma conversão impossível.
     await pg.selectOption('#spUnit', 'g');
+    const opcoesMassa = await pg.$$eval('#spPurchaseUnit option', os => os.map(o => o.value));
+    assert.deepStrictEqual(opcoesMassa.sort(), ['g', 'kg'], 'só unidades de massa: ' + opcoesMassa);
+    await pg.selectOption('#spPurchaseUnit', 'kg');
     r = await ler();
-    assert.ok(r.nota.includes(' g'), 'a nota acompanha a unidade escolhida: ' + r.nota);
+    assert.strictEqual(parseFloat(r.custo), 0.04, '5 kg a R$200 = R$0,04/g: ' + r.custo);
+    // E de volta para volume, sem sobrar "kg" no seletor.
     await pg.selectOption('#spUnit', 'ml');
+    const opcoesVolume = await pg.$$eval('#spPurchaseUnit option', os => os.map(o => o.value));
+    assert.deepStrictEqual(opcoesVolume.sort(), ['L', 'ml'], 'só unidades de volume: ' + opcoesVolume);
+    await pg.selectOption('#spPurchaseUnit', 'L');
 
-    // ── preço sem conversão: diz o que falta, e não inventa custo ───────
-    await pg.fill('#spPurchaseFactor', '');
+    // ── preço sem múltiplo: diz o que falta, e não inventa custo ────────
+    await pg.fill('#spPurchaseMult', '');
     r = await ler();
-    assert.match(r.nota, /Falta dizer quantos ml tem um "Galão 5L"/, 'instrução exata: ' + r.nota);
+    assert.match(r.nota, /Falta o múltiplo de compra/, 'instrução do que falta: ' + r.nota);
     assert.strictEqual(r.somenteLeitura, false, 'sem poder calcular, devolve o campo');
     // E salvar neste estado é barrado, em vez de gravar um custo errado.
     await pg.evaluate(() => window.saveProduct(null));
     const avisoVisivel = await pg.evaluate(() => {
       const t = document.body.innerText || '';
-      return /Falta a convers|quantos ml ela tem/i.test(t);
+      return /Falta o múltiplo de compra|vêm na embalagem/i.test(t);
     });
     assert.ok(avisoVisivel, 'salvar sem a conversão avisa em vez de gravar custo errado');
     // O aviso é um modal por cima do formulário; fechar é parte do fluxo real.
@@ -90,7 +98,7 @@ const _spArredonda = v => Math.round(v * 1e6) / 1e6;  // igual ao do app.js
     await pg.waitForSelector('#confirmModal', { state: 'hidden' });
 
     // ── granel: a saída manual existe e funciona ────────────────────────
-    await pg.fill('#spPurchaseFactor', '5000');
+    await pg.fill('#spPurchaseMult', '5');
     r = await ler();
     assert.strictEqual(r.somenteLeitura, true, 'voltou a calcular');
     await pg.uncheck('#spCostAuto');
@@ -126,7 +134,8 @@ const _spArredonda = v => Math.round(v * 1e6) / 1e6;  // igual ao do app.js
     await pg.evaluate(() => window.openProductForm());
     await pg.waitForSelector('#spPurchasePrice', { state: 'visible' });
     await pg.evaluate(() => { document.getElementById('spCost').value = '0.03'; });
-    await pg.fill('#spPurchaseFactor', '5000');
+    await pg.fill('#spPurchaseMult', '5');
+    await pg.selectOption('#spPurchaseUnit', 'L');
     await pg.fill('#spPurchasePrice', '200');
     r = await ler();
     assert.strictEqual(parseFloat(r.custo), 0.04,

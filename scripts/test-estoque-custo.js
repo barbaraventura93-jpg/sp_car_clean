@@ -21,11 +21,13 @@ function recortar(re, oque) {
   assert.ok(m, 'não achei ' + oque + ' no app.js — o teste precisa ser atualizado');
   return m[0];
 }
-const puras = ['_spArredonda', '_spCustoDerivado', '_spPrecoInicial', '_spMoeda']
-  .map(n => recortar(new RegExp('function ' + n + '\\([\\s\\S]*?\\n\\}'), n))
-  .join('\n');
-const { _spArredonda, _spCustoDerivado, _spPrecoInicial, _spMoeda } =
-  new Function(puras + '\nreturn { _spArredonda, _spCustoDerivado, _spPrecoInicial, _spMoeda };')();
+const nomes = ['_spArredonda', '_spCustoDerivado', '_spPrecoInicial', '_spMoeda',
+               '_spFatorCompra', '_spUnidadesCompra', '_spCompraDeFator'];
+const puras = recortar(/const SP_UNIDADES = \{[\s\S]*?\n\};/, 'SP_UNIDADES') + '\n' +
+  nomes.map(n => recortar(new RegExp('function ' + n + '\\([\\s\\S]*?\\n\\}'), n)).join('\n');
+const mod = new Function(puras + '\nreturn {' + nomes.join(',') + ', SP_UNIDADES};')();
+const { _spArredonda, _spCustoDerivado, _spPrecoInicial, _spMoeda,
+        _spFatorCompra, _spUnidadesCompra, _spCompraDeFator } = mod;
 
 // ── o caso exato do pedido ─────────────────────────────────────────────
 // "compro em galão de 5 l e sei o preço do galão de 5 l"
@@ -85,5 +87,63 @@ assert.strictEqual(_spMoeda(35), '35,0000');
 // R$0,00004/ml em 4 casas seria "0,0000", que não informa nada.
 assert.strictEqual(_spMoeda(0.00004), '0,00004', 'abre casas até o número aparecer');
 assert.strictEqual(_spMoeda(0), '0,0000', 'zero não entra em laço infinito');
+
+// ── a conversão que ela não precisa mais fazer ─────────────────────────
+// O pedido: "um campo de múltiplo de compra e outro de unidade de compra (kg,
+// L, ml, g) e outro de preço de compra, e com esses ele já vai fazer os
+// cálculos para a unidade de medida de uso". Antes ela digitava o 5000.
+assert.strictEqual(_spFatorCompra(5, 'L', 'ml'), 5000, 'galão de 5 L, usado em ml');
+assert.strictEqual(_spFatorCompra(1, 'L', 'ml'), 1000, 'litro');
+assert.strictEqual(_spFatorCompra(500, 'ml', 'ml'), 500, 'frasco de 500 ml');
+assert.strictEqual(_spFatorCompra(20, 'L', 'ml'), 20000, 'bombona de 20 L');
+assert.strictEqual(_spFatorCompra(5, 'kg', 'g'), 5000, 'saco de 5 kg, usado em g');
+assert.strictEqual(_spFatorCompra(0.9, 'kg', 'g'), 900, 'múltiplo quebrado');
+assert.strictEqual(_spFatorCompra(12, 'un', 'un'), 12, 'caixa com 12 unidades');
+assert.strictEqual(_spFatorCompra(1, 'h', 'h'), 1, 'hora de mão de obra');
+
+// E o custo sai da ponta a ponta, que é o que o cálculo do serviço consome.
+assert.strictEqual(_spCustoDerivado(180, _spFatorCompra(5, 'L', 'ml')), 0.036,
+  'R$180 o galão de 5L → R$0,036/ml, sem ninguém digitar 5000');
+
+// ── converter entre famílias diferentes é recusado ─────────────────────
+// Comprar em kg e usar em ml exigiria a densidade: 1 kg de cera não é 1 L de
+// cera. Devolver null faz a tela pedir o dado em vez de inventar um custo.
+assert.strictEqual(_spFatorCompra(5, 'kg', 'ml'), null, 'massa não vira volume');
+assert.strictEqual(_spFatorCompra(5, 'L', 'g'), null, 'volume não vira massa');
+assert.strictEqual(_spFatorCompra(5, 'un', 'ml'), null, 'unidade não vira volume');
+assert.strictEqual(_spFatorCompra(5, 'h', 'ml'), null, 'hora não vira volume');
+assert.strictEqual(_spFatorCompra(0, 'L', 'ml'), null, 'sem múltiplo');
+assert.strictEqual(_spFatorCompra(-5, 'L', 'ml'), null, 'múltiplo negativo');
+assert.strictEqual(_spFatorCompra(NaN, 'L', 'ml'), null, 'campo vazio');
+assert.strictEqual(_spFatorCompra(5, 'arroba', 'ml'), null, 'unidade desconhecida');
+
+// ── a tela só oferece unidades da mesma família ────────────────────────
+assert.deepStrictEqual(_spUnidadesCompra('ml').sort(), ['L', 'ml'], 'volume');
+assert.deepStrictEqual(_spUnidadesCompra('g').sort(), ['g', 'kg'], 'massa');
+assert.deepStrictEqual(_spUnidadesCompra('un'), ['un']);
+assert.deepStrictEqual(_spUnidadesCompra('h'), ['h']);
+// Toda unidade oferecida converte de verdade — a lista não pode conter armadilha.
+['ml', 'g', 'un', 'h'].forEach(uso => {
+  _spUnidadesCompra(uso).forEach(compra => {
+    assert.ok(_spFatorCompra(1, compra, uso) > 0, compra + ' → ' + uso + ' tem que converter');
+  });
+});
+
+// ── produto antigo: o fator salvo vira múltiplo + unidade legíveis ─────
+// Ninguém diz "compro 5000 ml"; diz "compro um galão de 5 litros".
+assert.deepStrictEqual(_spCompraDeFator(5000, 'ml'), { multiplo: 5, unidade: 'L' });
+assert.deepStrictEqual(_spCompraDeFator(1000, 'ml'), { multiplo: 1, unidade: 'L' });
+assert.deepStrictEqual(_spCompraDeFator(500, 'ml'),  { multiplo: 500, unidade: 'ml' },
+  'não vira 0,5 L — múltiplo quebrado é pior de ler que 500 ml');
+assert.deepStrictEqual(_spCompraDeFator(5000, 'g'),  { multiplo: 5, unidade: 'kg' });
+assert.deepStrictEqual(_spCompraDeFator(12, 'un'),   { multiplo: 12, unidade: 'un' });
+assert.strictEqual(_spCompraDeFator(0, 'ml'), null, 'sem fator, nada a reconstituir');
+
+// E reconstituir e converter de volta tem que devolver o MESMO fator, senão
+// abrir a tela de um insumo antigo mudaria o custo dele.
+[5000, 1000, 500, 250, 20000, 1].forEach(f => {
+  const c = _spCompraDeFator(f, 'ml');
+  assert.strictEqual(_spFatorCompra(c.multiplo, c.unidade, 'ml'), f, 'ida e volta de ' + f);
+});
 
 console.log('estoque: a conta do custo pela unidade de compra — todos passaram');
