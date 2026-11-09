@@ -7596,6 +7596,28 @@ const HERO_FALLBACK = [
   {src:'assets/portfolio/estepe.jpg.jpg',                  alt:'Estepe'},
 ];
 
+// As 7 fotos estáticas são o PISO do carrossel, não uma alternativa a ele.
+// Antes isto era ou/ou: bastava UM item em /portfolio para as 7 fotos atuais do
+// site saírem do ar. Com a sincronização do Drive isso deixou de ser hipótese —
+// a primeira rodada grava 2 fotos, e o carrossel cairia de 7 para 2, perdendo
+// acervo bom sem ninguém pedir.
+//
+// O piso sai de cena quando as estáticas são assumidas pelo painel ("Importar
+// as fotos atuais do site", importHeroDefaults): daí em diante são registros
+// como os outros, e remover uma pelo painel remove de verdade. É isso que
+// `assumidas` detecta — qualquer item apontando para assets/portfolio/ quer
+// dizer "já é gerenciado, não reponha".
+function _heroMedia(val) {
+  const media = Object.values(val || {})
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .map(p => ({ src: p.url, type: p.type === 'video' ? 'video' : undefined, alt: p.caption || 'SP Car Clean' }));
+  if (!media.length) return HERO_FALLBACK.slice();
+  const assumidas = media.some(m => /^assets\/portfolio\//.test(String(m.src || '')));
+  if (assumidas) return media;
+  const jaTem = new Set(media.map(m => String(m.src || '')));
+  return media.concat(HERO_FALLBACK.filter(m => !jaTem.has(m.src)));
+}
+
 let _heroTimer = null;
 function _buildHeroCarousel(media) {
   const track = document.getElementById('heroTrack');
@@ -7878,12 +7900,22 @@ _buildHeroCarousel(HERO_FALLBACK);
 
     // ── Nossas Obras (carrossel do hero): fotos gerenciadas pelo admin em /portfolio ──
     // Nó vazio → mantém o fallback estático; com itens → remonta o carrossel ao vivo.
+    //
+    // As 7 fotos estáticas são o PISO do carrossel, não uma alternativa a ele.
+    // Antes isto era ou/ou: bastava um único item em /portfolio para as 7 fotos
+    // atuais do site saírem do ar. Com a sincronização do Drive isso deixou de
+    // ser hipótese — a primeira rodada grava 2 fotos e o carrossel cairia de 7
+    // para 2, perdendo acervo bom sem ninguém pedir.
+    //
+    // O piso sai de cena quando a dona assume as estáticas pelo painel
+    // ("Importar as fotos atuais", importHeroDefaults): a partir daí elas são
+    // registros como os outros, e remover uma pelo painel remove de verdade.
+    // É isso que `assumidas` detecta — qualquer item apontando para
+    // assets/portfolio/ significa "já é gerenciado, não reponha".
     _portfolioRef.on('value', snap => {
       const val = snap.val();
       if (!val) return;
-      const media = Object.values(val)
-        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-        .map(p => ({ src: p.url, type: p.type === 'video' ? 'video' : undefined, alt: p.caption || 'SP Car Clean' }));
+      const media = _heroMedia(val);
       if (media.length) _buildHeroCarousel(media);
     }, e => console.warn('Firebase portfolio:', e));
 

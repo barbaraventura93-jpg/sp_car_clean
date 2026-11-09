@@ -159,7 +159,7 @@ function executar(ensaio) {
       var porNome = {};
       (pasta.subAntes ? listar(pasta.subAntes) : []).forEach(function (f) {
         if (f.tipo !== 'imagem') {
-          Logger.log('  [%s/Antes] PULADO (.%s não é exibível): %s', pasta.nome, extensaoDe(f.nome), f.nome);
+          Logger.log('  [%s/Antes] PULADO (não é imagem — o Drive diz "%s"): %s', pasta.nome, f.mime || 'tipo desconhecido', f.nome);
           resumo.pulados++;
           return;
         }
@@ -176,7 +176,7 @@ function executar(ensaio) {
           return;
         }
         if (f.tipo !== 'imagem') {
-          Logger.log('  [%s/Depois] PULADO (.%s não é exibível): %s', pasta.nome, extensaoDe(f.nome), f.nome);
+          Logger.log('  [%s/Depois] PULADO (não é imagem — o Drive diz "%s"): %s', pasta.nome, f.mime || 'tipo desconhecido', f.nome);
           resumo.pulados++;
           return;
         }
@@ -210,8 +210,8 @@ function executar(ensaio) {
         // Antes isto sumia em silêncio, e o relatório não fechava a conta: no
         // primeiro ensaio, 7 arquivos foram pulados sem nenhuma linha dizendo
         // por quê. HEIC de iPhone cai aqui, e é informação que importa.
-        Logger.log('  [%s] PULADO (formato que o navegador não exibe: .%s): %s',
-          pasta.nome, extensaoDe(f.nome), f.nome);
+        Logger.log('  [%s] PULADO (não é imagem nem vídeo — o Drive diz "%s"): %s',
+          pasta.nome, f.mime || 'tipo desconhecido', f.nome);
         resumo.pulados++;
         return;
       }
@@ -423,14 +423,43 @@ function listar(idPasta) {
   while (it.hasNext()) {
     var f = it.next();
     var nome = f.getName();
-    var ext = String(nome.split('.').pop() || '').toLowerCase();
+    var mime = String(f.getMimeType() || '').toLowerCase();
     out.push({
       id: f.getId(), nome: nome, bytes: f.getSize(), em: f.getDateCreated(),
-      tipo: IMAGENS.indexOf(ext) !== -1 ? 'imagem' : (VIDEOS.indexOf(ext) !== -1 ? 'video' : 'outro'),
+      mime: mime, tipo: tipoDe(nome, mime),
     });
   }
   out.sort(function (a, b) { return b.em - a.em; });
   return out;
+}
+
+// O tipo vem do MIME que o Drive guarda, nao da extensao no nome. No primeiro
+// ensaio, quatro fotos boas ("1 - Higienizacao de tecido Antes" e companhia)
+// foram descartadas so porque o nome nao tem ponto nenhum: split('.').pop()
+// devolvia o nome inteiro como se fosse extensao. O Drive sabe o tipo real.
+//
+// HEIC de iPhone tambem passa a entrar, e isso e seguro: o que mandamos ao
+// site e sempre a MINIATURA que o Drive gera (JPEG/PNG), nunca o arquivo
+// original. O formato do original nunca chega ao navegador.
+function tipoDe(nome, mime) {
+  if (mime.indexOf('image/') === 0) return 'imagem';
+  if (mime.indexOf('video/') === 0) return 'video';
+  // MIME genérico ou ausente: cai na extensão, se houver uma de verdade.
+  if (!mime || mime === 'application/octet-stream' || mime === 'binary/octet-stream') {
+    var ext = extensaoDe(nome);
+    if (ext && IMAGENS.indexOf(ext) !== -1) return 'imagem';
+    if (ext && VIDEOS.indexOf(ext) !== -1) return 'video';
+  }
+  return 'outro';
+}
+
+// Só é extensão se houver ponto E o que vem depois for curto o bastante para
+// ser uma extensão. "2 - Higienizacao de tecido Antes" não tem extensão.
+function extensaoDe(nome) {
+  var i = String(nome).lastIndexOf('.');
+  if (i <= 0) return '';
+  var ext = nome.slice(i + 1).toLowerCase();
+  return /^[a-z0-9]{1,5}$/.test(ext) ? ext : '';
 }
 
 /**
@@ -452,10 +481,6 @@ function baseDoNome(nome) {
 }
 
 /** Extensão do arquivo, para o relatório dizer por que algo não serve. */
-function extensaoDe(nome) {
-  return String(String(nome).split('.').pop() || '?').toLowerCase();
-}
-
 /** Serviço em andamento não é resultado. */
 function emProcesso(nome) {
   return /\b(em\s+)?(processo|andamento|aplicando|fazendo)\b/i.test(limparPrefixos(nome));

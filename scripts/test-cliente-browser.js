@@ -98,15 +98,17 @@ const SESSAO_CLIENTE = {
   // por leitura do código (doClientLogin faz signOut e mostra a mensagem).
   assert.ok(guarda.visivel, 'login do cliente com e-mail de admin não entra');
   assert.strictEqual(await pg.evaluate(() => isAdmin()), false, 'não virou admin');
-  // O ÚNICO erro esperado é a negação do Firebase ao perfil do cliente: as regras
-  // publicadas exigem `auth.uid` do Firebase Auth, que não existe mais desde a
-  // migração para o Cognito. Antes da correção do `once` essa falha era
-  // silenciosa E a tela não abria; agora a tela abre pelo `.catch()` e a falha
-  // fica visível no console. Visível é melhor que invisível — e o conserto de
-  // verdade é servir o perfil pelo servidor, que ainda está por fazer.
-  const inesperados = erros.filter(e => !/permission_denied at \/clientProfiles/.test(e));
-  assert.deepStrictEqual(inesperados, [], 'nenhum erro além da negação conhecida: ' + inesperados.join(' | '));
-  assert.strictEqual(erros.length, 1, 'a negação do perfil aparece no console (antes era silenciosa)');
+  // Console limpo. Este teste já aceitou UM erro aqui — a negação do Firebase ao
+  // perfil do cliente, porque as regras exigem `auth.uid` do Firebase Auth, que
+  // não existe mais desde a migração para o Cognito. O comentário de então dizia
+  // que "o conserto de verdade é servir o perfil pelo servidor, que ainda está
+  // por fazer". Foi feito: o perfil agora vem do /api/me, com o uid tirado do
+  // token no servidor, e não há mais leitura negada para registrar.
+  //
+  // A asserção é de AUSÊNCIA, então ela só vale junto da de cima: a tela de
+  // "Minha Conta" tem que ABRIR (contaDoClienteAberta). Console limpo com a tela
+  // fechada seria falha silenciosa, que é o que esta dupla existe para pegar.
+  assert.deepStrictEqual(erros, [], 'console do cliente sem erro: ' + erros.join(' | '));
   console.log('SEPARAÇÃO CLIENTE / ADMIN OK');
   await nav.close();
 })().catch(e => { console.error('FALHOU:', e.message); process.exit(1); });
