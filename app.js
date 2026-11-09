@@ -679,6 +679,16 @@ window.calNext = function(cid, m, y, mode) {
 function bkSvcs(b)      { return (b.services||[b.service]).filter(Boolean).map(id=>SVCS[id]||{icon:'⚠️',name:'Serviço removido do catálogo',pq:0,gr:0,daysExtra:0}); }
 function bkPrice(b,sz)  { return bkSvcs(b).reduce((s,sv)=>s+(sv[sz||b.carSize]||0),0); }
 function bkMaxDays(b)   { return Math.max(0,...bkSvcs(b).map(sv=>sv.daysExtra||0)); }
+
+// Quando o cliente retira o carro, em uma frase. Existe num lugar só porque a
+// versão anterior vivia inline e dizia "Retirada em 2 dias" para QUALQUER valor
+// acima de 1 — um serviço de 3 dias prometia 2 ao cliente.
+function prazoDeEntrega(dias) {
+  const d = Math.max(0, parseInt(dias) || 0);
+  if (d === 0) return 'Entrega no mesmo dia';
+  if (d === 1) return 'Retirada no dia seguinte';
+  return 'Retirada em ' + d + ' dias';
+}
 function bkLabel(b)     { return bkSvcs(b).map(sv=>`${sv.icon} ${sv.name}`).join(' + '); }
 
 // BOOKING FLOW
@@ -755,7 +765,7 @@ function renderBookingStep() {
         <div class="svc-pick-icon">${s.icon}</div>
         <div>
           <div class="svc-pick-name">${s.name}</div>
-          <div class="svc-pick-meta">${s.daysExtra===0?'Entrega no mesmo dia':s.daysExtra===1?'Retirada no dia seguinte':'Retirada em 2 dias'}</div>
+          <div class="svc-pick-meta">${prazoDeEntrega(s.daysExtra)}</div>
         </div>
         <div class="svc-pick-price">${fmtMoney(s[booking.carSize])}</div>
       </div>`).join('')
@@ -6080,7 +6090,7 @@ function buildServiceList(svcs) {
         <span class="svc-admin-icon">${s.icon || '🔧'}</span>
         <div class="svc-admin-meta">
           <div class="svc-admin-name">${s.name} <span style="font-size:.62rem;font-weight:600;color:var(--muted);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:.05rem .35rem;margin-left:.3rem">${vBadge}</span></div>
-          <div class="svc-admin-sub">${s.cat || ''}${s.daysExtra ? ' · ' + s.daysExtra + ' dia(s) extra' : ' · mesmo dia'}</div>
+          <div class="svc-admin-sub">${s.cat || ''} · ${prazoDeEntrega(s.daysExtra)}</div>
         </div>
         <button class="btn-toggle-svc${isActive ? '' : ' off'}" onclick="toggleService('${id}')">
           ${isActive ? '✅ Ativo' : '⛔ Inativo'}
@@ -6238,6 +6248,15 @@ function _sfRecalcCusto() {
   elNota.textContent = nota;
 }
 
+// Mostra, no painel, a MESMA frase que o cliente vai ler no site. O rótulo
+// "Dias extras" não dizia o que 0, 1 ou 2 significam para quem agenda.
+function _sfPrazo() {
+  const el = document.getElementById('sfDaysNota');
+  if (!el) return;
+  const d = parseInt(document.getElementById('sfDays')?.value) || 0;
+  el.textContent = 'O cliente vê: "' + prazoDeEntrega(d) + '".';
+}
+
 function _sfAlternaCusto(ligado) {
   _sfCustoAuto = !!ligado;
   _sfRecalcCusto();
@@ -6302,7 +6321,10 @@ function _desenharServiceForm(id, s, wrap) {
         <div class="form-group"><label>Categoria</label>
           <select id="sfCat">${catOpts}</select>
         </div>
-        <div class="form-group"><label>Dias extras</label><input id="sfDays" type="number" value="${s?.daysExtra||0}" min="0" max="10"/></div>
+        <div class="form-group"><label>Tempo de entrega</label>
+          <input id="sfDays" type="number" value="${s?.daysExtra||0}" min="0" max="10" oninput="_sfPrazo()"/>
+          <p id="sfDaysNota" style="margin:.3rem 0 0;font-size:.74rem;color:var(--muted)"></p>
+        </div>
         <div class="form-group"><label>Ativo</label>
           <select id="sfActive"><option value="1"${s?.active!==false?' selected':''}>✅ Ativo</option><option value="0"${s?.active===false?' selected':''}>⛔ Inativo</option></select>
         </div>
@@ -6349,6 +6371,7 @@ function _desenharServiceForm(id, s, wrap) {
       </div>
     </div>`;
   _sfToggleVeiculo();
+  _sfPrazo();
   _sfRecalcCusto();   // a nota tem que dizer de onde vem o custo desde o início
   wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
