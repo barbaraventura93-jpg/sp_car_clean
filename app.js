@@ -679,6 +679,16 @@ window.calNext = function(cid, m, y, mode) {
 function bkSvcs(b)      { return (b.services||[b.service]).filter(Boolean).map(id=>SVCS[id]||{icon:'⚠️',name:'Serviço removido do catálogo',pq:0,gr:0,daysExtra:0}); }
 function bkPrice(b,sz)  { return bkSvcs(b).reduce((s,sv)=>s+(sv[sz||b.carSize]||0),0); }
 function bkMaxDays(b)   { return Math.max(0,...bkSvcs(b).map(sv=>sv.daysExtra||0)); }
+
+// Quando o cliente retira o carro, em uma frase. Existe num lugar só porque a
+// versão anterior vivia inline e dizia "Retirada em 2 dias" para QUALQUER valor
+// acima de 1 — um serviço de 3 dias prometia 2 ao cliente.
+function prazoDeEntrega(dias) {
+  const d = Math.max(0, parseInt(dias) || 0);
+  if (d === 0) return 'Entrega no mesmo dia';
+  if (d === 1) return 'Retirada no dia seguinte';
+  return 'Retirada em ' + d + ' dias';
+}
 function bkLabel(b)     { return bkSvcs(b).map(sv=>`${sv.icon} ${sv.name}`).join(' + '); }
 
 // BOOKING FLOW
@@ -755,7 +765,7 @@ function renderBookingStep() {
         <div class="svc-pick-icon">${s.icon}</div>
         <div>
           <div class="svc-pick-name">${s.name}</div>
-          <div class="svc-pick-meta">${s.daysExtra===0?'Entrega no mesmo dia':s.daysExtra===1?'Retirada no dia seguinte':'Retirada em 2 dias'}</div>
+          <div class="svc-pick-meta">${prazoDeEntrega(s.daysExtra)}</div>
         </div>
         <div class="svc-pick-price">${fmtMoney(s[booking.carSize])}</div>
       </div>`).join('')
@@ -6080,7 +6090,7 @@ function buildServiceList(svcs) {
         <span class="svc-admin-icon">${s.icon || '🔧'}</span>
         <div class="svc-admin-meta">
           <div class="svc-admin-name">${s.name} <span style="font-size:.62rem;font-weight:600;color:var(--muted);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:.05rem .35rem;margin-left:.3rem">${vBadge}</span></div>
-          <div class="svc-admin-sub">${s.cat || ''}${s.daysExtra ? ' · ' + s.daysExtra + ' dia(s) extra' : ' · mesmo dia'}</div>
+          <div class="svc-admin-sub">${s.cat || ''} · ${prazoDeEntrega(s.daysExtra)}</div>
         </div>
         <button class="btn-toggle-svc${isActive ? '' : ' off'}" onclick="toggleService('${id}')">
           ${isActive ? '✅ Ativo' : '⛔ Inativo'}
@@ -6106,10 +6116,182 @@ function buildServiceList(svcs) {
   }).join('');
 }
 
+// ── Insumos consumidos pelo serviço, e o custo que sai deles ───────────────
+//
+// O custo do serviço era digitado à mão (`pricing.pq.cost`), enquanto a tela de
+// Estoque calculava o mesmo número a partir das receitas — dois números para a
+// mesma coisa, e a margem exibida nos cards saía do digitado. Pior: a receita
+// só existia para os 9 serviços que já vinham prontos, e não havia nenhuma tela
+// para criar outra. Serviço novo nascia sem uso cadastrado e sem como cadastrar.
+//
+// Agora o uso é cadastrado junto com o serviço, e o custo vem dele:
+//   custo = Σ (quantidade consumida × custo por unidade do insumo)
+// que é exatamente a conta da tela de Estoque, agora com uma origem só.
+let _sfInsumos = {};            // catálogo id → insumo, carregado ao abrir
+let _sfRecIdx = 0;              // contador de linhas (ids únicos no DOM)
+let _sfCustoAnterior = null;    // o que estava salvo, para avisar se mudar
+// Carga assíncrona que chega atrasada não pode escrever num formulário que já é
+// outro. Abrir o serviço A e, antes de a resposta chegar, abrir o B fazia a
+// receita de A aparecer no B. Cada preenchimento vira o válido; o que chegar
+// depois citando um preenchimento anterior é descartado.
+let _sfPreenchimento = 0;
+
+function _sfOpcoesInsumo(sel) {
+  const itens = Object.entries(_sfInsumos)
+    .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''));
+  return '<option value="">— escolha o insumo —</option>' + itens.map(([id, p]) =>
+    `<option value="${id}"${id === sel ? ' selected' : ''}>${esc(p.name || id)} (${esc(p.unit || '')})</option>`
+  ).join('');
+}
+
+function addRecipeRow(pid, pq, gr) {
+  const lista = document.getElementById('sfRecipeList');
+  if (!lista) return;
+  const i = _sfRecIdx++;
+  const div = document.createElement('div');
+  div.id = 'recRow' + i;
+  div.style.cssText = 'display:flex;gap:.5rem;align-items:center;margin-bottom:.45rem;flex-wrap:wrap';
+  div.innerHTML = `
+    <select id="sfRecProd${i}" class="form-control" style="flex:2;min-width:150px;font-size:.78rem;padding:.35rem .6rem"
+      onchange="_sfRecalcCusto()">${_sfOpcoesInsumo(pid || '')}</select>
+    <input id="sfRecPq${i}" type="number" min="0" step="0.01" value="${pq ?? ''}" placeholder="Qtd 🚗"
+      style="flex:1;min-width:76px;font-size:.78rem;padding:.35rem .6rem" oninput="_sfRecalcCusto()"/>
+    <input id="sfRecGr${i}" type="number" min="0" step="0.01" value="${gr ?? ''}" placeholder="Qtd 🚙"
+      class="sf-rec-gr" style="flex:1;min-width:76px;font-size:.78rem;padding:.35rem .6rem" oninput="_sfRecalcCusto()"/>
+    <span id="sfRecUn${i}" style="font-size:.74rem;color:var(--muted);min-width:22px"></span>
+    <button class="ba-admin-del" onclick="removeRecipeRow(${i})" style="padding:.35rem .6rem">🗑️</button>`;
+  lista.appendChild(div);
+  _sfToggleVeiculo();
+  _sfRecalcCusto();
+}
+
+function removeRecipeRow(i) {
+  document.getElementById('recRow' + i)?.remove();
+  _sfRecalcCusto();
+}
+
+// Linhas da tela → receita. Linha sem insumo escolhido, ou que não consome
+// nada nos dois portes, não vira registro: receita com zero é ruído.
+function _getRecipeRows() {
+  const out = {};
+  document.querySelectorAll('[id^="recRow"]').forEach(div => {
+    const i = div.id.replace('recRow', '');
+    const pid = document.getElementById('sfRecProd' + i)?.value;
+    if (!pid) return;
+    const pq = parseFloat(document.getElementById('sfRecPq' + i)?.value) || 0;
+    const gr = parseFloat(document.getElementById('sfRecGr' + i)?.value) || 0;
+    if (pq <= 0 && gr <= 0) return;
+    // Mesmo insumo em duas linhas soma, em vez de uma apagar a outra.
+    out[pid] = { pq: (out[pid]?.pq || 0) + pq, gr: (out[pid]?.gr || 0) + gr };
+  });
+  return out;
+}
+
+function _sfCustoDosInsumos(receita) {
+  let pq = 0, gr = 0;
+  Object.entries(receita).forEach(([pid, a]) => {
+    const c = _sfInsumos[pid]?.costPerUnit || 0;
+    pq += (a.pq || 0) * c;
+    gr += (a.gr || 0) * c;
+  });
+  return { pq: Math.round(pq * 100) / 100, gr: Math.round(gr * 100) / 100 };
+}
+
+// O custo do serviço é SEMPRE a soma dos insumos. Não há opção de digitá-lo:
+// enquanto havia, o número exibido na margem podia discordar do que os insumos
+// custam de verdade, e era o digitado que ganhava.
+function _sfRecalcCusto() {
+  const elPq = document.getElementById('sfCostPq');
+  const elGr = document.getElementById('sfCostGr');
+  const elNota = document.getElementById('sfCostNota');
+  if (!elPq || !elNota) return;
+
+  // A unidade de cada linha, ao lado da quantidade: "300" sem unidade é adivinhação.
+  document.querySelectorAll('[id^="recRow"]').forEach(div => {
+    const i = div.id.replace('recRow', '');
+    const pid = document.getElementById('sfRecProd' + i)?.value;
+    const span = document.getElementById('sfRecUn' + i);
+    if (span) span.textContent = pid ? (_sfInsumos[pid]?.unit || '') : '';
+  });
+
+  const receita = _getRecipeRows();
+  const n = Object.keys(receita).length;
+
+  [elPq, elGr].forEach(el => { if (el) { el.readOnly = true; el.style.background = 'rgba(0,0,0,.14)'; } });
+
+  if (!n) {
+    elPq.value = 0;
+    if (elGr) elGr.value = 0;
+    elNota.textContent = 'Sem insumos cadastrados: o custo fica R$ 0,00 e a margem não aparece. '
+      + 'Acrescente o que este serviço consome.';
+    return;
+  }
+
+  const c = _sfCustoDosInsumos(receita);
+  elPq.value = c.pq;
+  if (elGr) elGr.value = c.gr;
+
+  const moto = document.getElementById('sfVeiculo')?.value === 'moto';
+  let nota = 'Calculado de ' + n + ' insumo(s): R$ ' + c.pq.toFixed(2).replace('.', ',')
+    + (moto ? '' : ' (pequeno) · R$ ' + c.gr.toFixed(2).replace('.', ',') + ' (grande)') + '.';
+  // Se o que estava salvo era outro número, dizer — senão a margem dos cards
+  // mudaria sem ninguém notar.
+  if (_sfCustoAnterior && (_sfCustoAnterior.pq || _sfCustoAnterior.gr)
+      && (Math.abs(_sfCustoAnterior.pq - c.pq) >= 0.01 || Math.abs(_sfCustoAnterior.gr - c.gr) >= 0.01)) {
+    nota += ' Estava R$ ' + _sfCustoAnterior.pq.toFixed(2).replace('.', ',')
+      + (moto ? '' : ' / R$ ' + _sfCustoAnterior.gr.toFixed(2).replace('.', ','))
+      + ', digitado à mão — salvar substitui.';
+  }
+  elNota.textContent = nota;
+}
+
+// Mostra, no painel, a MESMA frase que o cliente vai ler no site. O rótulo
+// "Dias extras" não dizia o que 0, 1 ou 2 significam para quem agenda.
+function _sfPrazo() {
+  const el = document.getElementById('sfDaysNota');
+  if (!el) return;
+  const d = parseInt(document.getElementById('sfDays')?.value) || 0;
+  el.textContent = 'O cliente vê: "' + prazoDeEntrega(d) + '".';
+}
+
 function openServiceForm(id) {
   const s = id ? SVCS[id] : null;
   const wrap = document.getElementById('svcFormWrap');
   if (!wrap) return;
+  // O catálogo de insumos e a receita do serviço vêm do banco. Sem eles dá para
+  // editar o resto do serviço normalmente — só a seção de insumos fica vazia.
+  _sfInsumos = {};
+  _sfRecIdx = 0;
+  _sfCustoAnterior = { pq: s?._cost_pq || 0, gr: s?._cost_gr || 0 };
+  if (_stockRef && _stockRecipesRef) {
+    const meu = _sfPreenchimento;
+    Promise.all([_stockRef.once('value'), _stockRecipesRef.once('value')])
+      .then(([est, rec]) => {
+        if (meu !== _sfPreenchimento) return;   // outro formulário assumiu
+        _sfPreencheReceita((rec.val() || {})[id] || {}, est.val() || {});
+      })
+      .catch(e => {
+        console.warn('insumos do serviço:', e);
+        if (meu === _sfPreenchimento) _sfPreencheReceita({});
+      });
+  }
+  _desenharServiceForm(id, s, wrap);
+}
+
+// Desenha as linhas da receita salva e liga o cálculo. Serviço que já tem
+// receita abre calculando — é a origem que a dona quer. Serviço sem receita
+// abre no custo digitado, que é o que ele tem.
+function _sfPreencheReceita(receita, insumos) {
+  _sfPreenchimento++;
+  if (insumos) _sfInsumos = insumos;
+  const lista = document.getElementById('sfRecipeList');
+  if (!lista) return;
+  lista.innerHTML = '';
+  Object.entries(receita).forEach(([pid, a]) => addRecipeRow(pid, a.pq ?? '', a.gr ?? ''));
+  _sfRecalcCusto();
+}
+
+function _desenharServiceForm(id, s, wrap) {
   const catOpts = SVCS_CATS.map(c => `<option${(s?.cat||'') === c ? ' selected' : ''}>${c}</option>`).join('');
   wrap.innerHTML = `
     <div class="svc-form-panel">
@@ -6128,13 +6310,21 @@ function openServiceForm(id) {
         <div class="form-group"><label>Categoria</label>
           <select id="sfCat">${catOpts}</select>
         </div>
-        <div class="form-group"><label>Dias extras</label><input id="sfDays" type="number" value="${s?.daysExtra||0}" min="0" max="10"/></div>
+        <div class="form-group"><label>Tempo de entrega</label>
+          <input id="sfDays" type="number" value="${s?.daysExtra||0}" min="0" max="10" oninput="_sfPrazo()"/>
+          <p id="sfDaysNota" style="margin:.3rem 0 0;font-size:.74rem;color:var(--muted)"></p>
+        </div>
         <div class="form-group"><label>Ativo</label>
           <select id="sfActive"><option value="1"${s?.active!==false?' selected':''}>✅ Ativo</option><option value="0"${s?.active===false?' selected':''}>⛔ Inativo</option></select>
         </div>
       </div>
       <div class="form-row full"><div class="form-group"><label>Descrição</label><input id="sfDesc" value="${s?.desc||''}"/></div></div>
-      <div class="form-row" style="margin-top:.4rem">
+      <div style="margin-top:1.2rem">
+        <div style="font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.6rem">Insumos consumidos</div>
+        <div id="sfRecipeList"></div>
+        <button class="btn-ghost" style="font-size:.76rem;margin-top:.4rem" onclick="addRecipeRow()">+ Adicionar insumo</button>
+      </div>
+      <div class="form-row" style="margin-top:1.2rem">
         <div style="flex:1;font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;align-self:center">Preços</div>
       </div>
       <div class="svc-price-grid" id="sfPriceGrid">
@@ -6142,12 +6332,13 @@ function openServiceForm(id) {
         <div id="sfHeadPq" style="font-family:'Montserrat',sans-serif;font-size:.68rem;font-weight:700;color:var(--muted);text-align:center;padding-bottom:4px">🚗 Pequeno</div>
         <div id="sfHeadGr" class="sf-col-gr" style="font-family:'Montserrat',sans-serif;font-size:.68rem;font-weight:700;color:var(--muted);text-align:center;padding-bottom:4px">🚙 Grande</div>
         <div style="font-size:.75rem;color:var(--muted);padding-top:6px">Custo (R$)</div>
-        <div><input id="sfCostPq" type="number" value="${s?._cost_pq||0}" min="0" step="10"/></div>
-        <div class="sf-col-gr"><input id="sfCostGr" type="number" value="${s?._cost_gr||0}" min="0" step="10"/></div>
+        <div><input id="sfCostPq" type="number" value="${s?._cost_pq||0}" min="0" step="10" readonly/></div>
+        <div class="sf-col-gr"><input id="sfCostGr" type="number" value="${s?._cost_gr||0}" min="0" step="10" readonly/></div>
         <div style="font-size:.75rem;color:var(--muted);padding-top:6px">Venda (R$)</div>
         <div><input id="sfSalePq" type="number" value="${s?.pq||0}" min="0" step="10"/></div>
         <div class="sf-col-gr"><input id="sfSaleGr" type="number" value="${s?.gr||0}" min="0" step="10"/></div>
       </div>
+      <p id="sfCostNota" style="margin:.5rem 0 0;font-size:.78rem;color:var(--muted)"></p>
       <div style="margin-top:1.2rem">
         <div style="font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.6rem">Perguntas Frequentes (FAQ)</div>
         <div id="sfFaqList">${(s?.faqs||[]).map((f,i)=>`
@@ -6164,6 +6355,8 @@ function openServiceForm(id) {
       </div>
     </div>`;
   _sfToggleVeiculo();
+  _sfPrazo();
+  _sfRecalcCusto();   // a nota tem que dizer de onde vem o custo desde o início
   wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -6175,7 +6368,7 @@ function _sfToggleVeiculo() {
   const headPq = document.getElementById('sfHeadPq');
   if (grid) grid.style.gridTemplateColumns = isMoto ? '1fr 1fr' : '1fr 1fr 1fr';
   if (headPq) headPq.textContent = isMoto ? '🏍️ Preço único' : '🚗 Pequeno';
-  document.querySelectorAll('#sfPriceGrid .sf-col-gr').forEach(el => {
+  document.querySelectorAll('#sfPriceGrid .sf-col-gr, #sfRecipeList .sf-rec-gr').forEach(el => {
     el.style.display = isMoto ? 'none' : '';
   });
 }
@@ -6218,14 +6411,12 @@ async function saveService(id) {
   const active  = document.getElementById('sfActive')?.value === '1';
   const veiculo = document.getElementById('sfVeiculo')?.value === 'moto' ? 'moto' : 'carro';
   const desc    = document.getElementById('sfDesc')?.value.trim();
-  let costPq  = parseFloat(document.getElementById('sfCostPq')?.value) || 0;
-  let costGr  = parseFloat(document.getElementById('sfCostGr')?.value) || 0;
   let salePq  = parseFloat(document.getElementById('sfSalePq')?.value) || 0;
   let saleGr  = parseFloat(document.getElementById('sfSaleGr')?.value) || 0;
 
   // Moto tem preço único: o campo "Pequeno" vale para os dois portes,
   // assim todo o cálculo existente (s[carSize]) continua funcionando.
-  if (veiculo === 'moto') { costGr = costPq; saleGr = salePq; }
+  if (veiculo === 'moto') { saleGr = salePq; }
 
   if (!name) { alert('Informe o nome do serviço.'); return; }
   if (veiculo === 'moto') {
@@ -6237,12 +6428,26 @@ async function saveService(id) {
 
   const faqs = _getFaqRows();
   const key = id || slugify(name);
+  const receita = _getRecipeRows();
+
+  // Com o custo vindo dos insumos, recalcular aqui é o que garante que o salvo
+  // é a conta — e não um número que ficou na tela.
+  const c = _sfCustoDosInsumos(receita);
+  const costPq = c.pq;
+  const costGr = veiculo === 'moto' ? c.pq : c.gr;
+
   const data = { name, icon, cat, veiculo, daysExtra: days, active, desc,
     pricing: { pq: { cost: costPq, sale: salePq }, gr: { cost: costGr, sale: saleGr } },
     ...(faqs.length ? { faqs } : {}) };
 
   try {
     await _servicesRef.child(key).set(data);
+    // A receita é do serviço, mas mora em stockRecipes/<id> — é de lá que a tela
+    // de Estoque e a baixa automática (deductStock) leem. `set` e não `update`:
+    // tirar um insumo da lista tem que tirar do banco, senão ele ressuscita.
+    if (_stockRecipesRef) {
+      await _stockRecipesRef.child(key).set(Object.keys(receita).length ? receita : null);
+    }
     document.getElementById('svcFormWrap').innerHTML = '';
   } catch(e) { alert('Erro ao salvar: ' + e.message); }
 }
@@ -6789,13 +6994,32 @@ function renderAdminEstoque() {
       const lowStock = products.filter(p => p.minQty > 0 && p.qty < p.minQty);
       const totalStockVal = products.reduce((s, p) => s + (p.qty * (p.costPerUnit || 0)), 0);
 
+      // Ritmo real de consumo, medido nos serviços concluídos dos últimos 60
+      // dias. Dois meses porque serviço de estética não é diário: numa janela
+      // curta, um insumo usado só em polimento pareceria ter consumo zero.
+      const hoje = new Date();
+      const porDia = consumoPorDia(getBookings(), recipes, JANELA_CONSUMO_DIAS, hoje);
+      products.forEach(p => {
+        p._porDia = porDia[p.id] || 0;
+        p._prev = previsaoCompra(p.qty, p.minQty, p._porDia, hoje);
+      });
+      const comprarLogo = products
+        .filter(p => p._prev && !p._prev.jaAbaixo && p._prev.dias <= DIAS_AVISO_COMPRA)
+        .sort((a, b) => a._prev.dias - b._prev.dias);
+
       el.innerHTML = `
         <h2>📦 Controle de Estoque</h2>
 
         ${lowStock.length ? `
         <div style="background:rgba(239,68,68,.1);border:1px solid var(--red);border-radius:10px;padding:.8rem 1.1rem;margin-bottom:1.2rem;font-size:.83rem;color:var(--red)">
           ⚠️ <strong>${lowStock.length} insumo${lowStock.length > 1 ? 's abaixo' : ' abaixo'} do estoque mínimo:</strong>
-          ${lowStock.map(p => `<strong>${esc(p.name)}</strong> (${p.qty} ${p.unit})`).join(' · ')}
+          ${lowStock.map(p => `<strong>${esc(p.name)}</strong> (${esc(_fmtSaldo(p))})`).join(' · ')}
+        </div>` : ''}
+
+        ${comprarLogo.length ? `
+        <div style="background:rgba(245,158,11,.10);border:1px solid #f59e0b;border-radius:10px;padding:.8rem 1.1rem;margin-bottom:1.2rem;font-size:.83rem;color:#f59e0b">
+          🛒 <strong>Comprar nos próximos ${DIAS_AVISO_COMPRA} dias</strong>, no ritmo dos últimos ${JANELA_CONSUMO_DIAS} dias:
+          ${comprarLogo.map(p => `<strong>${esc(p.name)}</strong> (${p._prev.dias === 0 ? 'hoje' : 'em ' + p._prev.dias + ' dia' + (p._prev.dias > 1 ? 's' : '')})`).join(' · ')}
         </div>` : ''}
 
         <div style="display:flex;gap:.7rem;flex-wrap:wrap;margin-bottom:1.2rem;align-items:center">
@@ -6807,18 +7031,21 @@ function renderAdminEstoque() {
         <div style="overflow-x:auto;margin-bottom:2.5rem">
           <table class="history-table" style="min-width:680px">
             <thead><tr>
-              <th>Produto</th><th>Unid.</th><th>Saldo</th><th>Custo / Unid.</th><th>Valor em Estoque</th><th>Mínimo</th><th></th>
+              <th>Produto</th><th>Saldo</th><th>Mínimo</th><th>Custo / Unid.</th><th>Valor em Estoque</th><th>Dura até</th><th></th>
             </tr></thead>
             <tbody>
               ${products.length ? products.map(p => {
                 const low = p.minQty > 0 && p.qty < p.minQty;
                 return `<tr style="${low ? 'background:rgba(239,68,68,.05)' : ''}">
                   <td style="font-weight:500${low ? ';color:var(--red)' : ''}">${low ? '⚠️ ' : ''}${esc(p.name)}</td>
-                  <td style="color:var(--muted)">${esc(p.unit)}</td>
-                  <td style="font-weight:700${low ? ';color:var(--red)' : ''}">${p.qty}</td>
-                  <td>R$ ${(p.costPerUnit || 0).toFixed(4)}</td>
+                  <td style="font-weight:700${low ? ';color:var(--red)' : ''}">${esc(_fmtSaldo(p))}</td>
+                  <td style="color:var(--muted)">${p.minQty > 0 ? esc(_fmtSaldo(p, p.minQty)) : '—'}</td>
+                  <td>R$ ${(p.costPerUnit || 0).toFixed(4)} / ${esc(p.unit)}
+                    ${p.purchasePrice > 0 && p.purchaseUnitLabel
+                      ? `<div style="font-size:.72rem;color:var(--muted)">R$ ${p.purchasePrice.toFixed(2)} / ${esc(p.purchaseUnitLabel)}</div>`
+                      : ''}</td>
                   <td style="color:var(--muted)">R$ ${(p.qty * (p.costPerUnit || 0)).toFixed(2)}</td>
-                  <td style="color:var(--muted)">${p.minQty || '—'}</td>
+                  <td style="color:var(--muted);font-size:.78rem">${_textoPrevisao(p)}</td>
                   <td style="white-space:nowrap;text-align:right">
                     <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="restockProduct('${p.id}','${esc(p.name).replace(/'/g,"\\'")  }')">📥 Repor</button>
                     <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="openProductForm('${p.id}')">✏️</button>
@@ -6869,47 +7096,264 @@ function renderAdminEstoque() {
     .catch(e => { document.getElementById('adminContent').innerHTML = `<p style="color:var(--red)">Erro: ${e.message}</p>`; });
 }
 
+// ── Custo do insumo: a pessoa sabe o preço do GALÃO, não o preço do ml ──────
+//
+// O pedido foi textual: "eu compro em galão de 5 l e sei o preço do galão de 5 l,
+// não deveria ter que ficar fazendo a conversão para o cálculo do uso". Antes o
+// campo editável era `costPerUnit` com passo de 0,0001 — sabendo que o galão
+// custa R$ 180, era preciso calcular 180 ÷ 5000 = 0,036 na mão, a cada cadastro.
+//
+// Agora o preço da unidade de compra é o caminho principal e `costPerUnit` é
+// DERIVADO, com a conta à vista para conferência. O campo por unidade de uso
+// continua existindo — quem compra a granel precisa dele.
+//
+// `costPerUnit` segue sendo o que as receitas leem: nada de dado antigo quebra.
+
+
+// Preço mostrado ao abrir. Quando o produto já foi salvo pelo caminho novo, é o
+// preço guardado. Quando não, é uma RECONSTITUIÇÃO a partir do custo por unidade
+// — e a ida e volta fecha no mesmo número, então abrir a tela de um insumo
+// antigo não mexe no custo que ele já tinha.
+function _spPrecoInicial(p) {
+  if (p.purchasePrice > 0) return p.purchasePrice;
+  const c = parseFloat(p.costPerUnit) || 0;
+  if (!(c > 0)) return '';
+  // Sem compra salva, o múltiplo inicial é 1 da unidade de uso — então o preço
+  // da "unidade de compra" é o próprio custo por unidade, e a conta fecha igual.
+  const f = parseFloat(p.purchaseConversionFactor) || 1;
+  return Math.round(c * f * 100) / 100;
+}
+
+// Unidades e suas famílias. Converter só faz sentido dentro da mesma família:
+// comprar em kg e usar em ml exigiria a densidade do produto, que o sistema não
+// tem e não deve adivinhar — 1 kg de cera não é 1 litro de cera.
+const SP_UNIDADES = {
+  ml: { familia: 'volume', naBase: 1    , nome: 'ml' },
+  L:  { familia: 'volume', naBase: 1000 , nome: 'L'  },
+  g:  { familia: 'massa' , naBase: 1    , nome: 'g'  },
+  kg: { familia: 'massa' , naBase: 1000 , nome: 'kg' },
+  un: { familia: 'conta' , naBase: 1    , nome: 'un' },
+  h:  { familia: 'tempo' , naBase: 1    , nome: 'h'  },
+};
+
+// Quantas unidades de USO cabem na unidade de COMPRA. "5" + "L", usando ml → 5000.
+// É o número que ela digitava à mão antes.
+function _spFatorCompra(multiplo, unidadeCompra, unidadeUso) {
+  const m = parseFloat(multiplo);
+  const a = SP_UNIDADES[unidadeCompra], b = SP_UNIDADES[unidadeUso];
+  if (!(m > 0) || !a || !b || a.familia !== b.familia) return null;
+  return _spArredonda(m * a.naBase / b.naBase);
+}
+
+// Unidades de compra que fazem sentido para uma unidade de uso. Oferecer kg para
+// um insumo medido em ml é oferecer um erro.
+function _spUnidadesCompra(unidadeUso) {
+  const fam = SP_UNIDADES[unidadeUso]?.familia;
+  return Object.keys(SP_UNIDADES).filter(u => SP_UNIDADES[u].familia === fam);
+}
+
+// Produto antigo guardou só o fator (5000). Reconstitui "5 L" para a tela, dando
+// preferência à unidade maior quando ela divide certo — ninguém diz "compro
+// 5000 ml", diz "compro um galão de 5 litros".
+function _spCompraDeFator(fator, unidadeUso) {
+  const f = parseFloat(fator);
+  if (!(f > 0)) return null;
+  const candidatas = _spUnidadesCompra(unidadeUso)
+    .sort((x, y) => SP_UNIDADES[y].naBase - SP_UNIDADES[x].naBase);
+  for (const u of candidatas) {
+    const mult = _spArredonda(f * (SP_UNIDADES[unidadeUso]?.naBase || 1) / SP_UNIDADES[u].naBase);
+    if (mult >= 1 && Number.isInteger(mult)) return { multiplo: mult, unidade: u };
+  }
+  return { multiplo: f, unidade: unidadeUso };
+}
+
+function _spArredonda(v) { return Math.round(v * 1e6) / 1e6; }
+
+// A conta, num lugar só. A tela e o salvamento chamam esta função — duas cópias
+// da mesma divisão é como o custo salvo passa a divergir do custo mostrado.
+// Devolve null quando não há como derivar, que é diferente de derivar zero.
+function _spCustoDerivado(preco, fator) {
+  if (!(preco > 0) || !(fator > 0)) return null;
+  return _spArredonda(preco / fator);
+}
+
+// Dinheiro por unidade de uso costuma ter mais de 2 casas (R$ 0,036/ml). Mostra
+// 4 casas, e mais se 4 arredondariam para zero — "R$ 0,0000" não informa nada.
+function _spMoeda(v) {
+  let casas = 4;
+  while (casas < 8 && Number(v.toFixed(casas)) === 0 && v > 0) casas++;
+  return v.toFixed(casas).replace('.', ',');
+}
+
+// Como a compra aparece ao abrir: o que foi salvo, a reconstituição do fator
+// antigo, ou "1 <unidade de uso>".
+//
+// O padrão 1 existe para que insumo antigo — que só tem custo por unidade de uso
+// — abra já coerente: "1 ml custa R$ 0,03" dá exatamente o mesmo custo que
+// estava salvo. Sem isso, tirar a opção de informar o custo à mão obrigaria a
+// recadastrar a compra de cada um dos insumos antes de poder salvar qualquer
+// coisa.
+function _spCompraInicial(p) {
+  const uso = p.unit || 'ml';
+  if (p.purchaseMultiple > 0 && SP_UNIDADES[p.purchaseUnit]) {
+    return { multiplo: p.purchaseMultiple, unidade: p.purchaseUnit };
+  }
+  const velho = _spCompraDeFator(p.purchaseConversionFactor, uso);
+  if (velho) return velho;
+  return { multiplo: 1, unidade: uso };
+}
+
+// Quantas unidades de USO cabem em UMA unidade de compra — 1 L = 1000 ml.
+// Diferente do fator da embalagem (5 L = 5000 ml): o saldo é contado na unidade
+// ("tenho 17,5 litros"), não em embalagens.
+function _spFatorUnidade(p) {
+  const c = _spCompraInicial(p);
+  return _spFatorCompra(1, c.unidade, p.unit || 'ml') || 1;
+}
+
+// Saldo e mínimo são guardados na unidade de USO (é nela que a receita desconta)
+// e mostrados na unidade de COMPRA, que é como ela conta na prateleira: "tenho
+// 3,5 galões", não "tenho 17500 ml".
+function _spParaCompra(valorBase, fator) {
+  const v = (parseFloat(valorBase) || 0) / (fator || 1);
+  return Math.round(v * 1e4) / 1e4;
+}
+function _spParaUso(valorCompra, fator) {
+  return Math.round((parseFloat(valorCompra) || 0) * (fator || 1) * 1e4) / 1e4;
+}
+
+function _spOpcoesCompra(unidadeUso, escolhida) {
+  return _spUnidadesCompra(unidadeUso)
+    .map(u => `<option value="${u}"${u === escolhida ? ' selected' : ''}>${SP_UNIDADES[u].nome}</option>`)
+    .join('');
+}
+
+// Trocar a unidade de uso muda quais unidades de compra fazem sentido. Deixar
+// "kg" selecionado depois de mudar o uso para ml daria uma conversão impossível.
+function _spSincronizaUnidades() {
+  const uso = document.getElementById('spUnit')?.value || 'ml';
+  const sel = document.getElementById('spPurchaseUnit');
+  if (sel) {
+    const antes = sel.value;
+    const validas = _spUnidadesCompra(uso);
+    sel.innerHTML = _spOpcoesCompra(uso, validas.includes(antes) ? antes : uso);
+  }
+  _spRecalcCusto();
+}
+
+// O custo por unidade de uso é SEMPRE a divisão do preço de compra pela
+// conversão. Não há opção de informá-lo à mão: duas origens para o mesmo número
+// é como o custo do serviço passa a discordar do que ela pagou de verdade.
+function _spRecalcCusto() {
+  const elCusto = document.getElementById('spCost');
+  const elNota  = document.getElementById('spCostNota');
+  if (!elCusto || !elNota) return;
+
+  const unidade  = document.getElementById('spUnit')?.value || 'ml';
+  const multiplo = parseFloat(document.getElementById('spPurchaseMult')?.value) || 0;
+  const uCompra  = document.getElementById('spPurchaseUnit')?.value || unidade;
+  const preco    = parseFloat(document.getElementById('spPurchasePrice')?.value) || 0;
+  const fator    = _spFatorCompra(multiplo, uCompra, unidade) || 0;
+  const rotulo   = multiplo > 0 ? (multiplo + ' ' + uCompra) : 'unidade de compra';
+
+  // Saldo e mínimo são contados na UNIDADE de compra (L), não na embalagem
+  // (galão de 5 L): "tenho 17,5 litros" é como se conta na prateleira.
+  ['spQtyUn', 'spMinUn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = uCompra;
+  });
+  const fatorUn = _spFatorCompra(1, uCompra, unidade) || 0;
+  const elQN = document.getElementById('spQtyNota');
+  if (elQN) {
+    const saldo = parseFloat(document.getElementById('spQty')?.value) || 0;
+    const minimo = parseFloat(document.getElementById('spMin')?.value) || 0;
+    const emb = fatorUn > 0 && fator > 0 ? ' (' + Math.round(saldo * fatorUn / fator * 100) / 100
+      + ' × ' + rotulo + ')' : '';
+    elQN.textContent = fatorUn > 0 && (saldo > 0 || minimo > 0)
+      ? 'Em ' + unidade + ': ' + _spParaUso(saldo, fatorUn) + emb
+        + ' · alerta em ' + _spParaUso(minimo, fatorUn) + ' ' + unidade + '.'
+      : 'Conte em ' + uCompra + ' — pode usar decimal (17,5 = dezessete e meio).';
+  }
+
+  const custo = _spCustoDerivado(preco, fator);
+  if (custo === null) {
+    elCusto.value = 0;
+    elNota.textContent = preco > 0
+      ? 'Falta o múltiplo de compra — quantos ' + (uCompra || unidade) + ' vêm na embalagem.'
+      : 'Preencha o múltiplo, a unidade e o preço de compra: é daí que sai o custo de cada serviço.';
+    return;
+  }
+
+  elCusto.value = custo;
+  // A conversão aparece inteira quando a unidade de compra difere da de uso:
+  // "5 L = 5000 ml" é a parte que ela não precisa mais calcular.
+  const conversao = uCompra === unidade ? (fator + ' ' + unidade) : (rotulo + ' = ' + fator + ' ' + unidade);
+  elNota.textContent = 'Calculado: R$ ' + preco.toFixed(2).replace('.', ',') + ' ÷ (' + conversao
+    + ') = R$ ' + _spMoeda(custo) + ' por ' + unidade + '.';
+}
+
+function _spMarcaDeriva() { _spRecalcCusto(); }
+
 function openProductForm(id) {
   const body = document.getElementById('stockProductModalBody');
   if (!body) return;
 
   const render = p => {
+    // Produto já salvo pelo caminho novo (tem preço guardado) continua calculado.
+    // Produto antigo abre no modo "informado direto", para o custo salvo não
+    // mudar sozinho só por eu ter aberto a tela.
     body.innerHTML = `
       <div class="form-row full"><div class="form-group"><label>Nome do insumo *</label>
         <input id="spName" value="${esc(p.name || '')}"/>
       </div></div>
       <div class="form-row">
         <div class="form-group"><label>Unidade de medida</label>
-          <select id="spUnit" class="form-control">
+          <select id="spUnit" class="form-control" onchange="_spSincronizaUnidades()">
             <option value="ml" ${(p.unit||'ml')==='ml'?'selected':''}>ml</option>
             <option value="g"  ${p.unit==='g' ?'selected':''}>g (gramas)</option>
             <option value="h"  ${p.unit==='h' ?'selected':''}>h (horas)</option>
             <option value="un" ${p.unit==='un'?'selected':''}>un (unidade)</option>
           </select>
         </div>
-        <div class="form-group"><label>Saldo atual</label>
-          <input id="spQty" type="number" value="${p.qty ?? 0}" min="0" step="0.01"/>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Múltiplo de compra</label>
+          <input id="spPurchaseMult" type="number" value="${_spCompraInicial(p).multiplo}"
+            min="0" step="0.01" placeholder="Ex: 5" oninput="_spMarcaDeriva()"/>
+        </div>
+        <div class="form-group"><label>Unidade de compra</label>
+          <select id="spPurchaseUnit" class="form-control" onchange="_spMarcaDeriva()">
+            ${_spOpcoesCompra(p.unit || 'ml', _spCompraInicial(p).unidade)}
+          </select>
         </div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Custo por unidade (R$)</label>
-          <input id="spCost" type="number" value="${p.costPerUnit ?? 0}" min="0" step="0.0001" placeholder="0.0500"/>
+        <div class="form-group"><label>Preço de compra (R$)</label>
+          <input id="spPurchasePrice" type="number" value="${_spPrecoInicial(p)}"
+            min="0" step="0.01" placeholder="Ex: 180.00" oninput="_spMarcaDeriva()"/>
         </div>
-        <div class="form-group"><label>Estoque mínimo (alerta)</label>
-          <input id="spMin" type="number" value="${p.minQty ?? 0}" min="0" step="1"/>
+        <div class="form-group"><label>Custo por unidade de uso (R$)</label>
+          <input id="spCost" type="number" value="${p.costPerUnit ?? 0}" min="0" step="0.0001" readonly/>
         </div>
       </div>
+      <p id="spCostNota" style="margin:-.4rem 0 .9rem;font-size:.78rem;color:var(--muted)"></p>
       <div class="form-row">
-        <div class="form-group"><label>Unidade de compra usual (opcional)</label>
-          <input id="spPurchaseLabel" value="${esc(p.purchaseUnitLabel || '')}" placeholder="Ex: Galão 5L"/>
+        <div class="form-group">
+          <label>Saldo atual (<span id="spQtyUn">${esc(_spCompraInicial(p).unidade)}</span>)</label>
+          <input id="spQty" type="number" value="${_spParaCompra(p.qty, _spFatorUnidade(p))}"
+            min="0" step="0.01" oninput="_spRecalcCusto()"/>
         </div>
-        <div class="form-group"><label>Equivale a quantas unidades de uso?</label>
-          <input id="spPurchaseFactor" type="number" value="${p.purchaseConversionFactor ?? ''}" min="0" step="0.01" placeholder="Ex: 5000"/>
+        <div class="form-group">
+          <label>Estoque mínimo (<span id="spMinUn">${esc(_spCompraInicial(p).unidade)}</span>)</label>
+          <input id="spMin" type="number" value="${_spParaCompra(p.minQty, _spFatorUnidade(p))}"
+            min="0" step="0.01" oninput="_spRecalcCusto()"/>
         </div>
       </div>
+      <p id="spQtyNota" style="margin:-.4rem 0 0;font-size:.78rem;color:var(--muted)"></p>
       <button class="btn-primary btn-full" style="margin-top:1.2rem"
         onclick="saveProduct(${id ? `'${id}'` : 'null'})">💾 Salvar</button>
     `;
+    _spRecalcCusto();
   };
 
   if (id) {
@@ -6923,22 +7367,52 @@ function openProductForm(id) {
 async function saveProduct(id) {
   const name = document.getElementById('spName')?.value.trim();
   const unit = document.getElementById('spUnit')?.value || 'ml';
-  const qty  = parseFloat(document.getElementById('spQty')?.value)  || 0;
-  const cost = parseFloat(document.getElementById('spCost')?.value) || 0;
-  const min  = parseFloat(document.getElementById('spMin')?.value)  || 0;
-  const purchaseUnitLabel = document.getElementById('spPurchaseLabel')?.value.trim() || '';
-  const purchaseConversionFactor = parseFloat(document.getElementById('spPurchaseFactor')?.value) || 0;
+  // Saldo e mínimo chegam na unidade de COMPRA e são guardados na de USO, que é
+  // a unidade em que a receita desconta.
+  const qtyCompra = parseFloat(document.getElementById('spQty')?.value) || 0;
+  const minCompra = parseFloat(document.getElementById('spMin')?.value) || 0;
+  const purchaseMultiple = parseFloat(document.getElementById('spPurchaseMult')?.value) || 0;
+  const purchaseUnit     = document.getElementById('spPurchaseUnit')?.value || unit;
+  const purchasePrice    = parseFloat(document.getElementById('spPurchasePrice')?.value) || 0;
+  // O fator continua sendo gravado: é dele que a REPOSIÇÃO depende para aceitar
+  // entrada em galões. Só deixou de ser digitado — agora sai de 5 × L ÷ ml.
+  const purchaseConversionFactor = _spFatorCompra(purchaseMultiple, purchaseUnit, unit) || 0;
+  const purchaseUnitLabel = purchaseMultiple > 0 ? (purchaseMultiple + ' ' + purchaseUnit) : '';
   if (!name) { uiAlert('Campo obrigatório', 'Informe o nome do insumo.'); return; }
+
+  // O custo por unidade de uso é SEMPRE a divisão. Recalcular aqui, e não ler o
+  // campo da tela, é o que garante que o salvo é a conta.
+  const cost = _spCustoDerivado(purchasePrice, purchaseConversionFactor);
+  if (cost === null) {
+    uiAlert('Falta a compra deste insumo',
+      'O custo por ' + unit + ' é sempre calculado a partir da compra, e é esse número que ' +
+      'forma o custo de cada serviço. Informe o múltiplo (quantos ' + purchaseUnit +
+      ' vêm na embalagem) e o preço pago.\n\n' +
+      'Se você compra a granel, use múltiplo 1 e o preço de 1 ' + purchaseUnit + '.');
+    return;
+  }
+
+  // Saldo e mínimo vêm na UNIDADE (L), não na embalagem: 1 L, não 5 L.
+  const fatorUnidade = _spFatorCompra(1, purchaseUnit, unit) || 1;
+  const qty = _spParaUso(qtyCompra, fatorUnidade);
+  const min = _spParaUso(minCompra, fatorUnidade);
 
   const productId = id || name.toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
   const payload = { name, unit, qty, costPerUnit: cost, minQty: min, updatedAt: new Date().toISOString() };
-  // Unidade de compra é opcional e só faz sentido reter quando os dois campos existem
-  // (fail-open: salva mesmo parcial, mas restockProduct só oferece a opção quando ambos existem).
-  if (purchaseUnitLabel)         payload.purchaseUnitLabel = purchaseUnitLabel;
+  // Data da contagem: é a partir dela que o saldo passa a ser consumido pelas
+  // vendas. Sem registrar, a projeção de quando comprar não teria âncora e não
+  // haveria como dizer "contado em tal dia" quando o número não bater.
+  payload.qtyDate = new Date().toISOString();
+  if (purchaseUnitLabel)            payload.purchaseUnitLabel = purchaseUnitLabel;
   if (purchaseConversionFactor > 0) payload.purchaseConversionFactor = purchaseConversionFactor;
+  if (purchaseMultiple > 0)         payload.purchaseMultiple = purchaseMultiple;
+  if (purchaseMultiple > 0)         payload.purchaseUnit = purchaseUnit;
+  // Guardar o preço é o que faz a tela reabrir com "R$ 180" em vez de obrigar a
+  // reconstituir o valor a partir do custo por ml.
+  if (purchasePrice > 0)            payload.purchasePrice = purchasePrice;
 
   try {
     await _stockRef.child(productId).set(payload);
@@ -7055,29 +7529,114 @@ async function _doSeedStockDefaults() {
 }
 
 // Deduz insumos do estoque ao concluir um agendamento
+// Quanto um agendamento consome de cada insumo, somando os serviços dele.
+//
+// A soma importa: antes isto vivia dentro do deductStock escrevendo
+// `updates[pid] = saldo - consumo` dentro de um forEach de serviços, então dois
+// serviços do MESMO agendamento usando o mesmo insumo faziam o segundo
+// sobrescrever o primeiro — o consumo de um deles sumia do estoque.
+function consumoDoAgendamento(booking, recipes) {
+  const svcIds = (booking.services || [booking.service]).filter(Boolean);
+  const size = booking.carSize || 'pq';
+  const total = {};
+  svcIds.forEach(svcId => {
+    const recipe = (recipes || {})[svcId];
+    if (!recipe) return;
+    Object.entries(recipe).forEach(([pid, amounts]) => {
+      const consume = amounts[size] ?? amounts.pq ?? 0;
+      if (consume > 0) total[pid] = (total[pid] || 0) + consume;
+    });
+  });
+  return total;
+}
+
 async function deductStock(booking) {
   if (!_stockRef || !_stockRecipesRef) return;
-  const svcIds = (booking.services || [booking.service]).filter(Boolean);
-  const size   = booking.carSize || 'pq';
   try {
     const [stockSnap, recipesSnap] = await Promise.all([
       _stockRef.once('value'),
       _stockRecipesRef.once('value'),
     ]);
-    const stock   = stockSnap.val()   || {};
-    const recipes = recipesSnap.val() || {};
+    const stock = stockSnap.val() || {};
+    const consumo = consumoDoAgendamento(booking, recipesSnap.val() || {});
     const updates = {};
-    svcIds.forEach(svcId => {
-      const recipe = recipes[svcId];
-      if (!recipe) return;
-      Object.entries(recipe).forEach(([pid, amounts]) => {
-        const consume = amounts[size] ?? amounts.pq ?? 0;
-        const current = stock[pid]?.qty ?? 0;
-        updates[pid + '/qty'] = +Math.max(0, current - consume).toFixed(4);
-      });
+    Object.entries(consumo).forEach(([pid, qtd]) => {
+      const current = stock[pid]?.qty ?? 0;
+      updates[pid + '/qty'] = +Math.max(0, current - qtd).toFixed(4);
     });
     if (Object.keys(updates).length) await _stockRef.update(updates);
   } catch(e) { console.warn('deductStock:', e); }
+}
+
+// Consumo médio POR DIA de cada insumo, medido nos serviços realizados.
+//
+// Só agendamento concluído conta: é o que de fato tirou produto da prateleira, e
+// é o mesmo critério da baixa automática. Agendamento futuro ou cancelado não
+// consumiu nada. A janela é em dias corridos, não em número de serviços — o que
+// interessa é "quanto tempo o que eu tenho ainda dura".
+function consumoPorDia(bookings, recipes, janelaDias, hoje) {
+  const fim = hoje instanceof Date ? hoje : new Date(hoje);
+  const ini = new Date(fim.getTime() - janelaDias * 86400000);
+  const total = {};
+  (bookings || []).forEach(b => {
+    if (!b || b.status !== 'completed') return;
+    const quando = b.completedAt ? new Date(b.completedAt) : null;
+    if (!quando || isNaN(quando) || quando < ini || quando > fim) return;
+    Object.entries(consumoDoAgendamento(b, recipes)).forEach(([pid, q]) => {
+      total[pid] = (total[pid] || 0) + q;
+    });
+  });
+  const porDia = {};
+  Object.entries(total).forEach(([pid, q]) => { porDia[pid] = q / janelaDias; });
+  return porDia;
+}
+
+// Dois meses de janela porque serviço de estética não é diário: numa janela
+// curta, um insumo usado só em polimento pareceria ter consumo zero e nunca
+// entraria no aviso de compra.
+const JANELA_CONSUMO_DIAS = 60;
+const DIAS_AVISO_COMPRA = 14;
+
+// Saldo (ou outro valor em unidade de uso) escrito na unidade de COMPRA, que é
+// como ela conta na prateleira. Decimal, porque meio galão existe.
+function _fmtSaldo(p, valorBase) {
+  const base = parseFloat(valorBase === undefined ? p.qty : valorBase) || 0;
+  const uCompra = SP_UNIDADES[p.purchaseUnit] ? p.purchaseUnit : (p.unit || '');
+  const fatorUn = _spFatorCompra(1, uCompra, p.unit || 'ml') || 1;
+  const n = Math.round((base / fatorUn) * 100) / 100;
+  return String(n).replace('.', ',') + ' ' + uCompra;
+}
+
+// "Dura até" numa frase curta. Sem consumo medido não inventa prazo: diz que
+// não há consumo registrado, que é informação diferente de "acaba hoje".
+function _textoPrevisao(p) {
+  if (!p._prev) {
+    return p._porDia > 0 ? '—' : '<span title="Nenhum serviço concluído nos últimos '
+      + JANELA_CONSUMO_DIAS + ' dias usou este insumo">sem consumo registrado</span>';
+  }
+  if (p._prev.jaAbaixo) return '<strong style="color:var(--red)">repor agora</strong>';
+  const d = p._prev.data;
+  const data = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+  const cor = p._prev.dias <= DIAS_AVISO_COMPRA ? '#f59e0b' : 'var(--muted)';
+  return '<span style="color:' + cor + '">' + data + ' (' + p._prev.dias + ' dia'
+    + (p._prev.dias === 1 ? '' : 's') + ')</span>';
+}
+
+// Quando o insumo chega no estoque mínimo, no ritmo medido.
+//
+// Devolve null quando não dá para projetar — sem consumo registrado, ou já
+// abaixo do mínimo. Null é diferente de "zero dias": uma tela que mostra "0
+// dias" para um produto que ninguém usa faz comprar o que não precisa.
+function previsaoCompra(qty, minQty, porDia, hoje) {
+  const saldo = parseFloat(qty) || 0;
+  const minimo = parseFloat(minQty) || 0;
+  const ritmo = parseFloat(porDia) || 0;
+  if (ritmo <= 0) return null;
+  const folga = saldo - minimo;
+  if (folga <= 0) return { dias: 0, data: new Date(hoje), jaAbaixo: true };
+  const dias = Math.floor(folga / ritmo);
+  const data = new Date(new Date(hoje).getTime() + dias * 86400000);
+  return { dias, data, jaAbaixo: false };
 }
 
 function renderAdminConfig() {
