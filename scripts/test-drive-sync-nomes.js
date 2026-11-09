@@ -17,9 +17,9 @@ const path = require('path');
 // Carrega o .gs inteiro e devolve as funções puras. As declarações ficam
 // intactas (nada é transformado em expressão), senão uma não veria a outra.
 const fonte = fs.readFileSync(path.join(__dirname, 'drive-sync.gs'), 'utf8');
-const puras = ['classificar', 'legendaDe', 'limparPrefixos', 'emProcesso', 'intercalar', 'maiuscula', 'baseDoNome', 'extensaoDe'];
+const puras = ['classificar', 'legendaDe', 'limparPrefixos', 'emProcesso', 'intercalar', 'maiuscula', 'baseDoNome', 'extensaoDe', 'tipoDe'];
 const mod = new Function(fonte + '\nreturn {' + puras.join(',') + '};')();
-const { classificar, legendaDe, limparPrefixos, emProcesso, intercalar, baseDoNome, extensaoDe } = mod;
+const { classificar, legendaDe, limparPrefixos, emProcesso, intercalar, baseDoNome, extensaoDe, tipoDe } = mod;
 
 // ── ruído que o Drive e o WhatsApp acrescentam ─────────────────────────
 assert.strictEqual(limparPrefixos('Cópia de fusca-preto depois 3.jpg'), 'fusca-preto depois 3.jpg');
@@ -267,6 +267,52 @@ assert.deepStrictEqual(r, ['a', 'b'], 'avança dentro da pasta em vez de perder 
 // ── extensão, para o relatório dizer por que algo não serve ────────────
 assert.strictEqual(extensaoDe('foto.HEIC'), 'heic', 'minúscula');
 assert.strictEqual(extensaoDe('fusca-preto.jpg.heic'), 'heic', 'vale a última');
-assert.strictEqual(extensaoDe('semponto'), 'semponto');
+// Esta asserção dizia `'semponto'` — ela descrevia o que a função FAZIA, não
+// o que ela DEVIA fazer, e foi justamente por isso que o bug passou: nome sem
+// ponto virava "extensão" e a foto era descartada como formato desconhecido.
+assert.strictEqual(extensaoDe('semponto'), '', 'nome sem ponto não tem extensão');
 
-console.log('drive-sync (nomes, legendas, variedade, subpastas, a regra e o teto de grupo): todos passaram');
+// ── tipo do arquivo: quem manda é o MIME do Drive, não a extensão ──────
+// O primeiro ensaio no Drive real descartou QUATRO fotos boas (dois pares
+// antes/depois de Higienização de Tecidos Carro) porque os nomes não têm
+// ponto nenhum, e a classificação antiga fazia split('.').pop() — devolvendo
+// o nome inteiro como se fosse a extensão. Estes são os nomes exatos.
+assert.strictEqual(extensaoDe('1 - Higienização de tecido Antes'), '', 'sem ponto, sem extensão');
+assert.strictEqual(extensaoDe('Up Antes costas.jpg'), 'jpg');
+assert.strictEqual(extensaoDe('.gitignore'), '', 'ponto inicial não é extensão');
+assert.strictEqual(extensaoDe('arquivo.de.varios.pontos.png'), 'png', 'vale o último');
+assert.strictEqual(extensaoDe('nome.terminando em frase longa'), '', 'não é extensão plausível');
+
+assert.strictEqual(tipoDe('1 - Higienização de tecido Antes', 'image/jpeg'), 'imagem',
+  'sem extensão no nome, mas o Drive sabe que é JPEG');
+assert.strictEqual(tipoDe('2 - Higienização de tecido Depois', 'image/jpeg'), 'imagem');
+assert.strictEqual(tipoDe('VID_20260921_123953.mp4', 'video/mp4'), 'video');
+// HEIC de iPhone entra: o que vai ao site é a miniatura que o Drive gera,
+// sempre JPEG/PNG — o formato do original nunca chega ao navegador.
+assert.strictEqual(tipoDe('IMG_4821.HEIC', 'image/heic'), 'imagem', 'HEIC entra via miniatura');
+// Documento do Google não é foto, e tem que continuar fora.
+assert.strictEqual(tipoDe('Orçamento', 'application/vnd.google-apps.spreadsheet'), 'outro');
+assert.strictEqual(tipoDe('contrato.pdf', 'application/pdf'), 'outro');
+// MIME genérico: a extensão volta a valer, como último recurso.
+assert.strictEqual(tipoDe('foto.jpg', 'application/octet-stream'), 'imagem');
+assert.strictEqual(tipoDe('clipe.mov', 'application/octet-stream'), 'video');
+assert.strictEqual(tipoDe('sem-pista', 'application/octet-stream'), 'outro');
+assert.strictEqual(tipoDe('foto.jpg', ''), 'imagem', 'MIME ausente cai na extensão');
+
+// E os quatro arquivos, agora reconhecidos, formam DOIS pares completos.
+const higienizacao = ['1 - Higienização de tecido Antes', '1 - Higienização de tecido Depois',
+                      '2 - Higienização de tecido Antes', '2 - Higienização de tecido Depois'];
+const pares = {};
+higienizacao.forEach(function (n) {
+  assert.strictEqual(tipoDe(n, 'image/jpeg'), 'imagem', n + ' tem que ser imagem');
+  const c = classificar(n);
+  assert.ok(c, 'classificar devia reconhecer: ' + n);
+  pares[c.grupo] = pares[c.grupo] || {};
+  pares[c.grupo][c.lado] = n;
+});
+assert.strictEqual(Object.keys(pares).length, 2, 'dois grupos distintos');
+Object.keys(pares).forEach(function (g) {
+  assert.ok(pares[g].antes && pares[g].depois, 'par completo em ' + g);
+});
+
+console.log('OK — roteamento, variedade e tipo de arquivo');
