@@ -6816,7 +6816,10 @@ function renderAdminEstoque() {
                   <td style="font-weight:500${low ? ';color:var(--red)' : ''}">${low ? '⚠️ ' : ''}${esc(p.name)}</td>
                   <td style="color:var(--muted)">${esc(p.unit)}</td>
                   <td style="font-weight:700${low ? ';color:var(--red)' : ''}">${p.qty}</td>
-                  <td>R$ ${(p.costPerUnit || 0).toFixed(4)}</td>
+                  <td>R$ ${(p.costPerUnit || 0).toFixed(4)}
+                    ${p.purchasePrice > 0 && p.purchaseUnitLabel
+                      ? `<div style="font-size:.72rem;color:var(--muted)">R$ ${p.purchasePrice.toFixed(2)} / ${esc(p.purchaseUnitLabel)}</div>`
+                      : ''}</td>
                   <td style="color:var(--muted)">R$ ${(p.qty * (p.costPerUnit || 0)).toFixed(2)}</td>
                   <td style="color:var(--muted)">${p.minQty || '—'}</td>
                   <td style="white-space:nowrap;text-align:right">
@@ -6869,18 +6872,136 @@ function renderAdminEstoque() {
     .catch(e => { document.getElementById('adminContent').innerHTML = `<p style="color:var(--red)">Erro: ${e.message}</p>`; });
 }
 
+// ── Custo do insumo: a pessoa sabe o preço do GALÃO, não o preço do ml ──────
+//
+// O pedido foi textual: "eu compro em galão de 5 l e sei o preço do galão de 5 l,
+// não deveria ter que ficar fazendo a conversão para o cálculo do uso". Antes o
+// campo editável era `costPerUnit` com passo de 0,0001 — sabendo que o galão
+// custa R$ 180, era preciso calcular 180 ÷ 5000 = 0,036 na mão, a cada cadastro.
+//
+// Agora o preço da unidade de compra é o caminho principal e `costPerUnit` é
+// DERIVADO, com a conta à vista para conferência. O campo por unidade de uso
+// continua existindo — quem compra a granel precisa dele.
+//
+// `costPerUnit` segue sendo o que as receitas leem: nada de dado antigo quebra.
+let _spDeriva = false;
+// Custo digitado à mão NESTA edição. É o que o automático não tem direito de
+// sobrescrever — diferente de um valor que veio do banco, que o preço novo
+// legitimamente supera.
+let _spCustoTocado = false;
+
+// Preço mostrado ao abrir. Quando o produto já foi salvo pelo caminho novo, é o
+// preço guardado. Quando não, é uma RECONSTITUIÇÃO a partir do custo por unidade
+// — útil como referência, e por isso `_spDeriva` fica falso: reconstituir e
+// derivar de volta pode diferir na última casa, e custo salvo não muda sozinho.
+function _spPrecoInicial(p) {
+  if (p.purchasePrice > 0) return p.purchasePrice;
+  const f = parseFloat(p.purchaseConversionFactor) || 0;
+  const c = parseFloat(p.costPerUnit) || 0;
+  if (f > 0 && c > 0) return Math.round(c * f * 100) / 100;
+  return '';
+}
+
+function _spArredonda(v) { return Math.round(v * 1e6) / 1e6; }
+
+// A conta, num lugar só. A tela e o salvamento chamam esta função — duas cópias
+// da mesma divisão é como o custo salvo passa a divergir do custo mostrado.
+// Devolve null quando não há como derivar, que é diferente de derivar zero.
+function _spCustoDerivado(preco, fator) {
+  if (!(preco > 0) || !(fator > 0)) return null;
+  return _spArredonda(preco / fator);
+}
+
+// Dinheiro por unidade de uso costuma ter mais de 2 casas (R$ 0,036/ml). Mostra
+// 4 casas, e mais se 4 arredondariam para zero — "R$ 0,0000" não informa nada.
+function _spMoeda(v) {
+  let casas = 4;
+  while (casas < 8 && Number(v.toFixed(casas)) === 0 && v > 0) casas++;
+  return v.toFixed(casas).replace('.', ',');
+}
+
+function _spRecalcCusto() {
+  const elCusto = document.getElementById('spCost');
+  const elNota  = document.getElementById('spCostNota');
+  const elAuto  = document.getElementById('spCostAuto');
+  if (!elCusto || !elNota) return;
+
+  const unidade = document.getElementById('spUnit')?.value || 'ml';
+  const rotulo  = document.getElementById('spPurchaseLabel')?.value.trim() || 'unidade de compra';
+  const fator   = parseFloat(document.getElementById('spPurchaseFactor')?.value) || 0;
+  const preco   = parseFloat(document.getElementById('spPurchasePrice')?.value) || 0;
+  if (elAuto) elAuto.checked = _spDeriva;
+
+  const livre = (nota) => {
+    elCusto.readOnly = false;
+    elCusto.style.background = '';
+    elNota.textContent = nota;
+  };
+
+  if (!_spDeriva) {
+    livre(preco > 0 && fator > 0
+      ? 'Informado direto. Marque a opção acima para usar R$ ' + preco.toFixed(2).replace('.', ',')
+        + ' ÷ ' + fator + ' ' + unidade + '.'
+      : 'Informado direto — para quem compra a granel ou cobra por hora.');
+    return;
+  }
+
+  if (preco > 0 && fator <= 0) {
+    livre('Falta dizer quantos ' + unidade + ' tem um "' + rotulo + '" para eu calcular.');
+    return;
+  }
+  const custo = _spCustoDerivado(preco, fator);
+  if (custo === null) {
+    livre('Preencha o preço da unidade de compra e a conversão para eu calcular.');
+    return;
+  }
+
+  elCusto.value = custo;
+  elCusto.readOnly = true;
+  elCusto.style.background = 'rgba(0,0,0,.04)';
+  elNota.textContent = 'Calculado: R$ ' + preco.toFixed(2).replace('.', ',') + ' ÷ ' + fator + ' '
+    + unidade + ' = R$ ' + _spMoeda(custo) + ' por ' + unidade + '.';
+}
+
+// Mexer no preço ou na conversão liga o cálculo — MENOS quando há um custo
+// digitado à mão nesta edição. Sem essa ressalva, quem escolheu informar o custo
+// direto e depois registrou o preço pago via o valor dele ser sobrescrito sem
+// aviso: foi o que um teste pegou. O que o automático pode apagar é valor vindo
+// do banco ou campo vazio, nunca o que a pessoa acabou de escrever.
+function _spMarcaDeriva() {
+  if (!_spCustoTocado) _spDeriva = true;
+  _spRecalcCusto();
+}
+
+function _spAlternaCalculo(ligado) {
+  _spDeriva = !!ligado;
+  // Escolher o modo na mão é decisão explícita: zera a proteção, senão a opção
+  // ficaria marcada sem efeito nenhum.
+  if (ligado) _spCustoTocado = false;
+  _spRecalcCusto();
+  if (!ligado) {
+    const el = document.getElementById('spCost');
+    if (el) { el.focus(); el.select?.(); }
+  }
+}
+
 function openProductForm(id) {
   const body = document.getElementById('stockProductModalBody');
   if (!body) return;
 
   const render = p => {
+    // Produto já salvo pelo caminho novo (tem preço guardado) continua calculado.
+    // Produto antigo abre no modo "informado direto", para o custo salvo não
+    // mudar sozinho só por eu ter aberto a tela.
+    _spDeriva = (parseFloat(p.purchasePrice) || 0) > 0;
+    _spCustoTocado = false;
     body.innerHTML = `
       <div class="form-row full"><div class="form-group"><label>Nome do insumo *</label>
         <input id="spName" value="${esc(p.name || '')}"/>
       </div></div>
       <div class="form-row">
         <div class="form-group"><label>Unidade de medida</label>
-          <select id="spUnit" class="form-control">
+          <select id="spUnit" class="form-control" onchange="_spRecalcCusto()">
             <option value="ml" ${(p.unit||'ml')==='ml'?'selected':''}>ml</option>
             <option value="g"  ${p.unit==='g' ?'selected':''}>g (gramas)</option>
             <option value="h"  ${p.unit==='h' ?'selected':''}>h (horas)</option>
@@ -6892,24 +7013,42 @@ function openProductForm(id) {
         </div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Custo por unidade (R$)</label>
-          <input id="spCost" type="number" value="${p.costPerUnit ?? 0}" min="0" step="0.0001" placeholder="0.0500"/>
+        <div class="form-group"><label>Unidade de compra &mdash; como você compra</label>
+          <input id="spPurchaseLabel" value="${esc(p.purchaseUnitLabel || '')}"
+            placeholder="Ex: Galão 5L" oninput="_spRecalcCusto()"/>
         </div>
-        <div class="form-group"><label>Estoque mínimo (alerta)</label>
-          <input id="spMin" type="number" value="${p.minQty ?? 0}" min="0" step="1"/>
+        <div class="form-group"><label>Equivale a quantas unidades de uso?</label>
+          <input id="spPurchaseFactor" type="number" value="${p.purchaseConversionFactor ?? ''}"
+            min="0" step="0.01" placeholder="Ex: 5000" oninput="_spMarcaDeriva()"/>
         </div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Unidade de compra usual (opcional)</label>
-          <input id="spPurchaseLabel" value="${esc(p.purchaseUnitLabel || '')}" placeholder="Ex: Galão 5L"/>
+        <div class="form-group"><label>Preço que você paga por essa unidade (R$)</label>
+          <input id="spPurchasePrice" type="number" value="${_spPrecoInicial(p)}"
+            min="0" step="0.01" placeholder="Ex: 180.00" oninput="_spMarcaDeriva()"/>
         </div>
-        <div class="form-group"><label>Equivale a quantas unidades de uso?</label>
-          <input id="spPurchaseFactor" type="number" value="${p.purchaseConversionFactor ?? ''}" min="0" step="0.01" placeholder="Ex: 5000"/>
+        <div class="form-group"><label>Custo por unidade de uso (R$)</label>
+          <input id="spCost" type="number" value="${p.costPerUnit ?? 0}" min="0" step="0.0001"
+            placeholder="0.0500" oninput="_spCustoTocado = true"/>
+        </div>
+      </div>
+      <div class="form-row full"><div class="form-group">
+        <label style="display:flex;align-items:center;gap:.5rem;margin:0;font-weight:400;
+                      text-transform:none;letter-spacing:normal;cursor:pointer">
+          <input type="checkbox" id="spCostAuto" onchange="_spAlternaCalculo(this.checked)" style="width:auto;margin:0"/>
+          <span>Calcular o custo pelo preço da unidade de compra</span>
+        </label>
+        <p id="spCostNota" style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)"></p>
+      </div></div>
+      <div class="form-row">
+        <div class="form-group"><label>Estoque mínimo (alerta)</label>
+          <input id="spMin" type="number" value="${p.minQty ?? 0}" min="0" step="1"/>
         </div>
       </div>
       <button class="btn-primary btn-full" style="margin-top:1.2rem"
         onclick="saveProduct(${id ? `'${id}'` : 'null'})">💾 Salvar</button>
     `;
+    _spRecalcCusto();
   };
 
   if (id) {
@@ -6924,11 +7063,27 @@ async function saveProduct(id) {
   const name = document.getElementById('spName')?.value.trim();
   const unit = document.getElementById('spUnit')?.value || 'ml';
   const qty  = parseFloat(document.getElementById('spQty')?.value)  || 0;
-  const cost = parseFloat(document.getElementById('spCost')?.value) || 0;
   const min  = parseFloat(document.getElementById('spMin')?.value)  || 0;
   const purchaseUnitLabel = document.getElementById('spPurchaseLabel')?.value.trim() || '';
   const purchaseConversionFactor = parseFloat(document.getElementById('spPurchaseFactor')?.value) || 0;
+  const purchasePrice = parseFloat(document.getElementById('spPurchasePrice')?.value) || 0;
   if (!name) { uiAlert('Campo obrigatório', 'Informe o nome do insumo.'); return; }
+
+  // O custo por unidade de uso vem da divisão quando há preço e conversão. O
+  // campo da tela já mostra esse número (readOnly), mas recalcular aqui é o que
+  // garante que o salvo é a conta, e não um valor que ficou na tela.
+  const derivado = _spDeriva ? _spCustoDerivado(purchasePrice, purchaseConversionFactor) : null;
+  const cost = derivado !== null
+    ? derivado
+    : (parseFloat(document.getElementById('spCost')?.value) || 0);
+
+  if (_spDeriva && purchasePrice > 0 && purchaseConversionFactor <= 0) {
+    uiAlert('Falta a conversão',
+      'Você informou o preço de "' + (purchaseUnitLabel || 'uma unidade de compra') +
+      '", mas não quantos ' + unit + ' ela tem. Sem isso não dá para calcular o custo por ' +
+      unit + ' — e é esse número que as receitas usam.');
+    return;
+  }
 
   const productId = id || name.toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -6939,6 +7094,9 @@ async function saveProduct(id) {
   // (fail-open: salva mesmo parcial, mas restockProduct só oferece a opção quando ambos existem).
   if (purchaseUnitLabel)         payload.purchaseUnitLabel = purchaseUnitLabel;
   if (purchaseConversionFactor > 0) payload.purchaseConversionFactor = purchaseConversionFactor;
+  // Guardar o preço é o que faz a tela reabrir com "R$ 180" em vez de obrigar a
+  // reconstituir o valor a partir do custo por ml.
+  if (purchasePrice > 0)         payload.purchasePrice = purchasePrice;
 
   try {
     await _stockRef.child(productId).set(payload);

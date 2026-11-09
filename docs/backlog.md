@@ -3,11 +3,30 @@
 Decisões e trabalho combinados, ainda não feitos. Cada item diz **o problema
 medido**, não só o desejo, para que quem pegar depois não precise redescobrir.
 
-Última atualização: 08/11/2026.
+Última atualização: 09/11/2026.
 
 ---
 
-## 1. Fotos do site vindas do Google Drive — CONSTRUÍDO, falta instalar
+## 1. Fotos do site vindas do Google Drive — PAUSADO pela Bárbara em 09/11/2026
+
+**Estado:** construído, testado em dois ensaios no acervo real, e **pausado antes
+de ligar o gatilho**. Nada roda sozinho: sem gatilho criado, o Apps Script só
+executa quando alguém aperta Executar, e `testar()` não envia nada.
+
+Para retomar: colar `scripts/drive-sync.gs` do `main` no Apps Script, salvar,
+rodar `testar()` e conferir a lista. O esperado, com as correções já mescladas,
+é **3 pares** (Up, e os dois de Higienização de tecido), 2 no carrossel e 175
+pulados. Depois disso, criar o gatilho diário de `sincronizar`.
+
+O que os ensaios já provaram: o sufixo de tamanho do `thumbnailLink` funciona
+(miniaturas de 322 a 722 KB), zero erros em 180 arquivos, e o relatório fecha a
+conta. O risco técnico que estava em aberto neste desenho está fechado.
+
+Dois defeitos saíram dos ensaios e já estão corrigidos no `main`: o carrossel
+substituía as 7 fotos estáticas em vez de somar (PR #59), e arquivo sem ponto no
+nome era descartado como formato desconhecido, jogando fora dois pares bons.
+
+### O desenho (registro)
 
 **Decidido em 08/11/2026.** O argumento que fechou a questão: o admin já joga as
 fotos no Drive para o Instagram e não vai lembrar de voltar ao site. Tela que
@@ -120,12 +139,33 @@ fica ligado.
 
 ---
 
-## 3. Estoque: preço pela unidade de compra, não pela unidade de uso
+## 3. Estoque: preço pela unidade de compra — FEITO em 09/11/2026
 
-**O pedido (08/11/2026):** "eu compro em galão de 5 l e sei o preço do galão de
-5 l, não deveria ter que ficar fazendo a conversão para o cálculo do uso".
+**Entregue.** O formulário de insumo pede "Galão 5L custa R$ 180" e deriva o
+custo por ml, com a conta à vista para conferência: *"Calculado: R$ 180,00 ÷
+5000 ml = R$ 0,0360 por ml"*. Uma opção visível na tela ("Calcular o custo pelo
+preço da unidade de compra") liga e desliga o cálculo — quem compra a granel ou
+cobra por hora continua informando o custo direto. O preço pago fica guardado
+(`purchasePrice`), então reabrir a tela mostra R$ 180, não 0,036. A lista de
+insumos mostra "R$ 180,00 / Galão 5L" abaixo do custo por unidade.
 
-**O problema está medido, e é menor do que parece.** O modelo JÁ tem os campos:
+`costPerUnit` continua sendo o que as receitas leem: dado antigo não mudou, e
+abrir a tela de um produto antigo não altera o custo salvo.
+
+Um defeito foi encontrado pelo próprio teste e corrigido antes de entregar:
+quem desligasse o cálculo, digitasse um custo e depois registrasse o preço pago
+via o valor digitado ser sobrescrito sem aviso. Agora o automático só pode
+apagar valor vindo do banco ou campo vazio, nunca o que a pessoa acabou de
+escrever.
+
+**Fica como possível evolução:** a reposição ("📥 Repor") é o momento natural de
+atualizar o preço, porque é quando ela compra. Hoje ela só lança quantidade. Um
+campo "preço pago neste lote" ali manteria o custo sempre atual sem ninguém ter
+que lembrar de abrir o cadastro.
+
+### O problema, como estava medido (registro)
+
+O modelo JÁ tinha os campos:
 
 - `purchaseUnitLabel` — "Galão 5L"
 - `purchaseConversionFactor` — 5000 (ml por galão)
@@ -143,12 +183,8 @@ Custo por ml:  [ 0.0360 ]
 Ou seja: sabendo que o galão custa R$ 180, a pessoa tem que calcular
 180 ÷ 5000 = 0,036 à mão. É exatamente a conversão que ela não deveria fazer.
 
-**Conserto:** passar a pedir o **preço da unidade de compra** ("Galão 5L custa
-R$ 180") e derivar `costPerUnit = preço ÷ purchaseConversionFactor`, mostrando
-o valor derivado ao lado como conferência. O campo por unidade-base continua
-existindo para quem compra a granel, mas deixa de ser o caminho principal.
-
-Dado antigo não quebra: `costPerUnit` continua sendo o que as receitas leem.
+Era exatamente a conversão que ela não deveria fazer. É o que foi consertado
+acima.
 
 ---
 
