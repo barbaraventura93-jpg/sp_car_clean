@@ -15,6 +15,8 @@ const { pushBookingUpdate } = require('./lib/webpush');
 const PAYMENT_CHECK_URL = 'https://api.checkout.infinitepay.io/payment_check';
 const PAID_STATUSES     = ['paid', 'approved', 'captured', 'succeeded', 'complete', 'completed'];
 const CHECK_TIMEOUT_MS  = 8000;
+// Estados de agendamento que um pagamento pode confirmar.
+const PAYABLE_STATUSES  = ['pending', 'approved'];
 
 exports.handler = async (event) => {
   // 200        → InfinitePay considera entregue e para de reenviar.
@@ -72,6 +74,14 @@ exports.handler = async (event) => {
       const gc = await dbReq('GET', dbUrl, dbSecret, `/giftcards/${encodeURIComponent(order_nsu)}`);
       if (!gc) return ok('gift card not found');
       if (gc.status === 'active') return ok('gift card already active');
+      // Só um cartão AINDA NÃO PAGO pode ser ativado. O webhook pode ser
+      // repetido por qualquer pessoa — o pagamento original continua existindo
+      // no InfinitePay e a verificação acima passa de novo. Sem esta trava, um
+      // cartão esgotado voltava a ter o saldo cheio.
+      if (gc.status !== 'pending') {
+        console.warn(`infinitepay-webhook: ${order_nsu} em status '${gc.status}' não é ativável — webhook repetido ignorado`);
+        return ok('gift card not pending');
+      }
 
       const expectedCents = expectedCentsFor(gc.amount, feeRate);
       if (amountIsShort(verifiedPaidCents, expectedCents)) {
@@ -101,6 +111,15 @@ exports.handler = async (event) => {
     const booking = await dbReq('GET', dbUrl, dbSecret, `/bookings/${encodeURIComponent(order_nsu)}`);
     if (!booking) return ok('booking not found');
     if (booking.status === 'confirmed') return ok('already confirmed');
+    // Só confirma o que está esperando pagamento. Pelo mesmo motivo do gift
+    // card: um webhook repetido não pode ressuscitar um agendamento cancelado,
+    // recusado ou já concluído. Se um pagamento de verdade chegar depois do
+    // cancelamento, ele fica registrado aqui no log para a admin resolver —
+    // reabrir sozinho seria decidir por ela.
+    if (!PAYABLE_STATUSES.includes(booking.status)) {
+      console.error(`infinitepay-webhook: pagamento verificado para ${order_nsu} em status '${booking.status}' — NÃO confirmado, requer conferência manual`);
+      return ok('booking not payable');
+    }
 
     // Valor esperado: preferimos o priceWithFee gravado ao gerar o link.
     const expectedReais = booking.priceWithFee || booking.finalPrice || booking.price || 0;
@@ -231,3 +250,6 @@ async function sendGiftEmail(gc, order_nsu) {
     })
   }).catch(e => console.error('gift card email error:', e.message));
 }
+
+// Exportado para teste: a conta do valor esperado decide se um pagamento vale.
+exports._interno = { expectedCentsFor, amountIsShort };
