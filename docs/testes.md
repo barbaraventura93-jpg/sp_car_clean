@@ -108,7 +108,7 @@ Estado em 10/11/2026. "Não" é dívida conhecida, com o PR em que entra.
 | Serviço: custo vindo dos insumos | sim: `test-servico-insumos.js` |
 | Prazo de entrega (frase ao cliente) | sim: `test-prazo-entrega.js` |
 | Carrossel da página inicial | sim: `test-hero-carrossel.js` |
-| Dados do cliente exibidos no painel sem virar código | não — PR 3 |
+| Dados do cliente exibidos no painel sem virar código | sim: `test-painel-escape.js` (estático + navegador) |
 | Agenda e disponibilidade, cupom, gift card, indicação | não — PR 7 |
 
 ### Infra e publicação

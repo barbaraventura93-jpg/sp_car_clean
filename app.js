@@ -249,10 +249,28 @@ let _pendingSurveyCode = null;
 let _surveyRating = 0;
 let _surveyBookingData = null;
 
+// Todo dado que veio de fora (cliente, banco, erro de rede) passa por aqui
+// antes de entrar em innerHTML. Nome, carro, placa e observação são escritos
+// por qualquer visitante: sem escape, um "nome" com <img onerror=...> rodaria
+// no navegador de quem abre o painel. O teste scripts/test-painel-escape.js
+// reprova interpolação nova desses campos sem esc()/escAttrJs().
 function escHtml(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 const esc = escHtml;
+// Para valor dentro de aspas simples num atributo de evento:
+//   onclick="abrir('${escAttrJs(b.id)}')"
+// Ali o texto é lido duas vezes: o navegador desfaz o escape de HTML e SÓ
+// DEPOIS interpreta o JavaScript. Então esc() sozinho não basta — um &#39;
+// volta a ser aspa e fecha a string. Primeiro escapa para JS, depois para HTML.
+function escAttrJs(s) {
+  const js = String(s ?? '')
+    .replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"')
+    .replace(/\r/g, '\\r').replace(/\n/g, '\\n')
+    .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
+    .replace(/</g, '\\x3C').replace(/>/g, '\\x3E');
+  return escHtml(js);
+}
 
 // Dados do próprio cliente pelo servidor. As regras do banco liberam o dado do
 // cliente por `auth.uid`, do Firebase Auth, que não existe mais desde a migração
@@ -764,7 +782,7 @@ function renderBookingStep() {
       <div class="svc-pick-card ${booking.services.includes(id)?'selected':''}" onclick="selectService('${id}')">
         <div class="svc-pick-icon">${s.icon}</div>
         <div>
-          <div class="svc-pick-name">${s.name}</div>
+          <div class="svc-pick-name">${esc(s.name)}</div>
           <div class="svc-pick-meta">${prazoDeEntrega(s.daysExtra)}</div>
         </div>
         <div class="svc-pick-price">${fmtMoney(s[booking.carSize])}</div>
@@ -789,7 +807,7 @@ function renderBookingStep() {
           const allIn = (combo.serviceIds || []).every(s => booking.services.includes(s));
           return `<div style="border:1px solid var(--blue-mid);border-radius:10px;padding:.7rem .8rem;background:#fff;display:flex;flex-direction:column;gap:.35rem">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem">
-              <span style="font-family:Montserrat,sans-serif;font-weight:800;font-size:.86rem;color:var(--blue-dk)">${combo.emoji || '🎁'} ${combo.name}</span>
+              <span style="font-family:Montserrat,sans-serif;font-weight:800;font-size:.86rem;color:var(--blue-dk)">${combo.emoji || '🎁'} ${esc(combo.name)}</span>
               ${p.savings ? `<span style="background:var(--green);color:#fff;font-weight:800;font-size:.7rem;padding:.15rem .45rem;border-radius:999px;white-space:nowrap">− ${fmtMoney(p.savings)}</span>` : ''}
             </div>
             <div style="font-size:.74rem;color:var(--muted);line-height:1.3">${names}</div>
@@ -829,7 +847,7 @@ function renderBookingStep() {
         const missingNames = best.missing.map(id => SVCS[id]?.name || id).join(' e ');
         comboSuggestion = `<div class="combo-suggestion">
           <div class="combo-suggestion-text">
-            💡 <strong>${best.combo.emoji || '🎁'} ${best.combo.name}</strong> — adicione <strong>${missingNames}</strong>
+            💡 <strong>${best.combo.emoji || '🎁'} ${esc(best.combo.name)}</strong> — adicione <strong>${missingNames}</strong>
             e economize <strong style="color:var(--green)">${fmtMoney(best.p.savings)}</strong> com o combo
           </div>
           <button class="combo-suggestion-btn" onclick="applyComboSuggestion('${best.cid}')">Aplicar combo →</button>
@@ -865,7 +883,7 @@ function renderBookingStep() {
     const totalPrice = bkPrice(booking, booking.carSize);
     const maxDays3 = bkMaxDays(booking);
     const pickup = maxDays3 > 0 ? addDays(booking.date, maxDays3) : booking.date;
-    const svcsRows = bkSvcs(booking).map(sv=>`<div class="summary-row"><strong>${sv.icon} ${sv.name}</strong><span>${fmtMoney(sv[booking.carSize])}</span></div>`).join('');
+    const svcsRows = bkSvcs(booking).map(sv=>`<div class="summary-row"><strong>${sv.icon} ${esc(sv.name)}</strong><span>${fmtMoney(sv[booking.carSize])}</span></div>`).join('');
     body.innerHTML = `<div class="step-indicator">${progress}</div>
       <div class="booking-summary">
         <h4>Resumo do Agendamento</h4>
@@ -1237,9 +1255,9 @@ function clientExtrasHtml(b, email, opts = {}) {
   const mail = String(email || b.email || '').replace(/"/g, '');
   return `<div class="client-extras">
     <a href="${googleCalendarUrl(b)}" target="_blank" rel="noopener noreferrer">📅 Google Agenda${pending ? ' (a confirmar)' : ''}</a>
-    <button type="button" onclick="downloadBookingIcs('${b.id}')">🗓️ Apple / Outlook</button>
-    ${opts.push === false ? '' : `<button type="button" data-id="${b.id}" data-email="${mail}" onclick="subscribeClientCalendar(this)">🔁 Agenda sempre atualizada</button>
-    <button type="button" data-id="${b.id}" data-email="${mail}" onclick="enableBookingPush(this)">🔔 Avisos no celular</button>`}
+    <button type="button" onclick="downloadBookingIcs('${escAttrJs(b.id)}')">🗓️ Apple / Outlook</button>
+    ${opts.push === false ? '' : `<button type="button" data-id="${esc(b.id)}" data-email="${esc(mail)}" onclick="subscribeClientCalendar(this)">🔁 Agenda sempre atualizada</button>
+    <button type="button" data-id="${esc(b.id)}" data-email="${esc(mail)}" onclick="enableBookingPush(this)">🔔 Avisos no celular</button>`}
     <div class="client-extras-msg"></div>
   </div>`;
 }
@@ -1369,7 +1387,7 @@ function _renderStatusResult(b) {
           ✅ <strong>Orçamento aprovado!</strong><br/>
           Confira os dados acima e clique em confirmar para reservar seu agendamento.
         </div>
-        <button class="btn-primary" onclick="customerConfirm('${b.id}')" style="width:100%;justify-content:center;margin-top:.8rem">✓ Confirmar Agendamento</button>`;
+        <button class="btn-primary" onclick="customerConfirm('${escAttrJs(b.id)}')" style="width:100%;justify-content:center;margin-top:.8rem">✓ Confirmar Agendamento</button>`;
     }
   }
 
@@ -1379,7 +1397,7 @@ function _renderStatusResult(b) {
     if(b.rescheduleRequest) {
       rescheduleBtn = `<div style="background:var(--orange-lt);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:.8rem 1rem;margin-top:.8rem;font-size:.83rem;color:var(--orange)">⏳ <strong>Reagendamento solicitado</strong> para ${fmtDate(b.rescheduleRequest.date)} — aguardando análise do estabelecimento.</div>`;
     } else {
-      rescheduleBtn = `<button class="btn-ghost" onclick="openReschedule('${b.id}')" style="width:100%;justify-content:center;margin-top:.6rem">📅 Solicitar Reagendamento</button>`;
+      rescheduleBtn = `<button class="btn-ghost" onclick="openReschedule('${escAttrJs(b.id)}')" style="width:100%;justify-content:center;margin-top:.6rem">📅 Solicitar Reagendamento</button>`;
     }
   }
 
@@ -1394,14 +1412,14 @@ function _renderStatusResult(b) {
     cancelBtn = `
       <div style="border-top:1px solid var(--border);margin-top:1rem;padding-top:.8rem">
         <p style="font-size:.75rem;color:var(--muted);margin-bottom:.4rem">${_refundLabel}</p>
-        <button onclick="confirmClientCancel('${b.id}')" style="width:100%;justify-content:center;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;padding:.45rem;font-family:Montserrat,sans-serif;font-size:.75rem;font-weight:700;cursor:pointer;letter-spacing:.04em">🚫 Cancelar Agendamento</button>
+        <button onclick="confirmClientCancel('${escAttrJs(b.id)}')" style="width:100%;justify-content:center;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;padding:.45rem;font-family:Montserrat,sans-serif;font-size:.75rem;font-weight:700;cursor:pointer;letter-spacing:.04em">🚫 Cancelar Agendamento</button>
       </div>`;
   }
 
   res.innerHTML = `
     <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
       <div style="background:var(--off);padding:.8rem 1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.4rem">
-        <span style="font-family:Montserrat,sans-serif;font-size:.78rem;font-weight:800;color:var(--blue);letter-spacing:.1em">${b.id}</span>
+        <span style="font-family:Montserrat,sans-serif;font-size:.78rem;font-weight:800;color:var(--blue);letter-spacing:.1em">${esc(b.id)}</span>
         <div style="display:flex;gap:.4rem;align-items:center">
           ${b.checkin ? `<span style="font-size:.65rem;background:rgba(34,197,94,.12);color:#22c55e;border-radius:20px;padding:.1rem .5rem;font-weight:700">📋 check-in</span>` : ''}
           <span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span>
@@ -1409,7 +1427,7 @@ function _renderStatusResult(b) {
       </div>
       <div style="padding:1rem">
         <div class="summary-row"><strong>Serviço(s)</strong><span>${bkLabel(b)}</span></div>
-        <div class="summary-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
+        <div class="summary-row"><strong>Veículo</strong><span>${esc(b.car)}${esc(b.plate?' — '+b.plate:'')}</span></div>
         ${b.startDate
           ? `<div class="summary-row"><strong>Entrega do veículo</strong><span>${fmtDate(b.startDate)} às ${CFG.dropoffTime}</span></div>`
           : `<div class="summary-row"><strong>Data solicitada</strong><span>${fmtDate(b.date)} às ${CFG.dropoffTime}</span></div>`
@@ -1424,10 +1442,10 @@ function _renderStatusResult(b) {
         </div>
         ${priceChanged ? `<div style="font-size:.75rem;color:var(--muted);text-align:right;margin-top:-4px">(estimativa inicial: ${fmtMoney(b.price)})</div>` : ''}
         ${(b.status==='approved'||b.status==='confirmed') && b.approvedLocation
-          ? `<div class="summary-row"><strong>Local de entrega</strong><span>${b.approvedLocation}</span></div>`
+          ? `<div class="summary-row"><strong>Local de entrega</strong><span>${esc(b.approvedLocation)}</span></div>`
           : ''}
         ${b.adminNotes
-          ? `<div style="margin-top:.8rem;background:var(--blue-lt);border-radius:6px;padding:.7rem;font-size:.8rem"><strong>Nota:</strong> ${b.adminNotes}</div>`
+          ? `<div style="margin-top:.8rem;background:var(--blue-lt);border-radius:6px;padding:.7rem;font-size:.8rem"><strong>Nota:</strong> ${esc(b.adminNotes)}</div>`
           : ''}
       </div>
     </div>
@@ -1816,7 +1834,7 @@ async function buyGiftCard() {
     if (!data.ok || !data.paymentUrl) throw new Error(data.error || 'Erro ao gerar link.');
     window.location.href = data.paymentUrl;
   } catch (err) {
-    if (msgEl) msgEl.innerHTML = `<span class="coupon-error">Erro: ${err.message}</span>`;
+    if (msgEl) msgEl.innerHTML = `<span class="coupon-error">Erro: ${esc(err.message)}</span>`;
     // Remove pending gift card on error
     if (_giftcardsRef) _giftcardsRef.child(code).remove().catch(() => {});
   }
@@ -1871,16 +1889,16 @@ async function renderAdminGiftCards() {
   const badgeHtml = s => `<span class="gc-badge ${s}">${{active:'✅ Ativo',pending:'⏳ Pendente',depleted:'✓ Esgotado'}[s]||s}</span>`;
 
   const rows = cards.map(gc => `<tr>
-    <td style="font-family:monospace;font-weight:700">${gc.code}</td>
+    <td style="font-family:monospace;font-weight:700">${esc(gc.code)}</td>
     <td>${fmtMoney(gc.amount)}</td>
     <td style="color:${gc.balance>0?'var(--green)':'var(--muted)'};font-weight:700">${fmtMoney(gc.balance||0)}</td>
     <td>${badgeHtml(gc.status||'pending')}</td>
-    <td>${gc.buyerName||'—'}<br><span style="font-size:.72rem;color:var(--muted)">${gc.buyerEmail||''}</span></td>
-    <td>${gc.recipientName||'—'}</td>
+    <td>${esc(gc.buyerName||'—')}<br><span style="font-size:.72rem;color:var(--muted)">${esc(gc.buyerEmail||'')}</span></td>
+    <td>${esc(gc.recipientName||'—')}</td>
     <td style="font-size:.75rem;color:var(--muted)">${gc.createdAt?new Date(gc.createdAt).toLocaleDateString('pt-BR'):'—'}</td>
     <td>
-      ${gc.status==='pending'?`<button class="btn-ghost" style="font-size:.72rem;padding:.25rem .7rem" onclick="activateGiftCardManually('${gc.code}')">Ativar</button>`:''}
-      <button class="btn-reject" style="font-size:.72rem;padding:.25rem .7rem;margin-left:.3rem" onclick="deleteGiftCard('${gc.code}')">🗑</button>
+      ${gc.status==='pending'?`<button class="btn-ghost" style="font-size:.72rem;padding:.25rem .7rem" onclick="activateGiftCardManually('${escAttrJs(gc.code)}')">Ativar</button>`:''}
+      <button class="btn-reject" style="font-size:.72rem;padding:.25rem .7rem;margin-left:.3rem" onclick="deleteGiftCard('${escAttrJs(gc.code)}')">🗑</button>
     </td>
   </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:2rem">Nenhum gift card ainda.</td></tr>';
 
@@ -1992,7 +2010,7 @@ async function applyCouponInBooking() {
     return;
   }
   _appliedCoupon = result;
-  if (msgEl) msgEl.innerHTML = `<div class="coupon-applied">✅ ${result.label} aplicado!</div>`;
+  if (msgEl) msgEl.innerHTML = `<div class="coupon-applied">✅ ${esc(result.label)} aplicado!</div>`;
 }
 
 async function _markCouponUsed(code) {
@@ -2216,7 +2234,7 @@ function renderAdminReferrals() {
       </div>
       <div style="display:flex;gap:.5rem;margin-top:.7rem;flex-wrap:wrap">
         ${friendWa ? `<a class="btn-ghost" style="font-size:.74rem;padding:.35rem .8rem;text-decoration:none" href="https://wa.me/${friendWa}?text=${waMsg}" target="_blank" rel="noopener noreferrer">💬 WhatsApp p/ amigo</a>` : ''}
-        <button class="ba-admin-del" onclick="deleteReferral('${r.key}')" title="Remover indicação">🗑️</button>
+        <button class="ba-admin-del" onclick="deleteReferral('${escAttrJs(r.key)}')" title="Remover indicação">🗑️</button>
       </div>
     </div>`;
   }).join('');
@@ -2554,7 +2572,7 @@ function renderClientAccount() {
     const canAct = actions && ['approved','confirmed'].includes(b.status) && !b.checkin;
     return `<div class="client-booking-card">
       <div class="client-booking-card-hdr">
-        <span class="client-booking-card-id">${b.id}</span>
+        <span class="client-booking-card-id">${esc(b.id)}</span>
         <span class="status-badge ${b.status}">${statusMap[b.status] || b.status}</span>
       </div>
       <div class="client-booking-card-svc">${bkLabel(b)}</div>
@@ -2564,8 +2582,8 @@ function renderClientAccount() {
         · ${b.carSize === 'gr' ? '🚙 Grande' : '🚗 Pequeno'}
       </div>
       ${canAct ? `<div class="client-booking-card-actions">
-        <button class="btn-ghost" onclick="openReschedule('${b.id}');closeModal('clientAccountModal')">📅 Reagendar</button>
-        <button class="btn-reject" onclick="confirmClientCancel('${b.id}');closeModal('clientAccountModal')">🚫 Cancelar</button>
+        <button class="btn-ghost" onclick="openReschedule('${escAttrJs(b.id)}');closeModal('clientAccountModal')">📅 Reagendar</button>
+        <button class="btn-reject" onclick="confirmClientCancel('${escAttrJs(b.id)}');closeModal('clientAccountModal')">🚫 Cancelar</button>
       </div>` : ''}
       ${actions ? clientExtrasHtml(b, b.email, { push: false }) : ''}
       ${b.checkin ? _buildCheckinSummaryHtml(b.checkin) : ''}
@@ -2597,7 +2615,7 @@ function renderClientAccount() {
     ${upcoming.length ? upcoming.map(b => bCard(b, true)).join('') : '<p class="client-empty">Nenhum agendamento futuro.</p>'}
     ${suggestion ? `<div class="client-booking-card" style="border-color:var(--accent);margin-top:.8rem">
       <div style="font-weight:700;margin-bottom:.3rem">💡 Sugestão de Agendamento</div>
-      <div style="font-size:.83rem;color:var(--muted);margin-bottom:.6rem">Já faz ${suggestion.daysSince} dias desde seu último ${SVCS[suggestion.svcId].icon} ${SVCS[suggestion.svcId].name}. Que tal agendar?</div>
+      <div style="font-size:.83rem;color:var(--muted);margin-bottom:.6rem">Já faz ${suggestion.daysSince} dias desde seu último ${SVCS[suggestion.svcId].icon} ${esc(SVCS[suggestion.svcId].name)}. Que tal agendar?</div>
       <button class="btn-primary" style="font-size:.8rem;padding:.5rem 1rem" onclick="closeModal('clientAccountModal');openBooking('${suggestion.svcId}')">📅 Agendar agora</button>
     </div>` : ''}
     ${myBookings.some(b => b.status === 'completed') ? `<div class="client-booking-card" style="border-color:var(--accent);margin-top:.8rem;background:linear-gradient(135deg,rgba(72,201,245,.08),rgba(16,185,129,.06))">
@@ -2911,7 +2929,7 @@ function abBuildServiceList(vType) {
     lbl.style.cssText = 'display:flex;align-items:flex-start;gap:.45rem;cursor:pointer;font-size:.78rem;padding:.3rem .35rem;border-radius:6px;line-height:1.3;transition:background .15s';
     lbl.onmouseenter = () => lbl.style.background = 'rgba(72,201,245,.07)';
     lbl.onmouseleave = () => lbl.style.background = '';
-    lbl.innerHTML = `<input type="checkbox" value="${id}" onchange="abUpdatePrice()" style="margin-top:2px;accent-color:var(--accent);width:14px;height:14px;flex-shrink:0"/> <span>${s.icon} ${s.name} <span style="color:var(--muted);font-size:.7rem">R$${s.pq}</span></span>`;
+    lbl.innerHTML = `<input type="checkbox" value="${id}" onchange="abUpdatePrice()" style="margin-top:2px;accent-color:var(--accent);width:14px;height:14px;flex-shrink:0"/> <span>${s.icon} ${esc(s.name)} <span style="color:var(--muted);font-size:.7rem">R$${s.pq}</span></span>`;
     list.appendChild(lbl);
   };
   if (isMoto) {
@@ -3852,16 +3870,16 @@ function renderBookingsList(filter) {
     return `<div class="booking-item">
       <div class="booking-item-info">
         <div style="display:flex;align-items:center;gap:.6rem">
-          <div class="booking-item-id">${b.id}</div>
+          <div class="booking-item-id">${esc(b.id)}</div>
           <span style="font-size:.7rem;font-weight:700;color:${statusColor[b.status]}">${statusMap[b.status]}</span>
           ${b.retroativo ? `<span style="font-size:.63rem;font-weight:700;color:#6b7280;background:rgba(107,114,128,.12);border:1px solid rgba(107,114,128,.25);border-radius:4px;padding:.1rem .4rem">🕓 Retroativo</span>` : ''}
         </div>
-        <div class="booking-item-name">${b.name} — ${b.car}</div>
+        <div class="booking-item-name">${esc(b.name)} — ${esc(b.car)}</div>
         <div class="booking-item-detail">${bkLabel(b)} · 📅 ${b.status==='pending'?`<span style="color:var(--orange);font-weight:700">Solicitado: ${fmtDateShort(b.date)}</span>`:`Confirmado: ${fmtDateShort(b.startDate||b.date)}`} · ${fmtMoney(b.finalPrice||b.price)}</div>
       </div>
       <div class="booking-item-actions">
-        <button class="btn-view" onclick="viewBooking('${b.id}')">Ver</button>
-        ${b.status==='pending'?`<button class="btn-approve" onclick="openApprove('${b.id}')">Aprovar</button><button class="btn-reject" onclick="rejectBooking('${b.id}')">Rejeitar</button>`:''}
+        <button class="btn-view" onclick="viewBooking('${escAttrJs(b.id)}')">Ver</button>
+        ${b.status==='pending'?`<button class="btn-approve" onclick="openApprove('${escAttrJs(b.id)}')">Aprovar</button><button class="btn-reject" onclick="rejectBooking('${escAttrJs(b.id)}')">Rejeitar</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -3877,7 +3895,7 @@ function viewBooking(id) {
 
   document.getElementById('detailBody').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.6rem;margin-bottom:1.4rem">
-      <div class="booking-id-badge" style="font-size:.95rem;padding:.5rem 1.2rem">${b.id}</div>
+      <div class="booking-id-badge" style="font-size:.95rem;padding:.5rem 1.2rem">${esc(b.id)}</div>
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
         <span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span>
         ${b.retroativo ? `<span style="font-size:.7rem;font-weight:700;color:#6b7280;background:rgba(107,114,128,.12);border:1px solid rgba(107,114,128,.25);border-radius:5px;padding:.2rem .6rem">🕓 Retroativo</span>` : ''}
@@ -3886,11 +3904,11 @@ function viewBooking(id) {
 
     <div style="background:var(--off);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
       <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">👤 Dados do Cliente</div>
-      <div class="summary-row"><strong>Nome</strong><span>${b.name}</span></div>
-      <div class="summary-row"><strong>E-mail</strong><span>${b.email}</span></div>
-      <div class="summary-row"><strong>Telefone</strong><span>${b.phone}</span></div>
+      <div class="summary-row"><strong>Nome</strong><span>${esc(b.name)}</span></div>
+      <div class="summary-row"><strong>E-mail</strong><span>${esc(b.email)}</span></div>
+      <div class="summary-row"><strong>Telefone</strong><span>${esc(b.phone)}</span></div>
       ${b.comoConheceu ? `<div class="summary-row"><strong>📣 Como nos conheceu</strong><span>${esc(b.comoConheceu)}${b.comoConheceuDetalhe?' — '+esc(b.comoConheceuDetalhe):''}</span></div>` : ''}
-      <button onclick="openClientWa('${b.id}')" style="display:inline-flex;align-items:center;gap:.5rem;margin-top:.8rem;background:#25D366;color:#fff;padding:.45rem 1rem;border-radius:4px;font-family:Montserrat,sans-serif;font-size:.72rem;font-weight:700;border:none;cursor:pointer;letter-spacing:.04em;transition:opacity .2s" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+      <button onclick="openClientWa('${escAttrJs(b.id)}')" style="display:inline-flex;align-items:center;gap:.5rem;margin-top:.8rem;background:#25D366;color:#fff;padding:.45rem 1rem;border-radius:4px;font-family:Montserrat,sans-serif;font-size:.72rem;font-weight:700;border:none;cursor:pointer;letter-spacing:.04em;transition:opacity .2s" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
         <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
         Contatar no WhatsApp
       </button>
@@ -3898,7 +3916,7 @@ function viewBooking(id) {
 
     <div style="background:var(--off);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
       <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">🚗 Veículo & Serviço</div>
-      <div class="summary-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
+      <div class="summary-row"><strong>Veículo</strong><span>${esc(b.car)}${esc(b.plate?' — '+b.plate:'')}</span></div>
       <div class="summary-row"><strong>Veículo</strong><span>${veiculoResumo(b)}</span></div>
       <div class="summary-row"><strong>Serviço(s)</strong><span>${bkLabel(b)}</span></div>
       <div class="summary-row"><strong>📅 Data solicitada</strong><span style="font-weight:700;color:var(--orange)">${fmtDate(b.date)}</span></div>
@@ -3907,11 +3925,11 @@ function viewBooking(id) {
       ${hasFinalPrice ? `<div class="summary-row"><strong>Valor definido (adm)</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.finalPrice)}</span></div>` : ''}
       ${b.priceWithFee ? `<div class="summary-row"><strong>Valor cobrado (c/ taxa)</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.priceWithFee)}</span></div>` : ''}
       ${b.paidAmount ? `<div class="summary-row"><strong>💳 Valor pago (InfinitePay)</strong><span style="color:var(--green);font-weight:800;font-size:1.05em">${fmtMoney(b.paidAmount)}</span></div>` : ''}
-      ${b.giftCardCode ? `<div class="summary-row"><strong>🎁 Gift Card usado</strong><span style="color:var(--accent)">${b.giftCardCode} · ${fmtMoney(b.giftCardUsed||0)} abatido</span></div>` : ''}
+      ${b.giftCardCode ? `<div class="summary-row"><strong>🎁 Gift Card usado</strong><span style="color:var(--accent)">${esc(b.giftCardCode)} · ${fmtMoney(b.giftCardUsed||0)} abatido</span></div>` : ''}
       ${b.paymentUrl ? `<div class="summary-row"><strong>Link de pagamento</strong><span><a href="${b.paymentUrl}" target="_blank" rel="noopener" style="color:var(--blue);font-size:.8rem">Abrir link ↗</a></span></div>` : ''}
       ${b.paymentConfirmedAt ? `<div class="summary-row"><strong>Pagamento confirmado</strong><span style="color:var(--green);font-weight:700">✅ ${new Date(b.paymentConfirmedAt).toLocaleString('pt-BR')}</span></div>` : ''}
       ${b.paymentMethod ? `<div class="summary-row"><strong>Método</strong><span>${b.paymentMethod}</span></div>` : ''}
-      ${b.obs ? `<div class="summary-row"><strong>Obs. cliente</strong><span style="font-style:italic">${b.obs}</span></div>` : ''}
+      ${b.obs ? `<div class="summary-row"><strong>Obs. cliente</strong><span style="font-style:italic">${esc(b.obs)}</span></div>` : ''}
       ${b.retroativo ? `<div class="summary-row"><strong>Tipo</strong><span style="color:var(--muted)">🕓 Registro retroativo</span></div>` : ''}
       ${b.retroativo ? `<div class="summary-row"><strong>Pagamento</strong><span style="color:var(--muted)">💵 Pago fora do sistema</span></div>` : ''}
       ${b.retroativo && b.feedbackSolicitado ? `<div class="summary-row"><strong>Pesquisa enviada</strong><span style="color:var(--green)">✅ ${b.feedbackEnviadoEm ? new Date(b.feedbackEnviadoEm).toLocaleString('pt-BR') : 'Sim'}</span></div>` : ''}
@@ -3924,10 +3942,10 @@ function viewBooking(id) {
       <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--blue-dk);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">📅 Datas Confirmadas</div>
       ${b.startDate ? `<div class="summary-row"><strong>Entrega do veículo</strong><span>${fmtDate(b.startDate)} às ${CFG.dropoffTime}</span></div>` : ''}
       ${b.endDate ? `<div class="summary-row"><strong>Previsão de retirada</strong><span>${fmtDate(b.endDate)} às ${CFG.pickupTime}</span></div>` : ''}
-      ${b.approvedLocation ? `<div class="summary-row"><strong>Local</strong><span>${b.approvedLocation}</span></div>` : ''}
+      ${b.approvedLocation ? `<div class="summary-row"><strong>Local</strong><span>${esc(b.approvedLocation)}</span></div>` : ''}
     </div>` : ''}
 
-    ${b.adminNotes ? `<div style="background:var(--off);border-radius:8px;padding:.8rem;font-size:.82rem;margin-bottom:1rem"><strong>📝 Notas do admin:</strong> ${b.adminNotes}</div>` : ''}
+    ${b.adminNotes ? `<div style="background:var(--off);border-radius:8px;padding:.8rem;font-size:.82rem;margin-bottom:1rem"><strong>📝 Notas do admin:</strong> ${esc(b.adminNotes)}</div>` : ''}
     ${b.cancelledBy === 'client' ? `
     <div style="background:var(--red-lt);border:1px solid #f5c6c3;border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.82rem;color:var(--red)">
       🚫 <strong>Cancelado pelo cliente</strong> em ${new Date(b.cancelledAt).toLocaleString('pt-BR')}<br/>
@@ -3938,11 +3956,11 @@ function viewBooking(id) {
     <div style="background:var(--orange-lt);border:2px solid var(--orange);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
       <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--orange);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">📅 Solicitação de Reagendamento</div>
       <div class="summary-row"><strong>Nova data pedida</strong><span style="font-weight:800;color:var(--orange)">${fmtDate(b.rescheduleRequest.date)}</span></div>
-      ${b.rescheduleRequest.note ? `<div class="summary-row"><strong>Motivo</strong><span>${b.rescheduleRequest.note}</span></div>` : ''}
+      ${b.rescheduleRequest.note ? `<div class="summary-row"><strong>Motivo</strong><span>${esc(b.rescheduleRequest.note)}</span></div>` : ''}
       <div class="summary-row"><strong>Solicitado em</strong><span>${new Date(b.rescheduleRequest.requestedAt).toLocaleString('pt-BR')}</span></div>
       <div style="display:flex;gap:.6rem;margin-top:.8rem">
-        <button class="btn-reject" onclick="rejectReschedule('${b.id}')">Manter data atual</button>
-        <button class="btn-approve" onclick="approveReschedule('${b.id}')">✓ Aprovar novo dia</button>
+        <button class="btn-reject" onclick="rejectReschedule('${escAttrJs(b.id)}')">Manter data atual</button>
+        <button class="btn-approve" onclick="approveReschedule('${escAttrJs(b.id)}')">✓ Aprovar novo dia</button>
       </div>
     </div>` : ''}
 
@@ -3959,17 +3977,17 @@ function viewBooking(id) {
   const footer = document.getElementById('detailFooter');
   const _canEdit   = b.status==='approved'||b.status==='confirmed';
   const _checkedIn = _canEdit && !!b.checkin;
-  const _delBtn  = `<button class="btn-reject" style="margin-right:auto" onclick="deleteBooking('${b.id}')">🗑️ Excluir</button>`;
-  const _ciBtn   = `<button class="btn-ghost" onclick="openCheckin('${b.id}')">📋 Check-in</button>`;
-  const _doneBtn = `<button class="btn-approve" onclick="markCompleted('${b.id}')">🏁 Entregar & Concluir</button>`;
+  const _delBtn  = `<button class="btn-reject" style="margin-right:auto" onclick="deleteBooking('${escAttrJs(b.id)}')">🗑️ Excluir</button>`;
+  const _ciBtn   = `<button class="btn-ghost" onclick="openCheckin('${escAttrJs(b.id)}')">📋 Check-in</button>`;
+  const _doneBtn = `<button class="btn-approve" onclick="markCompleted('${escAttrJs(b.id)}')">🏁 Entregar & Concluir</button>`;
   footer.innerHTML = b.status==='pending'
-    ? `${_delBtn}<button class="btn-reject" onclick="rejectBooking('${b.id}');closeModal('detailModal')">Rejeitar</button>
-       <button class="btn-approve" onclick="closeModal('detailModal');openApprove('${b.id}')">Aprovar & Definir Orçamento</button>`
+    ? `${_delBtn}<button class="btn-reject" onclick="rejectBooking('${escAttrJs(b.id)}');closeModal('detailModal')">Rejeitar</button>
+       <button class="btn-approve" onclick="closeModal('detailModal');openApprove('${escAttrJs(b.id)}')">Aprovar & Definir Orçamento</button>`
     : _checkedIn
-    ? `${_delBtn}${_doneBtn}<button class="btn-edit-date" onclick="openEditDate('${b.id}')">📅 Reagendar Entrega</button>`
+    ? `${_delBtn}${_doneBtn}<button class="btn-edit-date" onclick="openEditDate('${escAttrJs(b.id)}')">📅 Reagendar Entrega</button>`
     : _canEdit
-    ? `${_delBtn}${_ciBtn}${_doneBtn}<button class="btn-cancel" onclick="cancelBooking('${b.id}')">🚫 Cancelar</button>
-       <button class="btn-edit-date" onclick="openEditDate('${b.id}')">📅 Alterar Data</button>`
+    ? `${_delBtn}${_ciBtn}${_doneBtn}<button class="btn-cancel" onclick="cancelBooking('${escAttrJs(b.id)}')">🚫 Cancelar</button>
+       <button class="btn-edit-date" onclick="openEditDate('${escAttrJs(b.id)}')">📅 Alterar Data</button>`
     : `${_delBtn}<button class="btn-primary" onclick="closeModal('detailModal')">Fechar</button>`;
   document.getElementById('detailModal').style.display = 'flex';
 }
@@ -3990,7 +4008,7 @@ function _buildPriceCorrectionHtml(b) {
         ${corrections.slice().reverse().map(c => `
           <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.6rem .8rem;font-size:.78rem">
             <div><strong>${fmtMoney(c.oldPrice)} → ${fmtMoney(c.newPrice)}</strong> · ${new Date(c.correctedAt).toLocaleString('pt-BR')}</div>
-            <div style="color:var(--muted);margin-top:.2rem">${c.reason}</div>
+            <div style="color:var(--muted);margin-top:.2rem">${esc(c.reason)}</div>
             <div style="color:var(--muted);font-size:.72rem;margin-top:.2rem">por ${c.correctedBy}</div>
           </div>`).join('')}
       </div>
@@ -4000,7 +4018,7 @@ function _buildPriceCorrectionHtml(b) {
     <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">💵 Correção de Valor</div>
     ${paidWarning}
     <div class="summary-row"><strong>Valor final atual</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.finalPrice || b.price)}</span></div>
-    <button class="btn-edit-date" style="margin-top:.6rem" onclick="openPriceCorrection('${b.id}')">✏️ Corrigir valor</button>
+    <button class="btn-edit-date" style="margin-top:.6rem" onclick="openPriceCorrection('${escAttrJs(b.id)}')">✏️ Corrigir valor</button>
     ${historyHtml}
   </div>`;
 }
@@ -4012,7 +4030,7 @@ function openPriceCorrection(id) {
   document.getElementById('detailBody').innerHTML = `
     <div class="confirm-card">
       <h4>✏️ Corrigir Valor Final</h4>
-      <div class="confirm-row"><strong>Cliente</strong><span>${b.name}</span></div>
+      <div class="confirm-row"><strong>Cliente</strong><span>${esc(b.name)}</span></div>
       <div class="confirm-row"><strong>Valor atual</strong><span>${fmtMoney(current)}</span></div>
     </div>
     ${b.paidAmount ? `<div style="background:#FEF5E7;border:1px solid #F39C12;border-radius:8px;padding:.7rem 1rem;font-size:.78rem;color:#7a5500;line-height:1.5;margin-top:1rem">⚠️ Este agendamento tem um pagamento real registrado via InfinitePay (${fmtMoney(b.paidAmount)}). A correção altera apenas o valor de venda para fins de relatório — <strong>não gera estorno nem cobrança adicional</strong>.</div>` : ''}
@@ -4137,9 +4155,9 @@ function openApprove(id) {
   document.getElementById('detailBody').innerHTML = `
     <div class="confirm-card">
       <h4>Definir Orçamento & Datas</h4>
-      <div class="confirm-row"><strong>Cliente</strong><span>${b.name}</span></div>
-      <div class="confirm-row"><strong>WhatsApp</strong><span>${b.phone}</span></div>
-      <div class="confirm-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
+      <div class="confirm-row"><strong>Cliente</strong><span>${esc(b.name)}</span></div>
+      <div class="confirm-row"><strong>WhatsApp</strong><span>${esc(b.phone)}</span></div>
+      <div class="confirm-row"><strong>Veículo</strong><span>${esc(b.car)}${esc(b.plate?' — '+b.plate:'')}</span></div>
       <div class="confirm-row"><strong>Serviço(s)</strong><span>${bkLabel(b)} · ${veiculoResumo(b)}</span></div>
       <div class="confirm-price" style="font-size:1.1rem;opacity:.7">Estimativa: ${fmtMoney(b.price)}</div>
     </div>
@@ -4433,8 +4451,8 @@ function openEditDate(id) {
     <div class="confirm-card">
       <h4>${postCheckin ? '📅 Reagendar Entrega do Veículo' : 'Alterar Data do Agendamento'}</h4>
       ${postCheckin ? `<div style="background:rgba(246,166,35,.08);border:1px solid var(--warn,#f6a623);border-radius:8px;padding:.6rem 1rem;margin-bottom:.8rem;font-size:.8rem;color:var(--warn,#f6a623)">⚠️ O veículo já está em serviço. Apenas a data de conclusão/retirada pode ser alterada. O cliente será avisado por e-mail automaticamente.</div>` : ''}
-      <div class="confirm-row"><strong>Cliente</strong><span>${b.name}</span></div>
-      <div class="confirm-row"><strong>Veículo</strong><span>${b.car}</span></div>
+      <div class="confirm-row"><strong>Cliente</strong><span>${esc(b.name)}</span></div>
+      <div class="confirm-row"><strong>Veículo</strong><span>${esc(b.car)}</span></div>
       <div class="confirm-row"><strong>Serviço</strong><span>${bkLabel(b)}</span></div>
     </div>
     <div class="form-row" style="margin-top:1.2rem">
@@ -4650,8 +4668,8 @@ function renderAdminClients(filter) {
     return `<div class="client-row" onclick="openClientProfile('${encodeURIComponent(c.key)}')">
       <div class="client-row-avatar">${initials}</div>
       <div class="client-row-info">
-        <div class="client-row-name">${c.name} ${vipBadge}${oppBadge}</div>
-        <div class="client-row-sub">${c.email} · ${c.phone||'—'}${bairroInfo}</div>
+        <div class="client-row-name">${esc(c.name)} ${vipBadge}${oppBadge}</div>
+        <div class="client-row-sub">${esc(c.email)} · ${esc(c.phone||'—')}${bairroInfo}</div>
         ${carInfo ? `<div class="client-row-sub" style="margin-top:1px">🚗 ${carInfo}</div>` : ''}
         ${oppInfo}
       </div>
@@ -4709,11 +4727,11 @@ function renderAdminClients(filter) {
         </div>
         ${inactive.map(c => `
         <div class="reactivation-row">
-          <span>${c.name} <span style="color:var(--muted);font-size:.72rem">${c.email}</span></span>
+          <span>${esc(c.name)} <span style="color:var(--muted);font-size:.72rem">${esc(c.email)}</span></span>
           <span class="inactive-days">${Math.floor((new Date()-new Date(c.lastVisit))/86400000)}d</span>
           <div style="display:flex;gap:.4rem">
             <button class="btn-ghost" style="font-size:.7rem;padding:.25rem .6rem" onclick="adminSendReactivation('${encodeURIComponent(c.phone)}','${encodeURIComponent(c.name)}')">💬 WhatsApp</button>
-            ${c.uid ? `<button class="btn-ghost" style="font-size:.7rem;padding:.25rem .6rem" onclick="adminGenerateBirthdayCoupon('${c.uid}','${c.name}','${c.email}')">🎫 Cupom</button>` : ''}
+            ${c.uid ? `<button class="btn-ghost" style="font-size:.7rem;padding:.25rem .6rem" onclick="adminGenerateBirthdayCoupon('${escAttrJs(c.uid)}','${escAttrJs(c.name)}','${escAttrJs(c.email)}')">🎫 Cupom</button>` : ''}
           </div>
         </div>`).join('')}
       </div>
@@ -4839,17 +4857,17 @@ function openCheckin(id) {
   document.getElementById('ciGrid').innerHTML = CHECKIN_ITEMS.map(item => {
     const st = (ex.items || {})[item.key] || {};
     const isAv = st.ok === false;
-    return `<div class="checkin-item${isAv ? ' avaria' : ''}" id="ci-${item.key}">
-      <div class="ci-item-hdr" onclick="_ciToggle('${item.key}')">
-        <span class="ci-label">${item.label}</span>
+    return `<div class="checkin-item${isAv ? ' avaria' : ''}" id="ci-${esc(item.key)}">
+      <div class="ci-item-hdr" onclick="_ciToggle('${escAttrJs(item.key)}')">
+        <span class="ci-label">${esc(item.label)}</span>
         <span class="ci-badge ${isAv ? 'avaria' : 'ok'}">${isAv ? 'Avaria' : 'OK'}</span>
       </div>
-      <div class="ci-detail" id="ci-det-${item.key}" style="display:${isAv ? 'block' : 'none'}">
-        <input class="ci-note" id="ci-note-${item.key}" placeholder="Descreva a avaria..." value="${(st.note||'').replace(/"/g,'&quot;')}"/>
+      <div class="ci-detail" id="ci-det-${esc(item.key)}" style="display:${isAv ? 'block' : 'none'}">
+        <input class="ci-note" id="ci-note-${esc(item.key)}" placeholder="Descreva a avaria..." value="${esc(st.note||'')}"/>
         <div class="ci-photo-row">
-          ${st.photoUrl ? `<img class="checkin-photo-thumb" src="${st.photoUrl}" alt="Foto do check-in" loading="lazy" onclick="window.open('${st.photoUrl}','_blank')"/>` : ''}
-          <label class="ci-photo-btn">📷 Foto<input type="file" accept="image/*" style="display:none" onchange="_ciUploadPhoto('${item.key}',this)"/></label>
-          <span class="ci-photo-status" id="ci-ps-${item.key}">${st.photoUrl ? '✅' : ''}</span>
+          ${st.photoUrl ? `<img class="checkin-photo-thumb" src="${esc(st.photoUrl)}" alt="Foto do check-in" loading="lazy" onclick="window.open('${escAttrJs(st.photoUrl)}','_blank')"/>` : ''}
+          <label class="ci-photo-btn">📷 Foto<input type="file" accept="image/*" style="display:none" onchange="_ciUploadPhoto('${escAttrJs(item.key)}',this)"/></label>
+          <span class="ci-photo-status" id="ci-ps-${esc(item.key)}">${esc(st.photoUrl ? '✅' : '')}</span>
         </div>
       </div>
     </div>`;
@@ -4962,12 +4980,12 @@ function _buildCheckinSummaryHtml(checkin) {
     ? avarias.map(i => {
         const st = checkin.items[i.key];
         return `<div class="ci-sum-avaria-item">
-          <div class="ci-sum-row ci-sum-avaria">⚠️ <strong>${i.label}</strong>${st.note ? ' — ' + st.note : ''}</div>
+          <div class="ci-sum-row ci-sum-avaria">⚠️ <strong>${esc(i.label)}</strong>${esc(st.note ? ' — ' + st.note : '')}</div>
           ${st.photoUrl
             ? `<div class="ci-sum-photo-wrap">
-                <img class="ci-sum-photo" src="${st.photoUrl}" alt="${i.label}"
+                <img class="ci-sum-photo" src="${esc(st.photoUrl)}" alt="${esc(i.label)}"
                   onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"/>
-                <a class="ci-sum-photo-link" href="${st.photoUrl}" target="_blank" style="display:none">📷 Ver foto registrada</a>
+                <a class="ci-sum-photo-link" href="${esc(st.photoUrl)}" target="_blank" style="display:none">📷 Ver foto registrada</a>
                </div>`
             : ''}
         </div>`;
@@ -4979,7 +4997,7 @@ function _buildCheckinSummaryHtml(checkin) {
     ${checkin.km   ? `<div class="ci-sum-row">🔢 Km na entrada: <strong>${checkin.km}</strong></div>` : ''}
     ${checkin.fuel ? `<div class="ci-sum-row">⛽ Combustível: <strong>${checkin.fuel}</strong></div>`  : ''}
     ${avHtml}
-    ${checkin.obs  ? `<div class="ci-sum-row">📝 ${checkin.obs}</div>` : ''}
+    ${checkin.obs  ? `<div class="ci-sum-row">📝 ${esc(checkin.obs)}</div>` : ''}
   </div>`;
 }
 
@@ -5146,16 +5164,16 @@ async function renderAdminWaitlist() {
     <div class="wl-entry">
       <div class="wl-entry-info">
         <div class="wl-entry-date">📅 ${fmtDateShort(e.date)}</div>
-        <div class="wl-entry-name">${e.name}</div>
-        <div class="wl-entry-sub">${e.phone}${e.email ? ' · ' + e.email : ''}</div>
+        <div class="wl-entry-name">${esc(e.name)}</div>
+        <div class="wl-entry-sub">${esc(e.phone)}${esc(e.email ? ' · ' + e.email : '')}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-wrap:wrap">
         <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem"
-          onclick="window.open('https://wa.me/${''}'+buildWaPhone('${e.phone}')+'?text='+encodeURIComponent('Olá *${e.name}*! Abrimos uma vaga para ${fmtDateShort(e.date)} na SP Car Clean. Acesse https://www.spcarclean.com.br para agendar 🚗'),'_blank')">
+          onclick="window.open('https://wa.me/${''}'+buildWaPhone('${escAttrJs(e.phone)}')+'?text='+encodeURIComponent('Olá *${escAttrJs(e.name)}*! Abrimos uma vaga para ${fmtDateShort(e.date)} na SP Car Clean. Acesse https://www.spcarclean.com.br para agendar 🚗'),'_blank')">
           💬 WhatsApp
         </button>
         <button class="ba-admin-del" style="font-size:.72rem;padding:.3rem .7rem"
-          onclick="removeWaitlistEntry('${e.id}')">🗑️ Remover</button>
+          onclick="removeWaitlistEntry('${escAttrJs(e.id)}')">🗑️ Remover</button>
       </div>
     </div>`).join('')
   : '<p style="color:var(--muted);font-size:.85rem;padding:1.5rem 0">Nenhuma entrada na lista de espera.</p>';
@@ -5222,8 +5240,8 @@ function openClientProfile(encodedKey) {
     return `<div class="vehicle-card" style="width:100%">
       <div style="display:flex;align-items:flex-start;gap:.6rem;flex-wrap:wrap">
         <div style="flex:1;min-width:140px">
-          <div class="vehicle-card-label" id="vfDisplay-car-${vKeyAttr}">🚗 ${v.car || 'Veículo'} <button type="button" class="btn-ghost" style="font-size:.62rem;padding:.05rem .3rem" onclick="editVehicleField('${encKey}','${vKeyAttr}','car','${encodeURIComponent(v.car||'')}')" title="Editar veículo">✏️</button></div>
-          <div class="vehicle-card-plate" id="vfDisplay-plate-${vKeyAttr}">${v.plate || '—'} <button type="button" class="btn-ghost" style="font-size:.62rem;padding:.05rem .3rem" onclick="editVehicleField('${encKey}','${vKeyAttr}','plate','${encodeURIComponent(v.plate||'')}')" title="Editar placa">✏️</button></div>
+          <div class="vehicle-card-label" id="vfDisplay-car-${vKeyAttr}">🚗 ${esc(v.car || 'Veículo')} <button type="button" class="btn-ghost" style="font-size:.62rem;padding:.05rem .3rem" onclick="editVehicleField('${encKey}','${vKeyAttr}','car','${encodeURIComponent(v.car||'')}')" title="Editar veículo">✏️</button></div>
+          <div class="vehicle-card-plate" id="vfDisplay-plate-${vKeyAttr}">${esc(v.plate || '—')} <button type="button" class="btn-ghost" style="font-size:.62rem;padding:.05rem .3rem" onclick="editVehicleField('${encKey}','${vKeyAttr}','plate','${encodeURIComponent(v.plate||'')}')" title="Editar placa">✏️</button></div>
           ${(() => {
             const isMoto = v.vehicleType === 'moto';
             const carroceria = bodyLabel(v.bodyType);
@@ -5274,7 +5292,7 @@ function openClientProfile(encodedKey) {
     return `<tr>
       <td style="white-space:nowrap">${dateStr ? fmtDateShort(dateStr) : '—'}</td>
       <td>${svc}</td>
-      <td style="color:var(--muted);white-space:nowrap">${b.car||'—'}${b.plate?' ('+b.plate+')':''}</td>
+      <td style="color:var(--muted);white-space:nowrap">${esc(b.car||'—')}${esc(b.plate?' ('+b.plate+')':'')}</td>
       <td style="font-weight:700;color:var(--blue);white-space:nowrap">${valorHtml}</td>
       <td>${statusLabel[b.status]||b.status}</td>
     </tr>`;
@@ -5285,27 +5303,27 @@ function openClientProfile(encodedKey) {
     <div class="client-profile-header">
       <div class="client-profile-avatar">${initials}</div>
       <div>
-        <div class="client-profile-name">${c.name} ${vipBadge}${c.merged ? ` <span class="vip-badge" style="background:var(--blue-lt);color:var(--blue)" title="E-mails vinculados: ${esc((c.linkedEmails||[]).join(', '))}">🔗 Cadastro mesclado</span>` : ''}</div>
-        <div class="client-profile-contact">📧 ${c.email} &nbsp;·&nbsp; 📞 ${c.phone||'—'}</div>
+        <div class="client-profile-name">${esc(c.name)} ${vipBadge}${c.merged ? ` <span class="vip-badge" style="background:var(--blue-lt);color:var(--blue)" title="E-mails vinculados: ${esc((c.linkedEmails||[]).join(', '))}">🔗 Cadastro mesclado</span>` : ''}</div>
+        <div class="client-profile-contact">📧 ${esc(c.email)} &nbsp;·&nbsp; 📞 ${esc(c.phone||'—')}</div>
       </div>
     </div>
     <div class="profile-cols">
       <div>
         <div class="profile-section">
           <h3>Identificação</h3>
-          <div class="profile-field"><strong>Nome</strong><span>${c.name}</span></div>
-          <div class="profile-field"><strong>Telefone</strong><span id="cfDisplay-phone">${c.phone||'—'} <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.05rem .35rem;margin-left:.3rem" onclick="editClientField('${encKey}','phone','${encodeURIComponent(c.phone||'')}')" title="Editar telefone">✏️</button></span></div>
-          <div class="profile-field"><strong>E-mail</strong><span id="cfDisplay-email">${c.email} <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.05rem .35rem;margin-left:.3rem" onclick="editClientField('${encKey}','email','${encodeURIComponent(c.email)}')" title="Editar e-mail">✏️</button></span></div>
-          ${c.bairro?`<div class="profile-field"><strong>Bairro</strong><span>📍 ${c.bairro}${c.cep?' · '+c.cep:''}</span></div>`:''}
+          <div class="profile-field"><strong>Nome</strong><span>${esc(c.name)}</span></div>
+          <div class="profile-field"><strong>Telefone</strong><span id="cfDisplay-phone">${esc(c.phone||'—')} <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.05rem .35rem;margin-left:.3rem" onclick="editClientField('${encKey}','phone','${encodeURIComponent(c.phone||'')}')" title="Editar telefone">✏️</button></span></div>
+          <div class="profile-field"><strong>E-mail</strong><span id="cfDisplay-email">${esc(c.email)} <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.05rem .35rem;margin-left:.3rem" onclick="editClientField('${encKey}','email','${encodeURIComponent(c.email)}')" title="Editar e-mail">✏️</button></span></div>
+          ${c.bairro?`<div class="profile-field"><strong>Bairro</strong><span>📍 ${esc(c.bairro)}${esc(c.cep?' · '+c.cep:'')}</span></div>`:''}
           <div class="profile-field"><strong>Classificação</strong><span>${c.isOpportunity?'<span class="opp-badge" style="margin-left:0">🌱 Oportunidade</span>':c.vip?'<span class="vip-badge">★ VIP</span>':c.completedCount>=1?'<span style="color:var(--green);font-size:.8rem">Recorrente</span>':'<span style="color:var(--muted);font-size:.8rem">Novo</span>'}</span></div>
           ${c.isOpportunity?`<div class="profile-field"><strong>Origem</strong><span style="color:var(--accent);font-size:.8rem">🤝 Indicado${c.referredBy?' por '+esc(c.referredBy):''}${c.referralCreatedAt?' · '+fmtDateShort(c.referralCreatedAt.slice(0,10)):''}</span></div>`:''}
           ${c.birthDate?`<div class="profile-field"><strong>Aniversário</strong><span>🎂 ${c.birthDate.slice(5).replace('-','/')}</span></div>`:''}
           ${c.points?`<div class="profile-field"><strong>Pontos</strong><span>⭐ ${c.points} pts</span></div>`:''}
           ${c.merged?`<div class="profile-field"><strong>E-mails vinculados</strong><span style="font-size:.8rem">${esc((c.linkedEmails||[]).join(', '))} <button class="btn-ghost" style="font-size:.68rem;padding:.15rem .5rem;margin-left:.4rem" onclick="undoMergeClient('${encKey}')">↩ Desfazer mesclagem</button></span></div>`:''}
           ${c.uid?`<div style="display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap">
-            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminGenerateBirthdayCoupon('${c.uid}','${c.name}','${c.email}','${encodeURIComponent(c.phone||'')}')">🎁 Cupom Aniversário</button>
+            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminGenerateBirthdayCoupon('${escAttrJs(c.uid)}','${escAttrJs(c.name)}','${escAttrJs(c.email)}','${encodeURIComponent(c.phone||'')}')">🎁 Cupom Aniversário</button>
             <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminSendReactivation('${encodeURIComponent(c.phone)}','${encodeURIComponent(c.name)}')">💬 WhatsApp Reativação</button>
-            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="let d=prompt('Adicionar pontos (use negativo para remover):');if(d)_adminAdjustPoints('${c.uid}',parseInt(d),prompt('Motivo:'))">⭐ Ajustar Pontos</button>
+            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="let d=prompt('Adicionar pontos (use negativo para remover):');if(d)_adminAdjustPoints('${escAttrJs(c.uid)}',parseInt(d),prompt('Motivo:'))">⭐ Ajustar Pontos</button>
           </div>`:''}
         </div>
         <div class="profile-section">
@@ -5803,7 +5821,7 @@ function buildComboList(entries) {
     const isInternal = combo.internal === true;
     const tags = (combo.serviceIds || []).map(sid => {
       const s = SVCS[sid];
-      return s ? `<span class="combo-svc-tag">${s.icon} ${s.name}</span>` : '';
+      return s ? `<span class="combo-svc-tag">${s.icon} ${esc(s.name)}</span>` : '';
     }).join('');
 
     const costPq = isInternal ? (combo.serviceIds || []).reduce((s, sid) => s + (SVCS[sid]?._cost_pq || 0), 0) : 0;
@@ -5842,7 +5860,7 @@ function buildComboList(entries) {
       <div class="svc-admin-header">
         <span class="svc-admin-icon">${combo.emoji || '🎁'}</span>
         <div class="svc-admin-meta">
-          <div class="svc-admin-name">${combo.name}
+          <div class="svc-admin-name">${esc(combo.name)}
             <span style="font-size:.68rem;font-weight:600;padding:.1rem .45rem;border-radius:20px;margin-left:.4rem;vertical-align:middle;${isInternal ? 'background:rgba(150,150,255,.15);color:#a0a0ff' : 'background:rgba(72,201,245,.12);color:var(--accent)'}">
               ${isInternal ? '🔒 Interno' : '🌐 Público'}
             </span>
@@ -5876,7 +5894,7 @@ function openComboForm(id) {
   const svcChecks = Object.entries(SVCS).map(([sid, s]) =>
     `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.82rem;cursor:pointer">
       <input type="checkbox" value="${sid}" ${selectedIds.includes(sid) ? 'checked' : ''} onchange="updateComboFinalPricePreview()"/>
-      ${s.icon} ${s.name} <span style="color:var(--muted);font-size:.72rem">(pq: ${fmtMoney(s.pq)} / gr: ${fmtMoney(s.gr)})</span>
+      ${s.icon} ${esc(s.name)} <span style="color:var(--muted);font-size:.72rem">(pq: ${fmtMoney(s.pq)} / gr: ${fmtMoney(s.gr)})</span>
     </label>`
   ).join('');
   const isInternal = combo?.internal === true;
@@ -5887,7 +5905,7 @@ function openComboForm(id) {
     <div class="svc-form-panel">
       <h4>${id ? 'Editar Combo' : 'Novo Combo'}</h4>
       <div class="form-row">
-        <div class="form-group" style="flex:3"><label>Nome do combo</label><input id="cfName" value="${combo?.name || ''}"/></div>
+        <div class="form-group" style="flex:3"><label>Nome do combo</label><input id="cfName" value="${esc(combo?.name || '')}"/></div>
         <div class="form-group" style="flex:1"><label>Emoji</label><input id="cfEmoji" value="${combo?.emoji || '🎁'}" maxlength="4"/></div>
         <div class="form-group" style="flex:1" id="cfDiscGroup"><label>Desconto %</label><input id="cfDisc" type="number" value="${combo?.discountPercent || 0}" min="0" max="50"/></div>
       </div>
@@ -6089,7 +6107,7 @@ function buildServiceList(svcs) {
       <div class="svc-admin-header">
         <span class="svc-admin-icon">${s.icon || '🔧'}</span>
         <div class="svc-admin-meta">
-          <div class="svc-admin-name">${s.name} <span style="font-size:.62rem;font-weight:600;color:var(--muted);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:.05rem .35rem;margin-left:.3rem">${vBadge}</span></div>
+          <div class="svc-admin-name">${esc(s.name)} <span style="font-size:.62rem;font-weight:600;color:var(--muted);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:.05rem .35rem;margin-left:.3rem">${vBadge}</span></div>
           <div class="svc-admin-sub">${s.cat || ''} · ${prazoDeEntrega(s.daysExtra)}</div>
         </div>
         <button class="btn-toggle-svc${isActive ? '' : ' off'}" onclick="toggleService('${id}')">
@@ -6297,7 +6315,7 @@ function _desenharServiceForm(id, s, wrap) {
     <div class="svc-form-panel">
       <h4>${id ? 'Editar Serviço' : 'Novo Serviço'}</h4>
       <div class="form-row">
-        <div class="form-group" style="flex:3"><label>Nome do serviço</label><input id="sfName" value="${s?.name||''}"/></div>
+        <div class="form-group" style="flex:3"><label>Nome do serviço</label><input id="sfName" value="${esc(s?.name||'')}"/></div>
         <div class="form-group" style="flex:1"><label>Ícone (emoji)</label><input id="sfIcon" value="${s?.icon||'🔧'}" maxlength="4"/></div>
       </div>
       <div class="form-row">
@@ -6646,7 +6664,7 @@ function loadPortfolioAdminList() {
         ${d.type === 'video'
           ? `<div class="ba-admin-thumb" style="display:flex;align-items:center;justify-content:center;font-size:1.3rem">🎬</div>`
           : `<img class="ba-admin-thumb" src="${d.url}" alt="" loading="lazy" onerror="this.style.opacity='.3'">`}
-        <span class="ba-admin-caption">${String(d.caption||'').replace(/</g,'&lt;')}</span>
+        <span class="ba-admin-caption">${esc(d.caption||'')}</span>
         <button class="ba-admin-del" onclick="deletePortfolioItem('${id}')">🗑️ Remover</button>
       </div>`).join('');
   }, () => { listEl.innerHTML = '<p style="color:var(--red);font-size:.82rem">Erro ao carregar o carrossel.</p>'; });
@@ -6747,7 +6765,7 @@ function loadGalleryAdminList() {
       `<div class="ba-admin-row">
         <img class="ba-admin-thumb" src="${d.beforeUrl}" alt="Antes" loading="lazy" onerror="this.style.opacity='.3'">
         <img class="ba-admin-thumb" src="${d.afterUrl}" alt="Depois" loading="lazy" onerror="this.style.opacity='.3'">
-        <span class="ba-admin-caption">${String(d.caption||'').replace(/</g,'&lt;')}</span>
+        <span class="ba-admin-caption">${esc(d.caption||'')}</span>
         <button class="ba-admin-del" onclick="deleteGalleryItem('${id}')">🗑️ Remover</button>
       </div>`
     ).join('');
@@ -6841,16 +6859,16 @@ function renderAdminFeedback() {
         </div>
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin-top:.8rem">
           ${showApprove ? `
-          <button class="btn-approve" style="font-size:.75rem;padding:.35rem .9rem" onclick="approveFeedback('${f.id}')">✅ Publicar</button>
-          <button class="btn-reject" style="font-size:.75rem;padding:.35rem .9rem" onclick="hideFeedback('${f.id}')">🚫 Ignorar</button>` : ''}
+          <button class="btn-approve" style="font-size:.75rem;padding:.35rem .9rem" onclick="approveFeedback('${escAttrJs(f.id)}')">✅ Publicar</button>
+          <button class="btn-reject" style="font-size:.75rem;padding:.35rem .9rem" onclick="hideFeedback('${escAttrJs(f.id)}')">🚫 Ignorar</button>` : ''}
           ${f.status === 'approved' ? `
           <span style="font-size:.72rem;color:#10B981;font-weight:700">✅ Publicado</span>
-          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="hideFeedback('${f.id}')">Remover</button>` : ''}
+          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="hideFeedback('${escAttrJs(f.id)}')">Remover</button>` : ''}
           ${f.status === 'internal' ? `<span style="font-size:.72rem;color:var(--orange);font-weight:700">⚠️ Avaliação negativa — não publicada</span>` : ''}
           ${f.status === 'hidden' ? `
           <span style="font-size:.72rem;color:var(--muted)">🚫 Ignorada</span>
-          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="approveFeedback('${f.id}')">Publicar mesmo assim</button>` : ''}
-          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem;color:var(--red,#ef4444);margin-left:auto" onclick="deleteFeedback('${f.id}')">🗑 Excluir</button>
+          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="approveFeedback('${escAttrJs(f.id)}')">Publicar mesmo assim</button>` : ''}
+          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem;color:var(--red,#ef4444);margin-left:auto" onclick="deleteFeedback('${escAttrJs(f.id)}')">🗑 Excluir</button>
         </div>
       </div>`;
 
@@ -7047,9 +7065,9 @@ function renderAdminEstoque() {
                   <td style="color:var(--muted)">R$ ${(p.qty * (p.costPerUnit || 0)).toFixed(2)}</td>
                   <td style="color:var(--muted);font-size:.78rem">${_textoPrevisao(p)}</td>
                   <td style="white-space:nowrap;text-align:right">
-                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="restockProduct('${p.id}','${esc(p.name).replace(/'/g,"\\'")  }')">📥 Repor</button>
-                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="openProductForm('${p.id}')">✏️</button>
-                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem;color:var(--red)" onclick="deleteProduct('${p.id}','${esc(p.name).replace(/'/g,"\\'")}')">🗑</button>
+                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="restockProduct('${escAttrJs(p.id)}','${escAttrJs(p.name)}')">📥 Repor</button>
+                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="openProductForm('${escAttrJs(p.id)}')">✏️</button>
+                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem;color:var(--red)" onclick="deleteProduct('${escAttrJs(p.id)}','${escAttrJs(p.name)}')">🗑</button>
                   </td>
                 </tr>`;
               }).join('') : `<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:2rem">
@@ -7093,7 +7111,7 @@ function renderAdminEstoque() {
         </div>` : ''}
       `;
     })
-    .catch(e => { document.getElementById('adminContent').innerHTML = `<p style="color:var(--red)">Erro: ${e.message}</p>`; });
+    .catch(e => { document.getElementById('adminContent').innerHTML = `<p style="color:var(--red)">Erro: ${esc(e.message)}</p>`; });
 }
 
 // ── Custo do insumo: a pessoa sabe o preço do GALÃO, não o preço do ml ──────
@@ -7753,11 +7771,11 @@ function loadAdminCoupons() {
     if (!list.length) { el.innerHTML = '<p style="color:var(--muted);font-size:.78rem">Nenhum cupom criado.</p>'; return; }
     el.innerHTML = list.map(c => `
       <div style="display:flex;align-items:center;gap:.6rem;padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.78rem;flex-wrap:wrap">
-        <strong style="font-family:Montserrat,sans-serif;color:${c.used?'var(--muted)':'var(--accent)'}">${c.code}</strong>
+        <strong style="font-family:Montserrat,sans-serif;color:${c.used?'var(--muted)':'var(--accent)'}">${esc(c.code)}</strong>
         <span>${c.discountType==='percent'?c.discountValue+'%':'R$'+c.discountValue}</span>
         ${c.validUntil?`<span style="color:var(--muted)">até ${c.validUntil}</span>`:''}
         ${c.used?'<span style="color:var(--red)">Usado</span>':'<span style="color:var(--green)">Disponível</span>'}
-        ${!c.used?`<button class="ba-admin-del" onclick="deleteCoupon('${c.code}')">🗑️</button>`:''}
+        ${!c.used?`<button class="ba-admin-del" onclick="deleteCoupon('${escAttrJs(c.code)}')">🗑️</button>`:''}
       </div>`).join('');
   });
 }
@@ -7955,7 +7973,7 @@ const BODY_TYPES = [
 function bodySize(key) { return (BODY_TYPES.find(b => b.key === key) || {}).size || 'pq'; }
 function bodyLabel(key) { return (BODY_TYPES.find(b => b.key === key) || {}).label || ''; }
 function bodyTypeOptions(sel) {
-  return BODY_TYPES.map(b => `<option value="${b.key}"${sel === b.key ? ' selected' : ''}>${b.label}</option>`).join('');
+  return BODY_TYPES.map(b => `<option value="${esc(b.key)}"${esc(sel === b.key ? ' selected' : '')}>${esc(b.label)}</option>`).join('');
 }
 // Resumo do veículo para telas de confirmação/status: "🏍️ Moto" ou "Carroceria · Porte".
 function veiculoResumo(b) {
@@ -8004,14 +8022,14 @@ function renderCombos() {
     const svcsHtml = (combo.serviceIds || []).map(sid => {
       const s = SVCS[sid];
       if (!s) return '';
-      return `<li class="combo-svc-item">${s.icon} ${s.name}<span>${fmtMoney(s[size] || 0)}</span></li>`;
+      return `<li class="combo-svc-item">${s.icon} ${esc(s.name)}<span>${fmtMoney(s[size] || 0)}</span></li>`;
     }).join('');
     return `
     <div class="combo-card">
       <div class="combo-card-glow"></div>
       ${pct ? `<div class="combo-savings-badge">−${pct}%</div>` : ''}
       <span class="combo-emoji">${combo.emoji || '🎁'}</span>
-      <div class="combo-name">${combo.name}</div>
+      <div class="combo-name">${esc(combo.name)}</div>
       <ul class="combo-svc-list">${svcsHtml}</ul>
       <div class="combo-total-row">
         ${p.savings ? `<span class="combo-regular">${fmtMoney(p.regular)}</span>` : ''}
@@ -8061,7 +8079,7 @@ function _svcCardHtml(id, price) {
         <div class="price-val"><span class="cur">R$</span>${(price||0).toLocaleString('pt-BR')}</div>
       </div>
     </div>
-    <div class="svc-name">${s.name}</div>
+    <div class="svc-name">${esc(s.name)}</div>
     <div class="svc-desc">${s.desc}</div>
     <div class="svc-card-actions">
       <button class="svc-btn-agendar" onclick="openBooking('${id}')">Agendar →</button>
@@ -8095,7 +8113,7 @@ function renderServices() {
     // Abas Carro Pequeno / Carro Grande — só serviços de carro
     html = getDisplayCats().map(cat => `
       <div>
-        <div class="cat-label">${cat.label}</div>
+        <div class="cat-label">${esc(cat.label)}</div>
         <div class="svcs-grid">
           ${cat.keys.map(id => _svcCardHtml(id, SVCS[id] ? (SVCS[id][currentSizeGlobal] || SVCS[id].pq) : 0)).join('')}
         </div>
@@ -9094,7 +9112,7 @@ function iaShowReativacaoReview(drafts) {
             <button class="btn-ghost" style="font-size:.73rem;padding:.2rem .55rem"
               onclick="navigator.clipboard.writeText(document.getElementById('ia-draft-${i}').value).then(()=>{this.textContent='✓ Copiado!';setTimeout(()=>this.textContent='📋 Copiar',1500)})">📋 Copiar</button>
             ${d.email ? `<button class="btn-ghost" style="font-size:.73rem;padding:.2rem .55rem"
-              onclick="iaEnviarReativacao('${escHtml(d.email)}','${escHtml(d.name||'')}',document.getElementById('ia-draft-${i}').value)">📧 Enviar e-mail</button>` : ''}
+              onclick="iaEnviarReativacao('${escAttrJs(d.email)}','${escAttrJs(d.name||'')}',document.getElementById('ia-draft-${i}').value)">📧 Enviar e-mail</button>` : ''}
           </div>
         </div>`).join('')}
     </div>`;
