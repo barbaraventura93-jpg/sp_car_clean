@@ -80,7 +80,7 @@ const SESSAO = {
     texto: (document.getElementById('clientAccountModal')||{}).innerText
       ? document.getElementById('clientAccountModal').innerText.slice(0, 300) : null,
   }));
-  await pg.screenshot({ path:'minha-conta.png' });
+  await pg.screenshot({ path: require('path').join(require('os').tmpdir(), 'spcc-minha-conta.png') });
 
   // ── salvar o perfil: o corpo não pode levar uid, email nem points ─────
   await pg.evaluate(() => {
