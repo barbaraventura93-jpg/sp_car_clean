@@ -1,7 +1,7 @@
 # Ações que só a Bárbara pode fazer
 
 Lista viva. Cada item diz por que é necessário, o passo a passo e o que você
-deve ver quando der certo. Atualizado em 09/11/2026.
+deve ver quando der certo. Atualizado em 13/11/2026.
 
 Nunca cole senha, chave ou token em conversa, e-mail ou arquivo do repositório.
 
@@ -73,9 +73,38 @@ valer (2.000 min/mês; cada deploy leva cerca de 1 minuto, então há folga).
 
 ---
 
-## 4. Itens que entram aqui conforme os PRs forem aprovados
+## 4. Publicar as regras novas do banco — pendente (depois do merge do PR das regras)
 
-- Publicar as regras novas do banco (depende do PR de regras).
+**Por quê:** o arquivo `database.rules.json` do repositório é só o texto das
+regras. Enquanto não for publicado no Firebase, o banco continua com as regras
+antigas, que deixam um visitante apagar a lista de espera, ler todas as
+avaliações e todos os cupons, e criar agendamento já "confirmado".
+
+**O que as regras novas mudam para o cliente:** nada. Foram testadas num
+emulador local com 88 casos, incluindo agendar, cancelar, entrar na lista de
+espera, avaliar e usar cupom e gift card exatamente como o site faz.
+
+**Como publicar.** O console do Firebase não está acessível (item 5 do
+backlog), então a publicação é feita com o segredo do banco, que está guardado
+na AWS. Há dois caminhos:
+
+- **Recomendado:** quando o acesso da revisão à AWS voltar (item 1), você me
+  autoriza e eu publico e confiro, sem o segredo passar pelo chat.
+- **Alternativa:** uma pessoa técnica de sua confiança, com acesso à AWS, roda
+  a publicação. O segredo nunca deve ser colado em conversa ou e-mail.
+
+**Resultado esperado:** logo após publicar, um agendamento de teste feito pelo
+site continua funcionando, e a lista de espera aceita uma entrada nova.
+
+**Se algo der errado:** as regras anteriores estão guardadas no histórico do
+repositório e podem ser republicadas do mesmo jeito, em um minuto.
+
+**Custo:** nenhum.
+
+---
+
+## 5. Itens que entram aqui conforme os PRs forem aprovados
+
 - Aplicar o Terraform (cabeçalhos de segurança, alarmes).
 - Item 1 do backlog (Drive): continua pausado por decisão sua.
 - Item 5 do backlog (acesso ao projeto Firebase/Google Cloud).
