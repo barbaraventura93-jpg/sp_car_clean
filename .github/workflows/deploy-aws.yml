@@ -6,18 +6,63 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
+  # Em pull request roda SÓ o job de testes (o deploy tem condição de branch).
+  pull_request:
 
+# Padrão mínimo: cada job declara o que precisa a mais.
 permissions:
-  id-token: write   # necessário para autenticar via OIDC (sem chave estática)
   contents: read
 
 concurrency:
-  group: deploy-aws
+  # Por branch: um PR não cancela um deploy da main em andamento.
+  group: deploy-aws-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Rede de segurança: nada é publicado se isto falhar (o deploy tem `needs`).
+  # Sem rede externa de negócio: os testes não falam com AWS, Firebase,
+  # InfinitePay nem e-mail, e este job não recebe nenhum segredo.
+  testes:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22   # o mesmo das funções na AWS (nodejs22.x)
+
+      - name: Instalar dependências de teste
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Testes (npm test)
+        run: npm test
+
+      - name: Vulnerabilidades em dependências (npm audit)
+        run: npm audit --audit-level=high
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+
+      - name: Terraform fmt e validate (sem acessar a AWS)
+        run: |
+          terraform -chdir=infra fmt -check -recursive
+          terraform -chdir=infra init -backend=false -input=false
+          terraform -chdir=infra validate
+
+  deploy:
+    needs: testes
+    # Só a main publica. Em pull request este job nem começa.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # necessário para autenticar via OIDC (sem chave estática)
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
