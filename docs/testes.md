@@ -88,7 +88,7 @@ Estado em 10/11/2026. "Não" é dívida conhecida, com o PR em que entra.
 | `create-referral.js` | origem, limite, destinatários, auto-indicação, duplicidade, cupom fora da resposta | sim: `test-indicacao.js` |
 | `booking-status.js` | código + e-mail | não — PR 5 |
 | `notify-booking.js`, `notify-client.js`, `push-subscription.js` | quem pode disparar | não — PR 5 |
-| `ai.js`, `lib/agents/*`, `lib/core/config.js` | quem chama, orçamento, tamanho da entrada | não — PR 5 |
+| `ai.js`, `lib/agents/*`, `lib/core/config.js` | quem chama, orçamento, tamanho da entrada | sim: `test-ia-entrada.js` (falta a contagem de uso sob concorrência) |
 | `calendar-sync.js` | assinatura do link, formato ICS | não — PR 6 |
 | `reminder-check.js`, `birthday-check.js`, `admin-alerts.js` | data em Brasília, não repetir envio | não — PR 6 |
 | `firebase-backup.js` | recusar backup vazio ou truncado | não — PR 6 |
