@@ -139,6 +139,63 @@ fica ligado.
 
 ---
 
+## 2.1 Reativação automática e descadastro de marketing — FEITO em 13/11/2026
+
+Pedido de 12/11/2026, literal: *"Reativação de inativos não recuso os e-mails,
+se ele enviasse automaticamente os e-mails num padrão seria melhor, mas tem que
+ter uma funcionalidade do cliente se descadastrar, caso não queira mais receber
+e-mails de marketing"*.
+
+**O que mudou.** O agente `reativacao` tinha um modo só: gerava textos e
+esperava revisão — revisão que nunca acontecia, então nenhum e-mail saía. Agora
+tem dois. Pelo painel, continua gerando para revisão. Pelo cron de terça
+(`weekly:tue:08`), escolhe, escreve e **envia**.
+
+**O "padrão" do envio automático**, que são as travas que precisam valer sempre
+(cada uma com teste em `scripts/test-reativacao-auto.js`):
+
+| Trava | Valor | Por que |
+|---|---|---|
+| Inatividade | 90 dias | abaixo disso o cliente não está inativo, está entre serviços |
+| Intervalo mínimo | 90 dias por e-mail | é o que separa reativação de spam |
+| Teto por execução | 8 e-mails | 1 chamada de IA por cliente; 8×4 semanas cabe no orçamento de 60/mês |
+| Link de descadastro | obrigatório | sem segredo para assinar o link, **não envia** |
+
+A última é a mais importante: se o `FIREBASE_DATABASE_SECRET` faltar, o agente
+aborta em vez de mandar marketing sem saída. O mesmo vale se o EmailJS não
+estiver configurado — ele não finge que enviou.
+
+**O descadastro.** Não existia nada parecido no projeto — nenhum opt-out em
+lugar nenhum — e o e-mail de aniversário já saía automático desde sempre. Agora:
+
+- `functions/unsubscribe.js` — página pública, **um clique, sem login**. Quem
+  recebeu o e-mail não necessariamente tem conta, e pedir senha para parar de
+  receber marketing é o mesmo que não oferecer saída.
+- O link leva um HMAC do endereço. Sem ele, qualquer um descadastraria o e-mail
+  de qualquer um, e a página viraria oráculo de *"este endereço é cliente?"*.
+  Link inválido e e-mail inexistente dão a **mesma** resposta, por isso.
+- Reativação **e aniversário** respeitam a lista. Lembrete de agendamento,
+  confirmação de pagamento e indicação **não** — são transacionais, o cliente
+  pediu, e continuam saindo para quem se descadastrou.
+
+**Ponto aberto, dependente da dona:** o e-mail de aniversário usa um template
+fixo do EmailJS (com campos de cupom). O link de saída já vai no parâmetro
+`unsubscribe_url`, mas **só aparece no corpo quando o template imprimir essa
+variável** — é uma edição no painel do EmailJS, fora do código. Enquanto isso
+não for feito, o aniversário já deixa de ser enviado a quem se descadastrou,
+mas quem recebe não vê o link. A reativação não tem esse problema: usa o
+template de corpo livre (`template_update`), e o rodapé é montado no código.
+
+**Trava nova de infra.** `unsubscribe.js` existia desde o commit anterior e
+**não estava registrada no Terraform** — sem rota, o link do rodapé daria 404,
+sem erro em lugar nenhum. O `test-infra-estatico.js` ganhou a regra: toda função
+em `functions/` precisa de rota HTTP ou cron.
+
+⚠️ **O `terraform apply` tem de rodar ANTES do merge deste PR** — função nova
+precisa existir na infra, e o CI só valida, não aplica.
+
+---
+
 ## 3. Estoque: preço pela unidade de compra — FEITO em 09/11/2026
 
 **Entregue, e maior do que o item original.** O pedido foi refinado em

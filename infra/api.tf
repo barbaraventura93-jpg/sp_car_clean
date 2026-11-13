@@ -21,6 +21,9 @@ locals {
     "notify-booking",
     "notify-client",
     "push-subscription",
+    # Página pública de descadastro de marketing: sem login, um clique, aberta
+    # a partir do link no rodapé do e-mail (functions/unsubscribe.js).
+    "unsubscribe",
     "upload-url",
   ]
 
