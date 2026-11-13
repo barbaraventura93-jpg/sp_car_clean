@@ -8,17 +8,42 @@ const FRIEND_PCT   = Number(process.env.REFERRAL_FRIEND_PCT   || 15); // % desco
 const REFERRER_PCT = Number(process.env.REFERRAL_REFERRER_PCT || 15); // % desconto p/ quem indicou (na conversão)
 const VALID_DAYS   = Number(process.env.REFERRAL_VALID_DAYS   || 90); // validade dos cupons
 
+const crypto = require('crypto');
+const { clientIp, rateLimit, originAllowed } = require('./lib/guard');
+
+// Tetos de entrada. O nome do amigo e de quem indica entram no texto de um
+// e-mail enviado em nome da SP Car Clean: sem teto e sem filtro, a função
+// servia para mandar texto livre (e link) a qualquer endereço.
+const MAX_NOME  = 80;
+const MAX_EMAIL = 120;
+const MAX_FONE  = 30;
+const POR_HORA  = 5; // indicações por IP por hora
+
+// Código do cupom com sorteio criptográfico e 8 posições: o anterior tinha 5
+// posições com Math.random, curto e previsível para algo que vale desconto.
 function refCode(prefix) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let r = '';
-  for (let i = 0; i < 5; i++) r += chars[Math.floor(Math.random() * chars.length)];
+  for (const b of crypto.randomBytes(8)) r += chars[b % chars.length];
   return `${prefix}-${r}`;
+}
+
+/** Nome de pessoa: curto, numa linha só, sem endereço de site. */
+function nomeValido(nome) {
+  return nome.length <= MAX_NOME && !/[\r\n<>]/.test(nome) && !/(https?:|www\.|\.com\b|\.br\b)/i.test(nome);
 }
 function fmtBr(iso) { return iso ? `${iso.slice(8,10)}/${iso.slice(5,7)}/${iso.slice(0,4)}` : ''; }
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
+  }
+  // Mesmas proteções das outras funções públicas: só o site chama, e com teto.
+  if (!originAllowed(event)) {
+    return { statusCode: 403, body: JSON.stringify({ ok: false, error: 'origin-not-allowed' }) };
+  }
+  if (!rateLimit('create-referral', clientIp(event), { max: POR_HORA })) {
+    return { statusCode: 429, body: JSON.stringify({ ok: false, error: 'too-many-requests' }) };
   }
 
   const dbUrl    = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
@@ -46,13 +71,21 @@ exports.handler = async (event) => {
   const friendEmail = clean(data.friendEmail).toLowerCase();
   const friendPhone = clean(data.friendPhone);
   const sourceBookingId = clean(data.sourceBookingId) || null;
-  const adminEmail = clean(data.adminEmail).toLowerCase();
+  // O destino do aviso interno vem do servidor. Antes vinha do corpo da
+  // requisição: quem chamasse escolhia um terceiro endereço para receber e-mail.
+  const adminEmail = clean(process.env.ADMIN_EMAIL || 'spcarclean0@gmail.com').toLowerCase();
 
   if (!friendName || !friendEmail || !friendPhone) {
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'missing-fields' }) };
   }
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(friendEmail)) {
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(friendEmail) || friendEmail.length > MAX_EMAIL) {
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'invalid-email' }) };
+  }
+  if (referrerEmail && (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(referrerEmail) || referrerEmail.length > MAX_EMAIL)) {
+    return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'invalid-email' }) };
+  }
+  if (!nomeValido(friendName) || !nomeValido(referrerName) || friendPhone.length > MAX_FONE || referrerPhone.length > MAX_FONE) {
+    return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'missing-fields' }) };
   }
   if (referrerEmail && referrerEmail === friendEmail) {
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'self-referral' }) };
@@ -96,7 +129,7 @@ exports.handler = async (event) => {
         createdAt: now.toISOString(), convertedAt: null, convertedBookingId: null
       })
     });
-    const referralKey = (await referralResp.json())?.name || null;
+    await referralResp.json().catch(() => null);
 
     // 3) E-mails (best-effort) via EmailJS REST
     const sendEmail = async (params) => {
@@ -154,10 +187,16 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ ok: true, friendCouponCode: friendCode, referralKey, friendPct: FRIEND_PCT, referrerPct: REFERRER_PCT, validUntil: expiry })
+      // O código do cupom NÃO volta na resposta: ele vai só por e-mail ao
+      // amigo. Devolvê-lo deixava qualquer pessoa gerar um cupom para si
+      // informando um e-mail qualquer. O site nunca exibiu esse campo.
+      body: JSON.stringify({ ok: true, friendPct: FRIEND_PCT, referrerPct: REFERRER_PCT, validUntil: expiry })
     };
   } catch (err) {
     console.error('create-referral error:', err.message);
-    return { statusCode: 200, body: JSON.stringify({ ok: false, error: err.message }) };
+    return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'internal' }) };
   }
 };
+
+// Exportado para teste.
+exports._interno = { refCode, nomeValido, POR_HORA };
