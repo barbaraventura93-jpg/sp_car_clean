@@ -4,6 +4,16 @@
 
 - Falar sempre em português com a Bárbara.
 
+## Testes — regra do projeto
+
+- Toda mudança roda `npm test` antes do push. O deploy na `main` só publica se
+  o job `testes` passar.
+- Todo bug corrigido ganha teste de regressão (falha antes, passa depois).
+- Toda regra de negócio nova ganha teste.
+- Não pular nem desativar teste para ficar verde. Não usar `--no-verify`.
+- Padrão: Node + `assert` em `scripts/test-*.js`, sem rede, sem dado real de
+  cliente, sem dependência nova. Como rodar, escrever e ler: `docs/testes.md`.
+
 <!-- BEGIN AWS Agent Toolkit rules -->
 ## AWS Agent Toolkit — regras da experiência nova
 
