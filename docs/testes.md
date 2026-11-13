@@ -85,7 +85,7 @@ Estado em 10/11/2026. "Não" é dívida conhecida, com o PR em que entra.
 | `infinitepay-webhook.js` | autenticidade, valor, repetição, estados | sim: `test-webhook-pagamento.js` |
 | `create-payment.js`, `create-gift-payment.js` | valor vem do banco, não do cliente | não — PR 7 (junto do preço no servidor) |
 | `upload-url.js`, `lib/s3.js` | tipo, tamanho, chave do objeto, só admin | não — PR 5 |
-| `create-referral.js` | limite, auto-indicação, duplicidade | não — PR 5 |
+| `create-referral.js` | origem, limite, destinatários, auto-indicação, duplicidade, cupom fora da resposta | sim: `test-indicacao.js` |
 | `booking-status.js` | código + e-mail | não — PR 5 |
 | `notify-booking.js`, `notify-client.js`, `push-subscription.js` | quem pode disparar | não — PR 5 |
 | `ai.js`, `lib/agents/*`, `lib/core/config.js` | quem chama, orçamento, tamanho da entrada | não — PR 5 |
