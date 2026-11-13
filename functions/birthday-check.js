@@ -1,4 +1,17 @@
 // Cron diário às 09:00 BRT (12:00 UTC) — EventBridge Scheduler, infra/api.tf.
+//
+// E-mail de aniversário é MARKETING, não transacional: o cliente não pediu por
+// ele. Então respeita o descadastro (lib/core/optout.js) — quem saiu da lista
+// não recebe, e quem recebe leva o link de saída no `unsubscribe_url`.
+//
+// ⚠️ O `unsubscribe_url` só aparece no e-mail se o template do EmailJS
+// (EMAILJS_BIRTHDAY_TEMPLATE) imprimir essa variável. Este template é fixo, com
+// campos de cupom — ao contrário do `template_update`, que tem corpo livre.
+// Enquanto o template não for editado, o cupom continua sendo criado e o envio
+// continua respeitando o descadastro, mas o link não fica visível no corpo.
+
+const optout   = require('./lib/core/optout');
+const firebase = require('./lib/core/firebase');
 
 exports.handler = async () => {
   const dbUrl      = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
@@ -31,12 +44,25 @@ exports.handler = async () => {
       return { statusCode: 200, body: 'no profiles' };
     }
 
+    // Uma leitura só para a lista inteira: checar um a um seria uma ida ao
+    // banco por aniversariante.
+    const descadastrados = await optout.carregarDescadastrados(firebase.dbGet);
+
     let sent = 0;
+    let optedOut = 0;
     const errors = [];
 
     for (const [uid, profile] of Object.entries(profiles)) {
       if (!profile.birthDate || !profile.email) continue;
       if (profile.birthDate.slice(5) !== todayMMDD) continue;
+
+      // Descadastrado não recebe e não ganha cupom: cupom gerado e não avisado
+      // só polui o banco.
+      if (descadastrados.has(optout.normaliza(profile.email))) {
+        optedOut++;
+        console.log(`birthday-check: ${profile.email} descadastrado — nada enviado`);
+        continue;
+      }
 
       const firstName = (profile.name || 'Cliente').replace(/\s.*/, '').toUpperCase().slice(0, 6);
       const code = `ANIV${firstName}${year}`;
@@ -74,12 +100,18 @@ exports.handler = async () => {
                 to_email:    profile.email,
                 coupon_code: code,
                 valid_until: expiryFmt,
-                site_url:    siteUrl
+                site_url:    siteUrl,
+                // Ver o aviso no topo do arquivo: depende do template imprimir.
+                unsubscribe_url: optout.linkDescadastro(profile.email, dbSecret, siteUrl)
               }
             })
           });
           const emailBody = await emailResp.text();
           console.log(`birthday-check: email enviado para ${profile.email} — ${emailBody}`);
+          // Registra o envio de marketing: é o que sustenta o intervalo mínimo
+          // da reativação, para o cliente não receber dois marketings na semana.
+          await optout.registrarEnvio({ email: profile.email, assunto: 'aniversario', dbSet: firebase.dbSet })
+            .catch((e) => console.error('birthday-check: registro de envio falhou:', e.message));
           sent++;
         } catch (emailErr) {
           errors.push({ uid, email: profile.email, error: emailErr.message });
@@ -90,8 +122,9 @@ exports.handler = async () => {
       }
     }
 
-    console.log(`birthday-check: ${sent} aniversariante(s) hoje (${todayMMDD})`);
-    return { statusCode: 200, body: JSON.stringify({ ok: true, date: todayMMDD, sent, errors }) };
+    console.log(`birthday-check: ${sent} aniversariante(s) hoje (${todayMMDD})`
+      + (optedOut ? ` · ${optedOut} descadastrado(s) pulado(s)` : ''));
+    return { statusCode: 200, body: JSON.stringify({ ok: true, date: todayMMDD, sent, optedOut, errors }) };
 
   } catch (err) {
     console.error('birthday-check error:', err.message);
