@@ -121,7 +121,26 @@ Estado em 10/11/2026. "Não" é dívida conhecida, com o PR em que entra.
 | `npm audit` (alta ou crítica reprova) | sim, no job `testes` do workflow |
 | `build.js` (versão dos assets) e `sw.js` (cache) | indireto (o build roda em todo `npm test`); teste próprio — PR 6 |
 
+### Regras do banco (`database.rules.json`)
+
+| Item | Tem teste? |
+|---|---|
+| Travas presentes no arquivo (escrita aberta, criação de agendamento, lista de espera, avaliações, cupons, gift card) | sim: `test-regras-banco.js` |
+| As regras executadas de verdade, com usos legítimos e ataques (88 casos) | sim, **no emulador**: `scripts/regras-emulador.js` (fora do `npm test`, ver abaixo) |
+
 ### Fora do `npm test`, de propósito
+
+`scripts/regras-emulador.js` roda as regras no emulador do Firebase, na própria
+máquina, sem tocar em produção. Precisa de Java e baixa o `firebase-tools`, por
+isso não entra no `npm test`. Rode sempre que mexer em `database.rules.json`,
+antes de publicar:
+
+```
+npx firebase-tools@13 emulators:exec --only database --project demo-spcc "node scripts/regras-emulador.js"
+```
+
+Com `LISTAR=1` na frente, ele lista todas as falhas em vez de parar na primeira
+(útil para comparar um arquivo de regras antigo com o novo).
 
 `scripts/test-giftcard-rules.sh` **escreve no banco de produção**. Só se roda à
 mão, sabendo disso, ao publicar regras novas do banco.
