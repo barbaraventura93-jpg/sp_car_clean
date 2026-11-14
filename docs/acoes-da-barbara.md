@@ -1,33 +1,37 @@
 # Ações que só a Bárbara pode fazer
 
 Lista viva. Cada item diz por que é necessário, o passo a passo e o que você
-deve ver quando der certo. Atualizado em 13/11/2026.
+deve ver quando der certo. Atualizado em 14/11/2026.
 
 Nunca cole senha, chave ou token em conversa, e-mail ou arquivo do repositório.
 
 ---
 
-## 1. Renovar o acesso da revisão à AWS — pendente
+## 1. Trocar a chave de acesso da AWS que está no ambiente — recomendado (risco aceito em 14/11/2026)
 
-**Por quê:** a revisão não conseguiu ler nada na AWS (a credencial da sessão
-está expirada). Sem isso ficam **não verificados**: o projeto e o plano
-(FREE/PAID), as permissões de cada serviço, o estado do Terraform, o
-`terraform plan`, os alarmes, os logs e o item S-12 do relatório.
+**Situação:** o ambiente de desenvolvimento do Claude guarda uma chave de
+acesso da AWS que não expira e tem permissão quase total (inclusive para criar
+outras permissões). Em 14/11/2026 você decidiu mantê-la para o desenvolvimento
+não parar. Fica registrado como risco aceito.
 
-**Permissão mínima necessária:** somente leitura, credencial temporária.
-Nenhuma permissão de escrita é necessária para o diagnóstico.
+**Por que ainda vale trocar:** quem obtiver essa chave pode apagar o site, o
+banco e os backups, ou criar recursos que geram custo. O deploy não depende
+dela.
 
-**Passo a passo:**
-1. Abra o Claude e vá nas configurações de conectores/plugins.
-2. Localize o conector da AWS e refaça o login (entrar de novo).
-3. Volte à conversa da revisão e escreva: "acesso AWS renovado".
+**Passo a passo, quando decidir trocar:**
+1. No console da AWS, abra **IAM > Usuários > github-actions-tracker > Credenciais de segurança**.
+2. Em **Chaves de acesso** há duas. A mais antiga (de maio) foi usada pela
+   última vez em 31/10: clique em **Ações > Desativar** e observe por uma
+   semana se algo para de funcionar. Se nada parar, exclua.
+3. Crie um usuário novo só para a revisão, com a política pronta
+   **ReadOnlyAccess**, gere uma chave para ele e coloque-a no ambiente do
+   Claude no lugar da atual.
+4. Desative a chave atual do `github-actions-tracker`.
 
-**Resultado esperado:** a revisão roda a checagem de identidade e preenche a
-tabela "Ambiente da revisão" em `docs/revisao-2026-11-09.md`.
+**Resultado esperado:** o site e o deploy continuam funcionando, e a revisão
+continua lendo a AWS, mas sem poder alterar nada.
 
-Se depois de renovar aparecer "Access Denied" em algo que antes funcionava,
-confira em **AWS Settings > Billing** se há um spend limit configurado e se ele
-foi atingido.
+**Custo:** nenhum.
 
 ---
 

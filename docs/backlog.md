@@ -3,7 +3,7 @@
 Decisões e trabalho combinados, ainda não feitos. Cada item diz **o problema
 medido**, não só o desejo, para que quem pegar depois não precise redescobrir.
 
-Última atualização: 09/11/2026.
+Última atualização: 14/11/2026.
 
 ---
 
@@ -118,7 +118,7 @@ confirma antes de ligar o gatilho. Se a miniatura vier pequena demais, o plano B
 A função **estoura em vez de mandar o original** se a miniatura falhar: original
 de 23 MB seria recusado de um jeito bem menos claro.
 
-## 2. Agentes de IA: mais úteis no dia a dia, sem painel de liga/desliga
+## 2. Agentes de IA: mais úteis no dia a dia, sem painel de liga/desliga — AVALIADO em 14/11/2026, aguardando decisão
 
 **O pedido (08/11/2026):** rever a estrutura de IA para ser mais útil e
 assertiva no dia a dia. E a observação de que **não precisaria do painel de
@@ -129,13 +129,54 @@ dona do negócio uma decisão que deveria estar resolvida. Agente que precisa de
 interruptor é agente que não convenceu — ou é ligado por padrão porque serve,
 ou não deveria existir.
 
-**Já decidido em conversa anterior:** o `concierge` fica. Os demais ficaram
-para avaliação no fim do backlog.
+**Já decidido em conversa anterior:** o `concierge` fica.
 
-**O que esta análise precisa entregar, por agente:** qual decisão do dia ele
-muda, o que ele faz quando não tem nada a dizer (silêncio é resposta), e quanto
-custa por mês. Agente que não muda decisão sai. Sem interruptor: o que fica,
-fica ligado.
+### A avaliação, por agente
+
+O critério é o do pedido: qual decisão do dia ele muda, o que faz quando não
+tem nada a dizer, e quanto custa. O custo está em **chamadas por mês** (o teto
+configurado em `functions/lib/core/config.js`) e no tamanho máximo da resposta;
+o valor em reais depende do preço do modelo no mês e deve ser lido no painel da
+Anthropic, não estimado aqui de memória. Não tive acesso ao uso real
+(`aiUsage` fica no banco), então "quanto é usado" está **não verificado**.
+
+| Agente | Decisão que muda | Quando não tem nada a dizer | Teto mensal | Recomendação |
+|---|---|---|---|---|
+| `concierge` (chat do site) | A do cliente: qual serviço agendar. Responde na hora, com o catálogo e os preços reais | Só fala quando o cliente pergunta | 500 chamadas, resposta até 600 tokens | **Fica** (já decidido) |
+| `orcamento` (foto do carro) | A do cliente: qual serviço serve para aquele estado do carro | Só roda quando o cliente envia foto | 200, até 512 | **Fica.** É o único que faz algo que regra fixa não faz (olhar a foto) |
+| `satisfacao` (avaliações) | A sua: ligar para um cliente insatisfeito no mesmo dia | Fica em silêncio se não houve avaliação nova. É o comportamento certo | 60, até 400 | **Fica, sem a IA no alerta.** O alerta de nota baixa não precisa de IA: nota ≤ 3 já é o sinal. A IA só resume o comentário; manter se você lê o resumo |
+| `checkin` (descrição de avarias) | Nenhuma decisão; economiza digitação no check-in | Só roda quando você pede | 150, até 400 | **Fica**, se você usa. É ferramenta, não agente: não precisa de interruptor |
+| `conteudo` (legenda do Instagram) | Nenhuma decisão do negócio; economiza escrever legenda | Só roda quando você pede | 60, até 512 | **Fica**, se você usa. Mesma observação do `checkin` |
+| `relatorio` (resumo semanal) | Pouca: repete números que o painel já mostra | **Manda mesmo sem novidade**, toda segunda | 10, até 800 | **Sai, ou vira relatório sem IA.** Os números já são calculados antes de chamar a IA; ela só redige |
+| `insumos` (previsão de reposição) | A sua: o que comprar | **Manda "Estoque OK" mesmo sem nada a dizer** | 10, até 400 | **Sai.** Duplica dois avisos que já existem sem IA: o alerta diário de estoque abaixo do mínimo (`admin-alerts`) e a coluna "Dura até" da tela de Estoque (item 3) |
+| `ping` | Nenhuma: é teste de conexão | — | 10 | **Sai da Central.** Vira uma checagem interna |
+
+### O que proponho, se você concordar
+
+1. **Tirar o painel de liga/desliga.** O que fica, fica ligado. O teto mensal
+   de chamadas continua existindo por baixo, como proteção de custo, e avisa no
+   Telegram se for atingido.
+2. **Remover `relatorio`, `insumos` e `ping`** (e os do item 4, ver lá).
+3. **Manter `concierge` e `orcamento` para o cliente**, e `satisfacao`,
+   `checkin` e `conteudo` como ferramentas do painel.
+
+Isso é mudança visível no painel (some a Central de IA como está hoje), então
+**só faço com a sua confirmação**.
+
+### Cuidados de segurança já aplicados (PR #65, 13/11/2026)
+
+O agente de estoque era chamável por qualquer visitante, e a conversa do chat
+não tinha teto de tamanho. Corrigido: agentes públicos em lista de permissão,
+tetos na entrada, e o erro técnico não volta mais ao cliente.
+
+Sobre texto de cliente entrando em prompt: no `concierge` e no `orcamento` a
+IA só enxerga o catálogo público e a conversa do próprio visitante, e não tem
+como executar nada, então o pior caso é ela responder bobagem ao próprio autor.
+No `satisfacao` e no `agenda` o texto do cliente (comentário, nome) entra no
+prompt e o resultado vai para o seu Telegram: um comentário malicioso poderia
+distorcer o resumo, mas não acessa dado nem dispara ação.
+
+**Próxima ação: da Bárbara** — dizer se concorda com a lista acima.
 
 ---
 
@@ -230,14 +271,25 @@ acima.
 
 ---
 
-## 4. Avaliação dos agentes adiados
+## 4. Avaliação dos agentes adiados — AVALIADO em 14/11/2026, aguardando decisão
 
 `upsell`, `reativacao` e `agenda` ficaram para o fim do backlog por decisão de
-30/10/2026. Avaliar com o mesmo critério do item 2.
+30/10/2026. Avaliados com o mesmo critério do item 2.
+
+| Agente | Decisão que muda | Quando não tem nada a dizer | Teto mensal | Recomendação |
+|---|---|---|---|---|
+| `upsell` (sugere um complemento no agendamento) | A do cliente: acrescentar um serviço | Fica em silêncio se não achar complemento | 300, até 120 tokens | **Não fazer / remover.** O site já sugere o combo que falta sem IA ("adicione X e ganhe o combo"), com desconto real. A sugestão da IA concorre com essa e não tem desconto para oferecer. É também o agente público que mais chama (um por agendamento) |
+| `reativacao` (mensagem para cliente sumido há 90+ dias) | A sua: quem chamar de volta e com que texto | Só roda quando você seleciona clientes | 60, até 400 por cliente | **Fazer depois, com condição.** A parte útil é a lista de quem sumiu, que não precisa de IA. A IA só personaliza o texto. Vale quando houver base de clientes para justificar; hoje são poucos |
+| `agenda` (ranqueia a lista de espera quando abre vaga) | A sua: quem avisar primeiro | Fica em silêncio se não há ninguém na espera para a data | 30, até 512 | **Não fazer agora.** Com lista de espera pequena, a ordem de chegada resolve e é justa de explicar ao cliente. Reavaliar se a lista passar de uns 10 nomes por data |
+
+**Resumo:** remover `upsell`; manter `reativacao` e `agenda` desligados até
+haver volume que os justifique, e nesse dia reavaliar com números de uso.
+
+**Próxima ação: da Bárbara** — confirmar, junto com o item 2.
 
 ---
 
-## 5. Acesso ao projeto do Firebase/Google Cloud do site
+## 5. Acesso ao projeto do Firebase/Google Cloud do site — ABERTO, depende da Bárbara
 
 O projeto **não aparece** no console do Google Cloud da conta da Bárbara. Mas ele
 **existe e está vivo**: em 08/11/2026 a leitura com o segredo respondeu 200, a
@@ -257,3 +309,99 @@ do projeto logada em cada uma.
 
 Mitigações já em pé: backup diário no S3, e a migração para DynamoDB, que elimina
 a dependência.
+
+### O risco de seguir sem o acesso (atualizado em 14/11/2026)
+
+- **As regras do banco só podem ser publicadas com o segredo.** As regras
+  novas (PR #64) estão no repositório e ainda não valem (ver item 6).
+- **O segredo é uma credencial que ignora todas as regras** e não tem como ser
+  trocada sem o console. Se vazar, não há como revogá-la.
+- **Ninguém vê consumo nem cobrança** do projeto Google.
+- **Se o Google desativar o projeto** por inatividade do dono ou problema de
+  cobrança, o site perde o banco sem aviso. O backup diário no S3 permite
+  reconstruir, mas não há procedimento ensaiado.
+
+### O caminho, em passos simples
+
+1. Entre em https://console.firebase.google.com com **cada uma** das três
+   contas Google (a sua, a do Sid e a do e-mail administrativo do site).
+2. Em cada uma, veja se aparece um projeto chamado **sp-car-clean**.
+3. Na conta em que aparecer: **Configurações do projeto > Usuários e
+   permissões > Adicionar membro**, e adicione a sua conta como **Proprietário**.
+4. Me avise qual conta era. A partir daí dá para trocar o segredo e publicar
+   regras pelo console.
+
+Se não aparecer em nenhuma das três, o projeto está numa conta desconhecida e
+o caminho passa a ser concluir a migração dos dados para o DynamoDB.
+
+**Próxima ação: da Bárbara.**
+
+---
+
+## 6. Publicar as regras novas do banco — ABERTO, depende de acesso
+
+**O problema medido (13/11/2026):** as regras em produção deixam um visitante,
+sem login, apagar a lista de espera inteira, ler todas as avaliações
+(inclusive as internas) e a lista de cupons, e criar agendamento já
+"confirmado". No emulador, 28 de 88 casos de teste falham com as regras
+antigas; com as novas (PR #64, já na `main`), nenhum.
+
+**O que falta:** publicar. Precisa do segredo do banco, guardado no SSM, que a
+credencial atual da revisão não lê. Passo a passo em
+`docs/acoes-da-barbara.md`.
+
+**Próxima ação: da Bárbara** — autorizar a leitura do segredo, ou resolver o item 5.
+
+---
+
+## 7. Preço, cupom, gift card e pontos calculados no servidor — ABERTO
+
+**O problema medido (09/11/2026):** o preço final de um agendamento, com cupom
+e gift card já abatidos, é calculado e gravado pelo navegador. O servidor não
+confere. Marcar um cupom como usado depende de uma escrita que as regras negam
+ao visitante, então cupom de uso único não é baixado. Os pontos de fidelidade
+saem do preço que o próprio cliente gravou. Achados S-05, S-07 e S-08 de
+`docs/revisao-2026-11-09.md`.
+
+Hoje a barreira é a sua conferência manual de cada pedido antes de aprovar.
+
+**O que resolveria:** uma função no servidor que cria o agendamento, calcula o
+preço, baixa o cupom e o gift card numa operação só. É o maior item que
+sobrou da revisão.
+
+**Muda para o cliente:** os pontos passariam a cair só depois do pagamento
+confirmado ou da conclusão do serviço.
+
+**Próxima ação: da Bárbara** — aprovar o escopo antes de eu começar.
+
+---
+
+## 8. Infra: alarmes, cabeçalhos de segurança e segunda etapa no login admin — ABERTO
+
+**O problema medido (14/11/2026, lido na AWS):** nenhum alarme configurado, então
+um backup diário ou um lembrete que falhe passa em silêncio. O login não tem
+verificação em duas etapas, com 2 contas de admin. O site não envia política de
+segurança de conteúdo (CSP), que seria a segunda barreira contra o defeito
+corrigido no PR #63.
+
+**Custo:** os 10 primeiros alarmes são gratuitos; os demais, US$ 0,10 por mês
+cada. CSP e verificação em duas etapas por aplicativo não têm custo.
+
+**Muda para a admin:** passa a digitar um código do aplicativo autenticador ao entrar.
+
+**O que falta:** escrever o Terraform e você aplicar. O `terraform plan` ainda
+não rodou: a credencial atual não lê API Gateway, SSM nem Route 53.
+
+**Próxima ação: minha** (escrever), depois **da Bárbara** (aplicar).
+
+---
+
+## 9. `functions/lib/feriados.js` não é usado por ninguém — ABERTO
+
+**O problema medido (09/11/2026):** o arquivo calcula feriados nacionais e de
+Guarulhos, mas nenhuma função nem o site o chama, e ele não tem teste. O prazo
+de entrega mostrado ao cliente não considera feriado nem domingo.
+
+**Decisão necessária:** ligar ao cálculo do prazo (com teste), ou remover o arquivo.
+
+**Próxima ação: da Bárbara** — o prazo deve pular feriado?
