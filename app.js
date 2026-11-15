@@ -1065,6 +1065,20 @@ function prevStep() {
   renderBookingStep();
 }
 
+// Espera uma gravação terminar, com prazo. Devolve true só se ela CONCLUIU.
+// O prazo existe porque, com o banco fora do ar, a gravação não falha: fica
+// pendente para sempre, tentando reconectar. Sem prazo o cliente ficaria
+// olhando um botão que não responde.
+function _gravouNoPrazo(promessa, ms = 8000) {
+  return new Promise((resolve) => {
+    const relogio = setTimeout(() => resolve(false), ms);
+    Promise.resolve(promessa).then(
+      () => { clearTimeout(relogio); resolve(true); },
+      () => { clearTimeout(relogio); resolve(false); }
+    );
+  });
+}
+
 async function submitBooking() {
   const name   = document.getElementById('fName').value.trim();
   const email  = document.getElementById('fEmail').value.trim();
@@ -1122,13 +1136,26 @@ async function submitBooking() {
     ...(_appliedCoupon   ? { couponCode: _appliedCoupon.code, couponDiscount }                                           : {}),
     ...(_appliedGiftCard ? { giftCardCode: _appliedGiftCard.code, giftCardUsed: _appliedGiftCard.amountToUse } : {}),
   };
+  // Grava PRIMEIRO, e só segue se gravou. Antes a gravação era disparada sem
+  // esperar e a tela mostrava "solicitação recebida" de qualquer jeito: com o
+  // banco fora do ar (aconteceu de 10/11/2026 em diante) o cliente saía
+  // achando que tinha agendado, recebia o e-mail de confirmação, e o pedido
+  // não existia em lugar nenhum. Falhou? Diz a verdade e aponta o WhatsApp,
+  // sem gastar cupom nem gift card.
+  const gravou = !!_bookingsRef && await _gravouNoPrazo(_bookingsRef.child(id).set(b));
+  if (!gravou) {
+    console.error('submitBooking: o agendamento não foi gravado');
+    alert('Não conseguimos registrar seu agendamento agora. Nada foi cobrado.\n\n' +
+          'Por favor, fale com a gente pelo WhatsApp para agendar: ' + (CFG.whatsapp || '') + '.');
+    return;
+  }
+
   if (_appliedCoupon)   { _markCouponUsed(_appliedCoupon.code); _appliedCoupon = null; }
   if (_appliedGiftCard) { _useGiftCard(_appliedGiftCard.code, _appliedGiftCard.amountToUse); _appliedGiftCard = null; }
 
   // Salvar booking (usa set individual para compatibilidade futura com regras por uid)
   _bookings.push(b);
   if (_bookingsRef) {
-    _bookingsRef.child(id).set(b).catch(e => console.error('Firebase booking:', e));
     // Índice do cliente logado → permite ver "Meus agendamentos" sem leitura
     // pública. Pelo servidor, que confere a posse antes de indexar: sem isso o
     // cliente indexaria o código de outra pessoa e passaria a lê-lo pela
