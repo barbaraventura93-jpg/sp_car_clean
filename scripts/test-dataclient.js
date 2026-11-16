@@ -24,8 +24,15 @@ assert.strictEqual(usarLambdaParaEscrever(), false, 'visitante escreve direto �
 ehAdmin = true;
 assert.strictEqual(usarLambdaParaLer('bookings'), true, 'admin lê nó restrito pela Lambda');
 assert.strictEqual(usarLambdaParaLer('bookings/SPC-1'), true, 'a raiz do caminho é que decide');
-assert.strictEqual(usarLambdaParaLer('feedback'), false, 'nó de leitura pública continua direto, em tempo real');
-assert.strictEqual(usarLambdaParaLer('config/adminPassword'), false, 'config é público nas regras');
+// Nó de leitura pública TAMBÉM passa pela Lambda quando é a admin lendo.
+//
+// Até 10/11/2026 estes dois iam direto ao Firebase, de graça e em tempo real.
+// Com o Firebase excluído, essa exceção virou o defeito: a aba Serviços do
+// painel falhava (nó `services` é público) enquanto o resto do painel
+// funcionava. A regra agora é simples — admin lê tudo pelo servidor.
+assert.strictEqual(usarLambdaParaLer('feedback'), true, 'nó público também vai pela Lambda para a admin');
+assert.strictEqual(usarLambdaParaLer('services'), true, 'era este o caminho que quebrava a aba Serviços');
+assert.strictEqual(usarLambdaParaLer('config/adminPassword'), true, 'config também');
 assert.strictEqual(usarLambdaParaEscrever(), true, 'admin escreve pela Lambda');
 
 // ── consultas: equalTo (o filtro que impede avaliação pendente no site) ─

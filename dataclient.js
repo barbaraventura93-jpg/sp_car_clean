@@ -52,7 +52,9 @@
 // =====================================================================
 
 const DB = (function () {
-  // Nós com `.read: true` nas regras do RTDB: o navegador lê sem autenticação.
+  // Nós que as regras do RTDB liberavam para leitura anônima. Não regem mais o
+  // roteamento (ver `usarLambdaParaLer`); ficam registrados porque é a lista
+  // que o endpoint público da Fase 3 vai ter que servir sem token.
   const LEITURA_PUBLICA = new Set([
     'services', 'combos', 'config', 'portfolio', 'gallery',
     'dayLoad', 'blocked', 'coupons', 'feedback',
@@ -75,9 +77,21 @@ const DB = (function () {
     return String(caminho).split('/')[0];
   }
 
+  // Com admin logado, TODA leitura vai pela Lambda — inclusive os nós de
+  // leitura pública.
+  //
+  // Antes a exceção fazia sentido: o nó público era lido direto do Firebase,
+  // de graça e em tempo real. Depois de 10/11/2026 o Firebase não existe mais
+  // (ver docs/incidente-firebase-2026-11-14.md), e essa exceção era
+  // exatamente o que fazia a aba Serviços do painel falhar enquanto o resto
+  // funcionava: `services` é nó público, então a leitura ia para um banco que
+  // não responde mais.
+  //
+  // O visitante não-admin continua caindo no caminho direto, que hoje também
+  // está morto — é a Fase 3 da migração, que precisa de um endpoint público
+  // (e, para isso, de um `terraform apply`). Ver docs/migracao-aws.md.
   function usarLambdaParaLer(caminho) {
-    if (!_ehAdmin()) return false;
-    return !LEITURA_PUBLICA.has(raizDe(caminho));
+    return _ehAdmin();
   }
 
   function usarLambdaParaEscrever() {

@@ -140,6 +140,8 @@ resource "aws_lambda_function" "fn" {
         URL                  = local.site_url
         ORIGIN_VERIFY_SECRET = random_password.origin_verify.result
         PUSH_TABLE           = aws_dynamodb_table.push.name
+        # Tabela de dados do negócio (substituiu o Firebase em 16/11/2026).
+        DATA_TABLE           = aws_dynamodb_table.data.name
         MEDIA_BUCKET         = aws_s3_bucket.media.bucket
         MEDIA_BASE_URL       = local.media_base_url
 
@@ -163,6 +165,7 @@ resource "aws_lambda_function" "fn" {
     aws_iam_role_policy_attachment.lambda_logs,
     aws_iam_role_policy.lambda_ssm,
     aws_iam_role_policy.lambda_push,
+    aws_iam_role_policy.lambda_data,
     aws_iam_role_policy.lambda_media,
     aws_iam_role_policy.lambda_backup,
     aws_ssm_parameter.vapid_private_key,

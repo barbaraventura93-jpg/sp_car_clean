@@ -186,6 +186,21 @@ Então:
 
 Cada fase termina com verificação e teste seu. Nada é cortado sem rollback.
 
+> **Estado em 16/11/2026.** O Firebase foi excluído em 10/11, o que tirou o
+> "rollback" de cena: não há mais para onde voltar, e as fases deixaram de
+> poder rodar em paralelo com o banco antigo.
+>
+> | Fase | Estado |
+> |---|---|
+> | 0 — Fundação | **feita.** 12.396 itens importados do backup de 09/11 e conferidos nó por nó |
+> | 1 — Painel admin | **código pronto**, esperando `terraform apply` (permissão da role + `DATA_TABLE`) |
+> | 2 — Escrita pública | pendente. A escrita dupla descrita abaixo não se aplica mais: não existe segundo banco |
+> | 3 — Leitura pública | pendente. Precisa de rota nova no API Gateway |
+> | 4 — Lambdas | 1 de 14 feita (`admin-data`). As outras 13 falam HTTP direto com o Firebase |
+>
+> O detalhamento do que falta está em `docs/incidente-firebase-2026-11-14.md`,
+> seção "O caminho de volta".
+
 ### Fase 0 — Fundação · risco nulo
 
 Tabela DynamoDB com os dois GSIs, pool Cognito, usuário admin, e o script de

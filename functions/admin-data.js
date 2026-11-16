@@ -10,16 +10,20 @@
 // o navegador como anônimo e recusa toda escrita administrativa.
 //
 // Esta função é a ponte: valida o token do Cognito (exigindo o grupo `admin`)
-// e fala com o Firebase usando o FIREBASE_DATABASE_SECRET, que ignora as
-// regras. O navegador nunca recebe o segredo.
+// e fala com o banco. O navegador nunca recebe credencial de banco.
+//
+// DESDE 16/11/2026 O BANCO É O DYNAMODB. O Firebase foi excluído em 10/11 — a
+// migração que este arquivo antecipava deixou de ser plano e virou necessidade.
+// O caminho (`bookings/SPC-X`) continua sendo a linguagem da API: quem traduz
+// para pk/sk é lib/core/chaves.js, e a tabela de permissões abaixo não mudou.
 //
 // NÃO é um proxy genérico, de propósito. Um endpoint que aceitasse qualquer
 // caminho e qualquer corpo recriaria exatamente a classe de brecha que a
 // migração está fechando — foi assim que o gift card virou forjável. Aqui cada
 // nó declara quais operações aceita, e o que não está declarado é recusado.
 //
-// Quando os dados forem para o DynamoDB, só o interior desta função muda; o
-// painel não é reescrito de novo.
+// Foi o que aconteceu na troca para o DynamoDB: só o interior mudou, e o
+// painel não foi reescrito.
 //
 // POST /api/admin-data
 //   { "op": "ler"|"gravar"|"mesclar"|"apagar", "caminho": "bookings/SPC-X", "dados": {...} }
@@ -122,19 +126,17 @@ function autorizado(op, segmentos) {
   return false;
 }
 
-async function firebase(metodo, caminho, corpo) {
-  const base = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
-  const secret = process.env.FIREBASE_DATABASE_SECRET;
-  if (!base || !secret) throw new Error('Firebase não configurado');
-  const resp = await fetch(`${base}/${caminho}.json?auth=${encodeURIComponent(secret)}`, {
-    method: metodo,
-    headers: corpo === undefined ? {} : { 'Content-Type': 'application/json' },
-    body: corpo === undefined ? undefined : JSON.stringify(corpo),
-  });
-  const texto = await resp.text();
-  if (!resp.ok) throw new Error(`Firebase HTTP ${resp.status}: ${texto.slice(0, 200)}`);
-  return texto ? JSON.parse(texto) : null;
-}
+const store = require('./lib/core/store');
+
+// Op da API → operação no banco. Mantido como mapa explícito: um `if` em
+// cadeia convidaria a acrescentar operação sem passar pela tabela de
+// permissões, que é o que mantém esta função não sendo um proxy genérico.
+const EXECUTAR = {
+  ler:     (caminho) => store.dbGet(caminho),
+  gravar:  (caminho, dados) => store.dbSet(caminho, dados),
+  mesclar: (caminho, dados) => store.dbPatch(caminho, dados),
+  apagar:  (caminho) => store.dbDelete(caminho),
+};
 
 exports.handler = async (event) => {
   const cors = corsHeaders(event);
@@ -193,11 +195,9 @@ exports.handler = async (event) => {
   const autor = quem ? `${quem.email || quem.uid} (${quem.origem})` : 'desconhecido';
 
   try {
-    let resultado;
-    if (op === 'ler') resultado = await firebase('GET', caminho);
-    else if (op === 'gravar') resultado = await firebase('PUT', caminho, dados);
-    else if (op === 'mesclar') resultado = await firebase('PATCH', caminho, dados);
-    else resultado = await firebase('DELETE', caminho);
+    const executar = EXECUTAR[op];
+    if (!executar) return reply(400, cors, { ok: false, error: 'operação inválida' });
+    const resultado = await executar(caminho, dados);
 
     if (op !== 'ler') console.log(`admin-data: ${autor} ${op} ${caminho}`);
     return reply(200, cors, { ok: true, dados: resultado });

@@ -1,8 +1,17 @@
 # Incidente: banco Firebase inacessível desde 10/11/2026
 
 > Registro feito em 14/11/2026, a partir dos logs do CloudWatch e de testes
-> diretos nos endpoints. Enquanto não houver acesso ao console do Google, isto é
-> o que se sabe com evidência.
+> diretos nos endpoints.
+>
+> **CORRIGIDO EM 16/11/2026 — a premissa deste documento estava errada.** Eu o
+> escrevi como quem investiga um projeto apagado sem aviso, e cheguei a
+> recomendar procurar a conta Google dona e recuperar o projeto dentro dos 30
+> dias. Nada disso se aplica: a Bárbara **excluiu o Firebase de propósito**, e
+> foi por isso que pediu a migração para a AWS. O que o diagnóstico abaixo
+> acerta é o efeito (o que quebrou, quando e por quê); o que ele erra é a
+> causa e, por consequência, o plano de ação. O plano certo é terminar a
+> migração — ver `docs/migracao-aws.md` e a seção "O caminho de volta" no fim
+> deste arquivo.
 
 ## O que está acontecendo
 
@@ -70,23 +79,43 @@ Verificado em 14/11: gzip íntegro, JSON válido, 20 nós —
 **Perda possível:** só o que foi escrito entre 09/11 06:17 e a morte do banco —
 no máximo um dia. Depois disso nada foi gravado, porque não havia onde gravar.
 
-## O que fazer, na ordem
+## O caminho de volta: terminar a migração
 
-1. **Descobrir qual conta Google é dona do projeto `sp-car-clean`**
-   (número 726947312422). Ele nunca apareceu no console da Bárbara — é o item 5
-   do backlog, que deixou de ser incômodo e virou bloqueio de produção.
-   Candidatas já levantadas: `sidrpeixoto@` e `spcarclean0@`.
-2. **Com acesso ao console**, ver se o projeto está em "recursos pendentes de
-   exclusão". Projeto apagado é recuperável por cerca de 30 dias; a contagem
-   começou em 10/11.
-3. **Se o projeto voltar:** recriar a instância do Realtime Database com o mesmo
-   nome (`sp-car-clean-default-rtdb`), republicar as regras
-   (`docs/database.rules.anterior.json`) e importar o backup de 09/11.
-4. **Se o projeto não voltar:** criar projeto novo, importar o backup, e trocar
-   `FIREBASE_DATABASE_URL`/`FIREBASE_DATABASE_SECRET` no SSM
-   (`/sp-car-clean/`) e a config do Firebase no `app.js`. Os agendamentos e o
-   histórico se preservam pelo backup; o **login dos clientes não** — contas do
-   Firebase Auth não vão no backup do banco.
+O Firebase não volta, e não precisa. O que ficou faltando da migração era
+justamente a camada de dados — o site e as funções já estavam na AWS, e o login
+já era Cognito.
+
+**Feito em 16/11/2026:**
+
+1. **Os dados estão na AWS.** O backup de 09/11 foi importado para a tabela
+   `sp-car-clean-data` do DynamoDB: 12.396 itens, conferidos nó por nó contra o
+   backup (`scripts/importar-para-dynamodb.js`, com `--conferir`).
+2. **O mapeamento virou código** em `functions/lib/core/chaves.js`, usado tanto
+   pelo importador quanto pelas Lambdas — uma fonte só, para não existir chave
+   gravada num formato e lida em outro.
+3. **O acesso a dados** (`functions/lib/core/store.js`) tem a mesma interface do
+   antigo `core/firebase.js`, então cada Lambda troca uma linha de `require`.
+4. **O painel** já aponta para o DynamoDB (`admin-data`), e o `dataclient.js`
+   deixou de mandar leitura de nó público direto ao Firebase — era o que
+   quebrava a aba Serviços enquanto o resto do painel respondia.
+
+**Falta, na ordem:**
+
+1. **`terraform apply`** — a role das funções não tem permissão na tabela nova e
+   a variável `DATA_TABLE` não é passada (ambos já escritos em `infra/`). Sem
+   isso o código novo sobe e responde erro. **É o único passo que depende de
+   permissão que a chave guardada no ambiente não tem** (SSM e API Gateway).
+2. **As Lambdas que falam HTTP direto com o Firebase** (13 arquivos) — troca
+   mecânica para o `store`, uma por vez.
+3. **`firebase-backup`** — passa a exportar do DynamoDB. Até então, a rede de
+   segurança é o PITR da tabela (35 dias, já ligado) e o backup de 09/11 no S3.
+4. **Endpoint público de dados** (Fase 3) — o visitante não-logado ainda lê um
+   banco que não existe. Precisa de rota nova no API Gateway, logo de
+   `terraform apply` também.
+
+**O login dos clientes não se perdeu:** o pool do Cognito tem as 3 contas, e o
+histórico delas é reencontrado pelo e-mail canônico (GSI2), não pelo uid antigo
+do Firebase.
 
 ## Buracos que este incidente expôs
 
@@ -97,5 +126,11 @@ no máximo um dia. Depois disso nada foi gravado, porque não havia onde gravar.
 - **Falha silenciosa por desenho.** Tanto `booking-status` (anti-enumeração)
   quanto `getAgentConfig` (`catch → null`) transformam erro de infraestrutura em
   "não encontrado"/"desligado". É seguro para o cliente e cego para a dona.
-- **Ponto único de falha confirmado.** O acesso ao projeto depende de um segredo
-  no SSM e de uma conta Google que ninguém sabe qual é.
+- **Ponto único de falha confirmado — e agora resolvido.** O acesso aos dados
+  dependia de um segredo no SSM e de uma conta Google que ninguém sabia qual
+  era. Os dados agora estão numa tabela da própria conta AWS, com PITR de 35
+  dias.
+- **O que ninguém verificou antes de excluir:** que a migração tinha levado só
+  o site, as funções e o login — não o banco. Uma lista do que cada serviço
+  ainda atende, conferida antes de desligar, teria evitado os seis dias de
+  parada.
