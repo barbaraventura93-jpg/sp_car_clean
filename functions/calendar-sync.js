@@ -18,7 +18,7 @@
 // deriva do segredo de origem do CloudFront, que já existe no Lambda).
 
 const crypto = require('crypto');
-const { dbGet } = require('./lib/core/firebase');
+const { dbGet } = require('./lib/core/store');
 const { verifyAdmin, lookupUser, bearerToken } = require('./lib/admin-auth');
 const { clientIp, rateLimit, originAllowed, corsHeaders } = require('./lib/guard');
 

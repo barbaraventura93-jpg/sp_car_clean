@@ -8,7 +8,7 @@
 // Variáveis: FIREBASE_DATABASE_URL, FIREBASE_DATABASE_SECRET,
 //            EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY (opcional)
 
-const { dbGet, dbPatch } = require('./lib/core/firebase');
+const { dbGet, dbPatch } = require('./lib/core/store');
 const { sendEmail } = require('./lib/core/email');
 
 // Status que ainda merecem lembrete (agendamento de pé).

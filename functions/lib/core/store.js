@@ -363,6 +363,40 @@ async function dbPatch(no, valor) {
   for (const filho of Object.keys(valor)) await registrarAno(k.no, filho);
 }
 
+/**
+ * Incremento atômico de um contador, devolvendo o valor novo.
+ *
+ * Substitui o `{".sv":{"increment":1}}` do Realtime Database. Precisa ser
+ * atômico de verdade: o rate-limit por IP é compartilhado entre instâncias do
+ * Lambda, e ler-somar-gravar perderia contagens exatamente quando o volume
+ * sobe, que é quando o limite importa.
+ *
+ * `ADD` do DynamoDB só funciona em atributo de primeiro nível — por isso o
+ * valor do registro mora em `dados` e não dentro de um mapa.
+ */
+async function dbIncrement(no, delta = 1) {
+  const k = chaves.chaveDe(no);
+  if (k.tipo !== 'item' || k.campo) throw new Error('dbIncrement só vale para um registro inteiro');
+  const extras = chaves.extrasDe(k.no, ultimoSegmento(no) || k.sk, null);
+  const nomes = { '#no': 'no' };
+  const valores = { ':no': { S: k.no }, ':d': { N: String(delta) } };
+  const sets = ['#no = :no'];
+  Object.entries(extras).forEach(([campo, v], i) => {
+    nomes[`#e${i}`] = campo;
+    valores[`:e${i}`] = paraAttr(v);
+    sets.push(`#e${i} = :e${i}`);
+  });
+  const r = await enviar('UpdateItem', {
+    TableName: TABELA,
+    Key: { pk: { S: k.pk }, sk: { S: k.sk } },
+    UpdateExpression: `SET ${sets.join(', ')} ADD dados :d`,
+    ExpressionAttributeNames: nomes,
+    ExpressionAttributeValues: valores,
+    ReturnValues: 'UPDATED_NEW',
+  });
+  return deAttr(r.Attributes?.dados);
+}
+
 async function dbPush(no, valor) {
   const id = novoId();
   const k = chaves.chaveDe(`${String(no).replace(/\/+$/, '')}/${id}`, valor);
@@ -414,7 +448,7 @@ async function escreverEmLote(escritas) {
 }
 
 module.exports = {
-  dbPath, dbGet, dbSet, dbPatch, dbPush, dbDelete,
+  dbPath, dbGet, dbSet, dbPatch, dbPush, dbDelete, dbIncrement,
   // expostos para teste e para o importador
   paraAttr, deAttr, itemParaAttrs, novoId, TABELA, _injetar,
 };

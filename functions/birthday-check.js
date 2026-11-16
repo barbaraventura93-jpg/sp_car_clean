@@ -11,20 +11,25 @@
 // continua respeitando o descadastro, mas o link não fica visível no corpo.
 
 const optout   = require('./lib/core/optout');
-const firebase = require('./lib/core/firebase');
+const firebase = require('./lib/core/store');
 
 exports.handler = async () => {
-  const dbUrl      = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
-  const dbSecret   = process.env.FIREBASE_DATABASE_SECRET;
+  // O banco é o DynamoDB desde 16/11/2026. O FIREBASE_DATABASE_SECRET segue
+  // sendo lido por UM motivo: é a chave que assina o link de descadastro
+  // (lib/core/optout.js). O nome ficou errado — é um segredo do projeto, não
+  // mais do Firebase —, mas renomear exigiria criar outro parâmetro no SSM e
+  // invalidaria links já enviados. Fica anotado como dívida.
+  const assinante  = process.env.FIREBASE_DATABASE_SECRET;
   const sjsService = process.env.EMAILJS_SERVICE_ID;
   const sjsPublic  = process.env.EMAILJS_PUBLIC_KEY;
   const sjsPrivate = process.env.EMAILJS_PRIVATE_KEY;
   const sjsTemplate= process.env.EMAILJS_BIRTHDAY_TEMPLATE;
   const siteUrl    = (process.env.URL || 'https://www.spcarclean.com.br').replace(/\/$/, '');
 
-  if (!dbUrl || !dbSecret) {
-    console.error('birthday-check: FIREBASE_DATABASE_URL ou FIREBASE_DATABASE_SECRET ausente');
-    return { statusCode: 200, body: 'db not configured' };
+  if (!assinante) {
+    // Sem a chave não há link de descadastro válido, e aniversário é marketing.
+    console.error('birthday-check: segredo de assinatura ausente — nada enviado');
+    return { statusCode: 200, body: 'signing secret missing' };
   }
 
   const now      = new Date();
@@ -38,8 +43,7 @@ exports.handler = async () => {
   const expiryFmt   = `${expiry.slice(8)}/${expiry.slice(5,7)}/${expiry.slice(0,4)}`;
 
   try {
-    const resp     = await fetch(`${dbUrl}/clientProfiles.json?auth=${dbSecret}`);
-    const profiles = await resp.json();
+    const profiles = await firebase.dbGet('/clientProfiles');
     if (!profiles || typeof profiles !== 'object') {
       return { statusCode: 200, body: 'no profiles' };
     }
@@ -67,11 +71,8 @@ exports.handler = async () => {
       const firstName = (profile.name || 'Cliente').replace(/\s.*/, '').toUpperCase().slice(0, 6);
       const code = `ANIV${firstName}${year}`;
 
-      // Salvar cupom no Firebase
-      await fetch(`${dbUrl}/coupons/${code}.json?auth=${dbSecret}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Salvar o cupom
+      await firebase.dbSet(`/coupons/${code}`, ({
           code,
           discountType: 'percent',
           discountValue: 10,
@@ -81,8 +82,7 @@ exports.handler = async () => {
           validUntil: expiry,
           createdAt: now.toISOString(),
           note: `Aniversário de ${profile.name} — gerado automaticamente`
-        })
-      });
+        }));
 
       // Enviar e-mail via EmailJS
       if (sjsService && sjsPublic && sjsTemplate) {
@@ -102,7 +102,7 @@ exports.handler = async () => {
                 valid_until: expiryFmt,
                 site_url:    siteUrl,
                 // Ver o aviso no topo do arquivo: depende do template imprimir.
-                unsubscribe_url: optout.linkDescadastro(profile.email, dbSecret, siteUrl)
+                unsubscribe_url: optout.linkDescadastro(profile.email, assinante, siteUrl)
               }
             })
           });

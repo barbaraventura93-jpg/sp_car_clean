@@ -13,7 +13,7 @@
 // Responde HTML, não JSON: o destino é um navegador aberto a partir do e-mail.
 
 const optout   = require('./lib/core/optout');
-const firebase = require('./lib/core/firebase');
+const firebase = require('./lib/core/store');
 
 const MARCA = 'SP Car Clean';
 

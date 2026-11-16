@@ -212,6 +212,34 @@ for (const [caminho, chaveEsperada] of [
   assert.strictEqual(chamadas[0].params.Item.sk.S, r.name);
   assert.deepStrictEqual(chamadas[0].params.Item.no, { S: 'feedback' });
 
+  // ── dbIncrement: atômico, com expiração ─────────────────────────────
+  //
+  // É o rate-limit por IP, compartilhado entre instâncias do Lambda. Se isto
+  // fosse ler-somar-gravar, perderia contagem justo quando o volume sobe.
+  reset();
+  respostas.UpdateItem = { Attributes: attrs({ dados: 7 }) };
+  const n = await store.dbIncrement('/aiRateLimit/2026111612_1_2_3_4');
+  assert.strictEqual(n, 7, 'devolve o valor novo do contador');
+  assert.match(chamadas[0].params.UpdateExpression, /ADD dados :d$/);
+  assert.deepStrictEqual(chamadas[0].params.ExpressionAttributeValues[':d'], { N: '1' });
+  assert.strictEqual(chamadas[0].params.ReturnValues, 'UPDATED_NEW');
+  assert.deepStrictEqual(chamadas[0].params.Key,
+    { pk: { S: 'AI' }, sk: { S: 'RATE#2026111612_1_2_3_4' } });
+  // O contador tem que expirar sozinho: é o que dispensa a limpeza diária que
+  // o ai-dispatcher fazia à mão.
+  const expira = chamadas[0].params.ExpressionAttributeValues[':e0'];
+  assert.ok(expira && Number(expira.N) > Math.floor(Date.now() / 1000), 'expiresAt no futuro');
+  assert.match(chamadas[0].params.UpdateExpression, /#e0 = :e0/);
+
+  reset();
+  respostas.UpdateItem = { Attributes: attrs({ dados: 2 }) };
+  await store.dbIncrement('/aiRateLimit/x', 5);
+  assert.deepStrictEqual(chamadas[0].params.ExpressionAttributeValues[':d'], { N: '5' });
+
+  // Contador é registro inteiro, não campo: incrementar um campo pediria outra
+  // expressão, e aceitar em silêncio gravaria no lugar errado.
+  await assert.rejects(() => store.dbIncrement('/config/maxPerDay'), /registro inteiro/);
+
   // ── dbDelete ────────────────────────────────────────────────────────
 
   reset();

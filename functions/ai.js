@@ -82,7 +82,7 @@ exports.handler = async (event) => {
 
 function buildCore() {
   const claude   = require('./lib/core/claude');
-  const firebase = require('./lib/core/firebase');
+  const firebase = require('./lib/core/store');
   const telegram = require('./lib/core/telegram');
   const email    = require('./lib/core/email');
   const usage    = { inputTokens: 0, outputTokens: 0 };
@@ -115,26 +115,26 @@ function checkRL(ip) {
   return true;
 }
 
-// Rate-limit persistente e compartilhado entre instâncias (item 6). Usa o
-// incremento atômico do Realtime Database (server value {".sv":{"increment":1}})
-// num contador por hora e por IP, escrito com o Database Secret (ignora as
-// regras). Fail-open: se o DB não responder, não bloqueia (os tetos de orçamento
-// por agente e o rate-limit em memória seguem valendo). Os buckets antigos são
-// limpos diariamente pelo ai-dispatcher.
+// Rate-limit persistente e compartilhado entre instâncias (item 6), num
+// contador por hora e por IP.
+//
+// O incremento é ATÔMICO (`ADD` do DynamoDB; antes era o
+// `{".sv":{"increment":1}}` do Realtime Database). Ler-somar-gravar perderia
+// contagem com duas instâncias concorrendo — justo no volume em que o limite
+// existe para servir.
+//
+// Fail-open: se o banco não responder, não bloqueia (os tetos de orçamento por
+// agente e o rate-limit em memória seguem valendo). Negar atendimento por falha
+// de banco é pior que deixar passar uma chamada.
+//
+// Os contadores expiram sozinhos (TTL na tabela), então não há mais limpeza
+// diária para manter.
 async function checkRLPersistent(ip) {
-  const dbUrl    = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
-  const dbSecret = process.env.FIREBASE_DATABASE_SECRET;
-  if (!dbUrl || !dbSecret) return true; // sem DB configurado → não bloqueia
+  const { dbIncrement } = require('./lib/core/store');
   const bucket = new Date().toISOString().slice(0, 13).replace(/[-T:]/g, ''); // YYYYMMDDHH
   const key    = `${bucket}_${String(ip).replace(/[^0-9A-Za-z]/g, '_').slice(0, 60)}`;
   try {
-    const resp = await fetch(`${dbUrl}/aiRateLimit/${key}.json?auth=${dbSecret}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ '.sv': { increment: 1 } })
-    });
-    if (!resp.ok) return true; // fail-open
-    const count = Number(await resp.json());
+    const count = Number(await dbIncrement(`aiRateLimit/${key}`));
     return !Number.isFinite(count) || count <= RL_MAX;
   } catch {
     return true; // fail-open

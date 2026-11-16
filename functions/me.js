@@ -110,19 +110,9 @@ function ehDono(agendamento, quem) {
   return !!emailDoAgendamento && emailDoAgendamento === String(quem.email || '').toLowerCase();
 }
 
-async function firebase(metodo, caminho, corpo) {
-  const base = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
-  const secret = process.env.FIREBASE_DATABASE_SECRET;
-  if (!base || !secret) throw new Error('Firebase não configurado');
-  const resp = await fetch(`${base}/${caminho}.json?auth=${encodeURIComponent(secret)}`, {
-    method: metodo,
-    headers: corpo === undefined ? {} : { 'Content-Type': 'application/json' },
-    body: corpo === undefined ? undefined : JSON.stringify(corpo),
-  });
-  const texto = await resp.text();
-  if (!resp.ok) throw new Error(`Firebase HTTP ${resp.status}: ${texto.slice(0, 200)}`);
-  return texto ? JSON.parse(texto) : null;
-}
+// O banco é o DynamoDB desde 16/11/2026; o nome e a assinatura ficaram para os
+// pontos de chamada não mudarem. Ver lib/core/store-http.js.
+const { firebase } = require('./lib/core/store-http');
 
 /** Agendamentos do cliente: índice → cada agendamento. */
 async function meusAgendamentos(uid) {
