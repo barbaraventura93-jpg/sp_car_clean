@@ -17,9 +17,17 @@ let ehAdmin = false;
 DB.configurar({ firebaseDb: {}, ehAdmin: () => ehAdmin, pegarToken: async () => 'token-de-teste' });
 
 // ── roteamento ─────────────────────────────────────────────────────────
+// TUDO vai pela API, para visitante e para admin.
+//
+// Até 10/11/2026 o visitante lia e escrevia direto no Firebase, e quem
+// autorizava eram as regras do Realtime Database. Com o banco no DynamoDB
+// essas regras não são aplicadas por ninguém: quem autoriza é o servidor
+// (functions/lib/core/regras-publicas.js, com teste em
+// scripts/test-regras-publicas.js e scripts/test-porta-dados.js). O navegador
+// não decide mais nada sobre permissão.
 ehAdmin = false;
-assert.strictEqual(usarLambdaParaLer('bookings'), false, 'visitante lê direto (regras do RTDB decidem)');
-assert.strictEqual(usarLambdaParaEscrever(), false, 'visitante escreve direto — é como agendamento e gift card entram');
+assert.strictEqual(usarLambdaParaLer('bookings'), true, 'visitante também vai pela API');
+assert.strictEqual(usarLambdaParaEscrever(), true, 'inclusive para criar o agendamento');
 
 ehAdmin = true;
 assert.strictEqual(usarLambdaParaLer('bookings'), true, 'admin lê nó restrito pela Lambda');
@@ -30,9 +38,9 @@ assert.strictEqual(usarLambdaParaLer('bookings/SPC-1'), true, 'a raiz do caminho
 // Com o Firebase excluído, essa exceção virou o defeito: a aba Serviços do
 // painel falhava (nó `services` é público) enquanto o resto do painel
 // funcionava. A regra agora é simples — admin lê tudo pelo servidor.
-assert.strictEqual(usarLambdaParaLer('feedback'), true, 'nó público também vai pela Lambda para a admin');
+assert.strictEqual(usarLambdaParaLer('feedback'), true);
 assert.strictEqual(usarLambdaParaLer('services'), true, 'era este o caminho que quebrava a aba Serviços');
-assert.strictEqual(usarLambdaParaLer('config/adminPassword'), true, 'config também');
+assert.strictEqual(usarLambdaParaLer('config/adminPassword'), true);
 assert.strictEqual(usarLambdaParaEscrever(), true, 'admin escreve pela Lambda');
 
 // ── consultas: equalTo (o filtro que impede avaliação pendente no site) ─
@@ -81,7 +89,13 @@ assert.deepStrictEqual([...chaves].sort(), chaves, 'ordem lexicográfica = ordem
   });
   assert.deepStrictEqual(Object.keys(snap.val()).sort(), ['a', 'c'], 'filtro aplicado sobre o que a Lambda devolveu');
   assert.strictEqual(snap.exists(), true);
-  assert.deepStrictEqual(chamadas[0].corpo, { op: 'ler', caminho: 'waitlist' }, 'a Lambda recebe o nó, não a consulta');
+  // A API recebe o nó E o filtro de igualdade. O filtro vai porque o servidor
+  // precisa dele para decidir permissão (o nó `feedback` só abre com o filtro
+  // de aprovadas) e para filtrar antes de responder a quem não é admin —
+  // filtrar só aqui deixaria o registro não-aprovado chegar ao navegador.
+  // A ordenação e o limite continuam sendo aplicados aqui, sobre o resultado.
+  assert.deepStrictEqual(chamadas[0].corpo,
+    { op: 'ler', caminho: 'waitlist', consulta: { ordem: 'status', igual: 'approved' } });
   assert.strictEqual(chamadas[0].auth, 'Bearer token-de-teste');
 
   // promessa

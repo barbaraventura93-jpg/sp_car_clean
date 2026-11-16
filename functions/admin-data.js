@@ -127,6 +127,7 @@ function autorizado(op, segmentos) {
 }
 
 const store = require('./lib/core/store');
+const publicas = require('./lib/core/regras-publicas');
 
 // Op da API → operação no banco. Mantido como mapa explícito: um `if` em
 // cadeia convidaria a acrescentar operação sem passar pela tabela de
@@ -137,6 +138,55 @@ const EXECUTAR = {
   mesclar: (caminho, dados) => store.dbPatch(caminho, dados),
   apagar:  (caminho) => store.dbDelete(caminho),
 };
+
+/** Consulta aceita: só `{ ordem, igual }`, ambos texto curto. */
+function consultaValida(c) {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return false;
+  const chaves = Object.keys(c);
+  if (chaves.some((k) => k !== 'ordem' && k !== 'igual')) return false;
+  if (typeof c.ordem !== 'string' || c.ordem.length > 60) return false;
+  if (c.igual !== undefined && typeof c.igual !== 'string' && typeof c.igual !== 'number'
+      && typeof c.igual !== 'boolean') return false;
+  return true;
+}
+
+/** Aplica `{ordem, igual}` sobre o nó, como o Firebase fazia no servidor. */
+function aplicarFiltro(valor, c) {
+  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return valor;
+  const fora = {};
+  for (const [k, item] of Object.entries(valor)) {
+    if (item && typeof item === 'object' && item[c.ordem] === c.igual) fora[k] = item;
+  }
+  return Object.keys(fora).length ? fora : null;
+}
+
+/**
+ * Autoriza o visitante não logado. Devolve `null` se pode, ou a mensagem de
+ * recusa.
+ *
+ * A escrita é validada contra o valor que RESULTARÁ dela — no `mesclar`, o
+ * mesclado. Validar só o pedaço enviado deixaria passar "mudar status" sem
+ * olhar o resto do registro, que é como se cancela um agendamento alheio.
+ */
+async function autorizarPublico(op, segmentos, dados, consulta) {
+  const caminho = segmentos.join('/');
+  if (op === 'ler') {
+    return publicas.podeLer(segmentos, consulta) ? null : 'leitura não permitida';
+  }
+  if (op === 'apagar') return 'remoção não permitida';
+  if (op !== 'gravar' && op !== 'mesclar') return 'operação não permitida';
+
+  let atual = null;
+  try {
+    atual = await store.dbGet(caminho);
+  } catch {
+    return 'não foi possível conferir o registro';
+  }
+  const resultante = op === 'mesclar'
+    ? { ...(atual && typeof atual === 'object' ? atual : {}), ...dados }
+    : dados;
+  return publicas.podeGravar(segmentos, resultante, atual) ? null : 'escrita não permitida';
+}
 
 exports.handler = async (event) => {
   const cors = corsHeaders(event);
@@ -151,11 +201,20 @@ exports.handler = async (event) => {
     return reply(429, cors, { ok: false, error: 'muitas requisições — tente mais tarde' });
   }
 
+  // DOIS NÍVEIS DE ACESSO.
+  //
+  // Admin (grupo `admin` no Cognito): a tabela NOS acima, como sempre.
+  //
+  // Visitante não logado: o que `lib/core/regras-publicas.js` permite — ler o
+  // catálogo e criar o próprio pedido. Esse nível existe desde 16/11/2026
+  // porque o banco deixou de ser o Firebase: eram as regras do Realtime
+  // Database que autorizavam o visitante, e no DynamoDB não existe regra de
+  // banco. Sem isto, o site não lê preço nem grava agendamento.
+  //
+  // Não vira proxy genérico: o visitante não escolhe operação nem nó: cada
+  // combinação é declarada, e o que não está declarado é recusado.
   const token = bearerToken(event);
-  if (!token) return reply(401, cors, { ok: false, error: 'não autorizado' });
-  if (!(await verifyAdmin(token))) {
-    return reply(403, cors, { ok: false, error: 'acesso restrito ao administrador' });
-  }
+  const ehAdmin = token ? await verifyAdmin(token) : false;
 
   const bruto = event.body || '';
   if (bruto.length > CORPO_MAX_BYTES) {
@@ -169,13 +228,21 @@ exports.handler = async (event) => {
     return reply(400, cors, { ok: false, error: 'JSON inválido' });
   }
 
-  const { op, caminho, dados } = body || {};
+  const { op, caminho, dados, consulta } = body || {};
   if (!OPS.has(op)) return reply(400, cors, { ok: false, error: 'op inválida' });
 
   const v = validarCaminho(caminho);
   if (v.erro) return reply(400, cors, { ok: false, error: v.erro });
-  if (!autorizado(op, v.segmentos)) {
-    return reply(403, cors, { ok: false, error: `operação '${op}' não permitida em '${caminho}'` });
+  if (consulta !== undefined && !consultaValida(consulta)) {
+    return reply(400, cors, { ok: false, error: 'consulta inválida' });
+  }
+  if (ehAdmin) {
+    if (!autorizado(op, v.segmentos)) {
+      return reply(403, cors, { ok: false, error: `operação '${op}' não permitida em '${caminho}'` });
+    }
+  } else {
+    const negado = await autorizarPublico(op, v.segmentos, dados, consulta);
+    if (negado) return reply(403, cors, { ok: false, error: negado });
   }
   if ((op === 'gravar' || op === 'mesclar') && (dados === undefined || dados === null)) {
     return reply(400, cors, { ok: false, error: 'dados é obrigatório para gravar/mesclar' });
@@ -189,15 +256,24 @@ exports.handler = async (event) => {
   // Quem fez o quê fica no CloudWatch. Num endpoint que escreve na base do
   // negócio, poder reconstruir uma alteração depois não é luxo.
   let quem = null;
-  try {
-    quem = await identificar(token);
-  } catch { /* o verifyAdmin já passou; a identidade é só para o log */ }
-  const autor = quem ? `${quem.email || quem.uid} (${quem.origem})` : 'desconhecido';
+  if (ehAdmin) {
+    try {
+      quem = await identificar(token);
+    } catch { /* o verifyAdmin já passou; a identidade é só para o log */ }
+  }
+  const autor = ehAdmin
+    ? (quem ? `${quem.email || quem.uid} (${quem.origem})` : 'admin')
+    : `visitante ${clientIp(event)}`;
 
   try {
     const executar = EXECUTAR[op];
     if (!executar) return reply(400, cors, { ok: false, error: 'operação inválida' });
-    const resultado = await executar(caminho, dados);
+    let resultado = await executar(caminho, dados);
+
+    // Filtro no SERVIDOR para quem não é admin. Filtrar no navegador deixaria a
+    // avaliação pendente chegar lá — e chegar já é vazar, mesmo que a tela não
+    // mostre.
+    if (!ehAdmin && op === 'ler' && consulta) resultado = aplicarFiltro(resultado, consulta);
 
     if (op !== 'ler') console.log(`admin-data: ${autor} ${op} ${caminho}`);
     return reply(200, cors, { ok: true, dados: resultado });
@@ -209,4 +285,4 @@ exports.handler = async (event) => {
 
 // Exportado para teste: a política é o coração da segurança desta função, e
 // precisa ser verificável sem rede.
-exports._interno = { NOS, BLOQUEADOS, validarCaminho, autorizado };
+exports._interno = { NOS, BLOQUEADOS, validarCaminho, autorizado, autorizarPublico, aplicarFiltro, consultaValida };

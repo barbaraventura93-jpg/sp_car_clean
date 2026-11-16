@@ -62,13 +62,11 @@ const DB = (function () {
 
   const INTERVALO_POLL_MS = 45_000;
 
-  let _fb = null;            // firebase.database()
   let _ehAdmin = () => false;
   let _pegarToken = async () => null;
   const _timers = new Map(); // assinatura -> id do setInterval
 
-  function configurar({ firebaseDb, ehAdmin, pegarToken }) {
-    _fb = firebaseDb || null;
+  function configurar({ ehAdmin, pegarToken }) {
     if (typeof ehAdmin === 'function') _ehAdmin = ehAdmin;
     if (typeof pegarToken === 'function') _pegarToken = pegarToken;
   }
@@ -77,34 +75,46 @@ const DB = (function () {
     return String(caminho).split('/')[0];
   }
 
-  // Com admin logado, TODA leitura vai pela Lambda — inclusive os nós de
-  // leitura pública.
+  // TODO acesso a dados vai pela API, para admin e para visitante.
   //
-  // Antes a exceção fazia sentido: o nó público era lido direto do Firebase,
-  // de graça e em tempo real. Depois de 10/11/2026 o Firebase não existe mais
-  // (ver docs/incidente-firebase-2026-11-14.md), e essa exceção era
-  // exatamente o que fazia a aba Serviços do painel falhar enquanto o resto
-  // funcionava: `services` é nó público, então a leitura ia para um banco que
-  // não responde mais.
+  // Até 10/11/2026 havia duas rotas: nó público ia direto ao Firebase (de
+  // graça e em tempo real) e nó restrito ia pela Lambda. Com o Firebase
+  // excluído, o caminho direto não existe mais — e era ele que fazia a aba
+  // Serviços do painel falhar enquanto o resto respondia.
   //
-  // O visitante não-admin continua caindo no caminho direto, que hoje também
-  // está morto — é a Fase 3 da migração, que precisa de um endpoint público
-  // (e, para isso, de um `terraform apply`). Ver docs/migracao-aws.md.
-  function usarLambdaParaLer(caminho) {
-    return _ehAdmin();
+  // Quem autoriza o visitante agora é o servidor
+  // (`functions/lib/core/regras-publicas.js`), porque no DynamoDB não existe
+  // "regra do banco": eram as regras do Realtime Database que cumpriam esse
+  // papel. O navegador não decide mais nada sobre permissão — ele pede, e a
+  // API concede ou recusa.
+  function usarLambdaParaLer() {
+    return true;
   }
 
   function usarLambdaParaEscrever() {
-    return _ehAdmin();
+    return true;
   }
 
-  async function chamarLambda(op, caminho, dados) {
-    const token = await _pegarToken();
-    if (!token) throw new Error('Sessão expirada. Entre novamente.');
+  // `consulta` vai no corpo porque, para quem não é admin, é o SERVIDOR que
+  // filtra: `feedback` só abre com o filtro de aprovadas, e filtrar no
+  // navegador deixaria a avaliação pendente chegar aqui — chegar já é vazar.
+  //
+  // Sem token a requisição vai anônima, de propósito: é assim que o visitante
+  // lê o catálogo e cria o próprio agendamento. Antes disto, a falta de token
+  // era erro ("Sessão expirada"), porque só o admin usava este caminho.
+  async function chamarLambda(op, caminho, dados, consulta) {
+    let token = null;
+    try { token = await _pegarToken(); } catch { token = null; }
+    const pedido = { op, caminho };
+    if (dados !== undefined) pedido.dados = dados;
+    if (consulta) pedido.consulta = consulta;
     const resp = await fetch('/api/admin-data', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify(dados === undefined ? { op, caminho } : { op, caminho, dados }),
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      },
+      body: JSON.stringify(pedido),
     });
     const corpo = await resp.json().catch(() => ({}));
     if (!resp.ok || corpo.ok === false) {
@@ -162,19 +172,13 @@ const DB = (function () {
     return saida;
   }
 
-  // Repassa a consulta ao Firebase (caminho direto), que filtra no servidor.
-  function consultaFirebase(caminho, q) {
-    if (!_fb) throw new Error('Banco não conectado.');
-    let r = _fb.ref(caminho);
-    if (q && q.ordem) {
-      if (q.ordem.tipo === 'key') r = r.orderByKey();
-      else if (q.ordem.tipo === 'value') r = r.orderByValue();
-      else r = r.orderByChild(q.ordem.campo);
-      if ('igual' in q) r = r.equalTo(q.igual);
-      if (typeof q.limiteFim === 'number') r = r.limitToLast(q.limiteFim);
-      if (typeof q.limiteInicio === 'number') r = r.limitToFirst(q.limiteInicio);
-    }
-    return r;
+  // A API aceita só `{ ordem: <campo>, igual: <valor> }` — o filtro de
+  // igualdade por campo, que é o que o servidor precisa para decidir a
+  // permissão. Ordenação e limite continuam sendo aplicados aqui, sobre o
+  // resultado, porque não mudam o que pode ser lido.
+  function consultaParaApi(q) {
+    if (!q || !q.ordem || q.ordem.tipo !== 'child' || !('igual' in q)) return null;
+    return { ordem: q.ordem.campo, igual: q.igual };
   }
 
   // Chave no formato do push do Firebase: 20 caracteres, ordenáveis por tempo.
@@ -204,10 +208,6 @@ const DB = (function () {
     return chave;
   }
 
-  function refFirebase(caminho) {
-    if (!_fb) throw new Error('Banco não conectado.');
-    return _fb.ref(caminho);
-  }
 
   function criarRef(caminho, consulta) {
     const q = consulta || null;
@@ -237,9 +237,8 @@ const DB = (function () {
       // dependem da segunda.
       once(evento, cb, erroCb) {
         if (evento !== 'value') return Promise.reject(new Error(`evento não suportado: ${evento}`));
-        const p = usarLambdaParaLer(caminho)
-          ? chamarLambda('ler', caminho).then((v) => snapshot(aplicarConsulta(v, q)))
-          : Promise.resolve(consultaFirebase(caminho, q).once('value'));
+        const p = chamarLambda('ler', caminho, undefined, consultaParaApi(q))
+          .then((v) => snapshot(aplicarConsulta(v, q)));
         if (typeof cb !== 'function') return p;
         // Com callback de erro, ele recebe a falha e a promessa não fica
         // rejeitada sem dono. SEM callback de erro a promessa REJEITA, como no
@@ -258,12 +257,11 @@ const DB = (function () {
 
       on(evento, cb, erroCb) {
         if (evento !== 'value') throw new Error(`evento não suportado: ${evento}`);
-        if (!usarLambdaParaLer(caminho)) {
-          return consultaFirebase(caminho, q).on('value', cb, erroCb);
-        }
-        // Nó restrito: a Lambda não empurra evento. Lê agora e repete.
+        // A API não empurra evento como o Firebase fazia: lê agora e repete.
+        // Para um painel usado por uma pessoa, e para um site que mostra
+        // catálogo, isso basta — e é a troca que trouxe o painel de volta.
         const buscar = () => {
-          chamarLambda('ler', caminho)
+          chamarLambda('ler', caminho, undefined, consultaParaApi(q))
             .then((v) => cb(snapshot(aplicarConsulta(v, q))))
             .catch((e) => { if (erroCb) erroCb(e); else console.warn('DB.on', caminho, e.message); });
         };
@@ -284,26 +282,20 @@ const DB = (function () {
             _timers.delete(assinatura);
           }
         }
-        if (_fb) { try { refFirebase(caminho).off(evento || 'value'); } catch {} }
       },
 
       async set(valor) {
-        if (usarLambdaParaEscrever()) {
-          // `set(null)` no Firebase apaga o nó; na Lambda isso é 'apagar'.
-          if (valor === null) return chamarLambda('apagar', caminho);
-          return chamarLambda('gravar', caminho, valor);
-        }
-        return refFirebase(caminho).set(valor);
+        // `set(null)` no Firebase apagava o nó; na API isso é 'apagar'.
+        if (valor === null) return chamarLambda('apagar', caminho);
+        return chamarLambda('gravar', caminho, valor);
       },
 
       async update(valor) {
-        if (usarLambdaParaEscrever()) return chamarLambda('mesclar', caminho, valor);
-        return refFirebase(caminho).update(valor);
+        return chamarLambda('mesclar', caminho, valor);
       },
 
       async remove() {
-        if (usarLambdaParaEscrever()) return chamarLambda('apagar', caminho);
-        return refFirebase(caminho).remove();
+        return chamarLambda('apagar', caminho);
       },
 
       // Igual ao Firebase: devolve a ref do filho novo de imediato (com `key`
