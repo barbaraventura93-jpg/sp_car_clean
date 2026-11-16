@@ -1,17 +1,21 @@
 'use strict';
 
 // =====================================================================
-// Backup diário do Firebase Realtime Database para o S3.
+// Backup diário do banco para o S3.
 //
-// Por que existe: o banco do site vive num projeto Firebase (Google), fora
-// desta conta AWS. Em 08/11/2026 a chave de API desse projeto foi apagada e o
-// acesso ao console foi perdido — o banco continuou servindo, mas sem console
-// não há como exportar pelo painel nem publicar regras. O que ainda funciona é
-// o `FIREBASE_DATABASE_SECRET`, que ignora as regras e dá leitura total.
+// Nome mantido por ser o da função publicada (`sp-car-clean-firebase-backup`):
+// renomear exigiria recriar o recurso e perderia o histórico de execuções. O
+// banco é o DynamoDB desde 16/11/2026.
 //
-// Esta função usa esse segredo para copiar o banco inteiro, todo dia, para um
-// bucket privado nesta conta. Se o projeto Google for perdido de vez, o backup
-// mais recente fica aqui.
+// Por que continua existindo, agora que a tabela tem recuperação ponto-a-ponto
+// (PITR) de 35 dias: o PITR protege contra escrita errada, mas vive na mesma
+// conta e no mesmo serviço. Este backup é um arquivo que a dona pode baixar,
+// ler e levar para outro lugar — e foi exatamente um backup assim, de 09/11,
+// que trouxe os dados de volta quando o Firebase foi excluído.
+//
+// O formato é `{ no: { chave: valor } }`, o MESMO que
+// scripts/importar-para-dynamodb.js consome. Restaurar é rodar o importador
+// sobre o arquivo — um backup que só ele mesmo entende não restaura nada.
 //
 // Dispara pelo EventBridge Scheduler (ver `scheduled_functions` em
 // infra/api.tf). Não tem rota HTTP: nada externo pode chamá-la.
@@ -20,6 +24,7 @@
 const zlib = require('zlib');
 const { promisify } = require('util');
 const gzip = promisify(zlib.gzip);
+const { exportarTudo } = require('./lib/core/store');
 
 // Nós que o banco precisa ter para o dump ser considerado íntegro. Se faltar
 // qualquer um, é mais provável que a resposta seja erro/parcial do que o banco
@@ -28,48 +33,37 @@ const NOS_ESPERADOS = ['services', 'config', 'bookings'];
 const TAMANHO_MINIMO = 2048; // bytes do JSON cru
 
 exports.handler = async () => {
-  const dbUrl = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
-  const secret = process.env.FIREBASE_DATABASE_SECRET;
   const bucket = process.env.BACKUP_BUCKET;
 
-  if (!dbUrl || !secret) {
-    console.error('firebase-backup: FIREBASE_DATABASE_URL ou FIREBASE_DATABASE_SECRET ausente');
-    return { ok: false, error: 'credenciais do Firebase ausentes' };
-  }
   if (!bucket) {
     console.error('firebase-backup: BACKUP_BUCKET não configurado');
     return { ok: false, error: 'BACKUP_BUCKET ausente' };
   }
 
-  // 1. Baixa o banco inteiro.
-  let bruto;
+  // 1. Lê a tabela inteira, já no formato do backup.
+  let dados, lidos, ignorados;
   try {
-    const resp = await fetch(`${dbUrl}/.json?auth=${encodeURIComponent(secret)}`);
-    if (!resp.ok) {
-      console.error(`firebase-backup: Firebase respondeu HTTP ${resp.status}`);
-      return { ok: false, error: `firebase HTTP ${resp.status}` };
-    }
-    bruto = await resp.text();
+    const r = await exportarTudo();
+    dados = r.dados;
+    lidos = r.itens;
+    ignorados = r.ignorados;
   } catch (err) {
-    console.error('firebase-backup: falha ao ler o Firebase:', err.message);
+    console.error('firebase-backup: falha ao ler a tabela:', err.message);
     return { ok: false, error: err.message };
   }
 
+  // Item com nó que o mapeamento não conhece não entra no arquivo. Não pode
+  // passar em silêncio: é dado que o backup não cobre.
+  if (ignorados) {
+    console.error(`firebase-backup: ${ignorados} item(ns) fora do mapeamento — NÃO entraram no backup`);
+  }
+
+  const bruto = JSON.stringify(dados);
+
   // 2. Conferências de integridade — melhor falhar alto que gravar lixo.
   if (bruto.length < TAMANHO_MINIMO) {
-    console.error(`firebase-backup: resposta pequena demais (${bruto.length} bytes), abortando`);
-    return { ok: false, error: 'resposta suspeita (muito pequena)' };
-  }
-  let dados;
-  try {
-    dados = JSON.parse(bruto);
-  } catch {
-    console.error('firebase-backup: resposta não é JSON válido, abortando');
-    return { ok: false, error: 'JSON inválido' };
-  }
-  if (!dados || typeof dados !== 'object') {
-    console.error('firebase-backup: JSON não é um objeto, abortando');
-    return { ok: false, error: 'JSON inesperado' };
+    console.error(`firebase-backup: exportação pequena demais (${bruto.length} bytes), abortando`);
+    return { ok: false, error: 'exportação suspeita (muito pequena)' };
   }
   const faltando = NOS_ESPERADOS.filter((n) => !(n in dados));
   if (faltando.length) {
@@ -103,6 +97,8 @@ exports.handler = async () => {
         Metadata: {
           'no-de-primeiro-nivel': String(Object.keys(dados).length),
           'bytes-originais': String(bruto.length),
+          'itens-lidos': String(lidos),
+          'itens-ignorados': String(ignorados),
         },
       })
     );

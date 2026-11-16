@@ -294,5 +294,42 @@ for (const [caminho, chaveEsperada] of [
   assert.deepStrictEqual(await store.dbGet('/clientProfiles/uid1'), { name: 'Ana' });
   assert.strictEqual(chamadas[0].op, 'GetItem', 'perfil único não varre a tabela');
 
-  console.log('store no DynamoDB: chaves, leitura, paginação, varredura de perfis, substituição, mescla, push, remoção e tipos — todos passaram');
+  // ── exportação: fecha o ciclo com o importador ──────────────────────
+  //
+  // O backup diário exporta no mesmo formato que o importador consome. Se as
+  // duas pontas divergirem, descobre-se no dia da restauração — o pior dia
+  // possível. Por isso o teste exporta e MANDA O RESULTADO PARA O IMPORTADOR.
+  reset();
+  respostas.Scan = {
+    Items: [
+      attrs({ pk: 'CATALOG', sk: 'SERVICE#lavagem', no: 'services', dados: { name: 'Lavagem' } }),
+      attrs({ pk: 'CATALOG', sk: 'CONFIG', no: 'config', dados: { maxPerDay: 3 } }),
+      attrs({ pk: 'AVAIL#2026', sk: 'BLOCKED#2026-05-10', no: 'blocked', dados: true }),
+      attrs({ pk: 'CLIENT#uid1', sk: 'PROFILE', no: 'clientProfiles', dados: { name: 'Ana' } }),
+      attrs({ pk: 'CLIENT#uid1', sk: 'BOOKING#SPC-1', no: 'bookingIndex', dados: true }),
+      attrs({ pk: 'AVAIL#META', sk: 'YEARS', no: '_meta', dados: ['2026'] }),
+    ],
+  };
+  const exp = await store.exportarTudo();
+  assert.deepStrictEqual(exp.dados, {
+    services: { lavagem: { name: 'Lavagem' } },
+    config: { maxPerDay: 3 },
+    blocked: { '2026-05-10': true },
+    clientProfiles: { uid1: { name: 'Ana' } },
+    bookingIndex: { uid1: { 'SPC-1': true } },
+  }, 'o formato exportado é o mesmo que o backup do Firebase tinha');
+  assert.strictEqual(exp.ignorados, 0);
+
+  // O item-índice de anos NÃO pode entrar: é derivado, e o importador recusaria
+  // o arquivo por nó desconhecido.
+  assert.ok(!('_meta' in exp.dados));
+
+  // E o importador tem que aceitar o que saiu daqui, sem reclamar de nada.
+  const importador = require('./importar-para-dynamodb.js');
+  const reimportado = importador.converter(exp.dados);
+  assert.ok(reimportado.itens.length >= 5, 'o importador converte o que o backup exportou');
+  assert.ok(reimportado.itens.some((i) => i.pk === 'CATALOG' && i.sk === 'SERVICE#lavagem'));
+  assert.ok(reimportado.itens.some((i) => i.pk === 'CLIENT#uid1' && i.sk === 'BOOKING#SPC-1'));
+
+  console.log('store no DynamoDB: chaves, leitura, paginação, varredura de perfis, substituição, mescla, push, remoção, tipos e exportação — todos passaram');
 })().catch((e) => { console.error(e); process.exit(1); });

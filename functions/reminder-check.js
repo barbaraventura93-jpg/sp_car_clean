@@ -5,7 +5,7 @@
 // (horário de Brasília) com status ativo e avisa o cliente por e-mail (EmailJS).
 // Marca `reminderSentAt` para não enviar o mesmo lembrete duas vezes.
 //
-// Variáveis: FIREBASE_DATABASE_URL, FIREBASE_DATABASE_SECRET,
+// Variáveis: DATA_TABLE (opcional),
 //            EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY (opcional)
 
 const { dbGet, dbPatch } = require('./lib/core/store');

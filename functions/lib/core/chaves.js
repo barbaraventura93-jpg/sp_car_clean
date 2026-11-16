@@ -30,7 +30,8 @@ const NOS = {
   blocked:      { pk: (k) => `AVAIL#${anoDe(k)}`, prefixo: 'BLOCKED#', porAno: true },
   dayLoad:      { pk: (k) => `AVAIL#${anoDe(k)}`, prefixo: 'LOAD#', porAno: true },
   bookings:     { pk: 'BOOKING', prefixo: '' },
-  bookingIndex: { pk: (uid) => `CLIENT#${uid}`, prefixo: 'BOOKING#', doisNiveis: true },
+  bookingIndex: { pk: (uid) => `CLIENT#${uid}`, prefixo: 'BOOKING#', doisNiveis: true,
+                  chaveDoItem: (it) => String(it?.pk?.S || '').replace(/^CLIENT#/, '') },
   // O perfil fica na partição do próprio cliente (CLIENT#<uid>), e o painel lê
   // o nó INTEIRO. Isso não é uma consulta: é varredura com filtro — ver
   // `raizVarredura` e o comentário em store.js sobre o custo.

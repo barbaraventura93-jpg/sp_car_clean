@@ -14,7 +14,6 @@
 const assert = require('assert');
 const path = require('path');
 
-process.env.FIREBASE_DATABASE_URL = 'https://banco.invalid';
 process.env.FIREBASE_DATABASE_SECRET = 'segredo-de-teste';
 process.env.ANTHROPIC_API_KEY = 'chave-de-teste';
 delete process.env.COGNITO_USER_POOL_ID; // sem pool configurado, nenhum token é aceito
@@ -28,13 +27,24 @@ global.fetch = async (url, opt = {}) => {
     if (iaFalha) return { ok: false, status: 400, text: async () => '{"erro-interno":"detalhe que o visitante não deve ver"}' };
     return { ok: true, status: 200, json: async () => ({ content: [{ text: 'Olá! [AGENDAR:lavagem]' }], usage: { input_tokens: 10, output_tokens: 5 } }) };
   }
-  if (url.startsWith('https://banco.invalid/')) {
-    const chave = decodeURIComponent(url.slice('https://banco.invalid/'.length).split('.json')[0]);
-    if (opt.method && opt.method !== 'GET') return { ok: true, status: 200, json: async () => (chave.startsWith('aiRateLimit') ? 1 : {}) };
-    return { ok: true, status: 200, json: async () => (chave in banco ? banco[chave] : null) };
-  }
   throw new Error('o teste não pode sair para a rede: ' + url);
 };
+
+// Dublê do banco. Era interceptado em `fetch`, porque o Realtime Database era
+// falado por HTTP; desde 16/11/2026 o banco é o DynamoDB e a costura é o
+// módulo `lib/core/store`. As asserções deste teste não mudaram — ele trava a
+// validação da entrada pública, não por onde a função grava.
+const store = require(path.resolve(__dirname, '../functions/lib/core/store.js'));
+const semBarra = (c) => String(c).replace(/^\/+/, '');
+store.dbGet = async (caminho) => {
+  const chave = semBarra(caminho);
+  return chave in banco ? banco[chave] : null;
+};
+store.dbSet = async () => {};
+store.dbPatch = async () => {};
+store.dbPush = async () => ({ name: '-chave' });
+store.dbDelete = async () => {};
+store.dbIncrement = async () => 1;
 
 const { handler, _interno } = require(path.resolve(__dirname, '../functions/ai.js'));
 const { validarEntradaPublica, ADMIN_AGENTS, PUBLIC_AGENTS, MAX_MSG_CHARS, MAX_HIST_MSGS, MAX_HIST_CHARS } = _interno;

@@ -433,6 +433,56 @@ async function dbDelete(no) {
   await escreverEmLote(itens.map((it) => ({ DeleteRequest: { Key: { pk: it.pk, sk: it.sk } } })));
 }
 
+/**
+ * Exporta a tabela inteira no MESMO formato que o backup do Firebase tinha —
+ * `{ no: { chave: valor } }` — que é o formato que
+ * scripts/importar-para-dynamodb.js consome.
+ *
+ * Isso não é nostalgia de formato: é o que fecha o ciclo. Um backup que só o
+ * próprio backup entende não restaura nada. Exportando na forma que o
+ * importador lê, restaurar é rodar o importador sobre o arquivo de ontem.
+ *
+ * O item-índice de anos (`_meta`) fica de fora: é derivado, e o importador o
+ * regenera. Exportá-lo faria o importador recusar o arquivo (nó desconhecido).
+ */
+async function exportarTudo() {
+  const itens = [];
+  let inicio;
+  do {
+    const r = await enviar('Scan', { TableName: TABELA, ExclusiveStartKey: inicio });
+    itens.push(...(r.Items || []));
+    inicio = r.LastEvaluatedKey;
+  } while (inicio);
+
+  const fora = {};
+  let ignorados = 0;
+  for (const it of itens) {
+    const no = it.no?.S;
+    if (!no || no === '_meta') continue;
+    const d = chaves.NOS[no];
+    if (!d) { ignorados++; continue; }
+    const valor = deAttr(it.dados);
+
+    if (d.folha) { fora[no] = valor; continue; }
+
+    if (d.doisNiveis) {
+      const pai = d.chaveDoItem(it);
+      const filho = chaves.chaveDoSk(no, it.sk?.S || '');
+      if (!pai || !filho) { ignorados++; continue; }
+      fora[no] = fora[no] || {};
+      fora[no][pai] = fora[no][pai] || {};
+      fora[no][pai][filho] = valor;
+      continue;
+    }
+
+    const k = d.chaveDoItem ? d.chaveDoItem(it) : chaves.chaveDoSk(no, it.sk?.S || '');
+    if (k === null || k === '') { ignorados++; continue; }
+    fora[no] = fora[no] || {};
+    fora[no][k] = valor;
+  }
+  return { dados: fora, itens: itens.length, ignorados };
+}
+
 /** BatchWriteItem em fatias de 25, com um reenvio dos não-processados. */
 async function escreverEmLote(escritas) {
   for (let i = 0; i < escritas.length; i += 25) {
@@ -448,7 +498,7 @@ async function escreverEmLote(escritas) {
 }
 
 module.exports = {
-  dbPath, dbGet, dbSet, dbPatch, dbPush, dbDelete, dbIncrement,
+  dbPath, dbGet, dbSet, dbPatch, dbPush, dbDelete, dbIncrement, exportarTudo,
   // expostos para teste e para o importador
   paraAttr, deAttr, itemParaAttrs, novoId, TABELA, _injetar,
 };

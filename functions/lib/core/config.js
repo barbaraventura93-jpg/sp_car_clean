@@ -1,4 +1,4 @@
-const { dbGet, dbSet, dbPatch } = require('./firebase');
+const { dbGet, dbSet, dbPatch } = require('./store');
 const { sendTelegram }          = require('./telegram');
 
 const DEFAULTS = {
