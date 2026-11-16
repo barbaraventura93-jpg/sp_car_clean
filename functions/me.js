@@ -203,8 +203,10 @@ exports.handler = async (event) => {
       const v = validarPerfil(dados);
       if (v.erro) return reply(400, cors, { ok: false, error: v.erro });
       // uid e email vêm do token, não do corpo: é o que amarra o perfil à sessão.
+      // Sem e-mail verificado (ou com o Cognito fora do ar) o campo fica como
+      // está: gravar vazio apagaria um e-mail bom.
       await firebase('PATCH', `clientProfiles/${encodeURIComponent(uid)}`, {
-        ...v.limpo, uid, email: String(quem.email || '').toLowerCase(),
+        ...v.limpo, uid, ...(quem.email ? { email: quem.email } : {}),
       });
       return reply(200, cors, { ok: true });
     }

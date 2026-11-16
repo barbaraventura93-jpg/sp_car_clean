@@ -5,7 +5,7 @@
       ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
       "$id": {
         ".read": "auth != null && (auth.token.email == 'spcarclean0@gmail.com' || data.child('clientUid').val() == auth.uid || data.child('email').val() == auth.token.email)",
-        ".write": "(!data.exists() && newData.exists()) || (data.exists() && newData.exists() && newData.child('id').val() == data.child('id').val() && newData.child('createdAt').val() == data.child('createdAt').val() && newData.child('email').val() == data.child('email').val() && newData.child('name').val() == data.child('name').val() && newData.child('phone').val() == data.child('phone').val() && newData.child('price').val() == data.child('price').val() && newData.child('finalPrice').val() == data.child('finalPrice').val() && newData.child('priceWithFee').val() == data.child('priceWithFee').val() && newData.child('paidAmount').val() == data.child('paidAmount').val() && newData.child('paymentTransactionId').val() == data.child('paymentTransactionId').val() && newData.child('paymentConfirmedAt').val() == data.child('paymentConfirmedAt').val() && (newData.child('status').val() == data.child('status').val() || newData.child('status').val() == 'cancelled'))"
+        ".write": "(!data.exists() && newData.exists() && newData.child('status').val() == 'pending' && newData.child('id').val() == $id && !newData.child('finalPrice').exists() && !newData.child('priceWithFee').exists() && !newData.child('paidAmount').exists() && !newData.child('paymentTransactionId').exists() && !newData.child('paymentConfirmedAt').exists() && !newData.child('pointsAwardedAt').exists()) || (data.exists() && newData.exists() && newData.child('id').val() == data.child('id').val() && newData.child('createdAt').val() == data.child('createdAt').val() && newData.child('email').val() == data.child('email').val() && newData.child('name').val() == data.child('name').val() && newData.child('phone').val() == data.child('phone').val() && newData.child('price').val() == data.child('price').val() && newData.child('finalPrice').val() == data.child('finalPrice').val() && newData.child('priceWithFee').val() == data.child('priceWithFee').val() && newData.child('paidAmount').val() == data.child('paidAmount').val() && newData.child('paymentTransactionId').val() == data.child('paymentTransactionId').val() && newData.child('paymentConfirmedAt').val() == data.child('paymentConfirmedAt').val() && newData.child('pointsAwardedAt').val() == data.child('pointsAwardedAt').val() && (newData.child('status').val() == data.child('status').val() || newData.child('status').val() == 'cancelled'))"
       }
     },
     "dayLoad":        { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
@@ -25,8 +25,18 @@
     "clientLinks":            { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
     "clientLinkDismissals":   { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
     "clientOverrides":        { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
-    "coupons":        { ".read": true, ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
-    "waitlist":       { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": true },
+    "coupons": {
+      ".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      "$code": { ".read": true }
+    },
+    "waitlist": {
+      ".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
+      "$id": {
+        ".write": "!data.exists() && newData.exists() && newData.child('id').val() == $id && newData.child('name').isString() && newData.child('name').val().length <= 200 && newData.child('phone').isString() && newData.child('phone').val().length <= 40 && newData.child('date').isString() && newData.child('date').val().length <= 20"
+      }
+    },
     "clientProfiles": {
       ".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
       ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
@@ -36,10 +46,13 @@
       }
     },
     "feedback": {
-      ".read":  true,
+      ".read":  "(auth != null && auth.token.email == 'spcarclean0@gmail.com') || (query.orderByChild == 'status' && query.equalTo == 'approved')",
       ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
       ".indexOn": ["status"],
-      "$id": { ".write": "newData.exists()" }
+      "$id": {
+        ".read":  true,
+        ".write": "!data.exists() && newData.exists() && (newData.child('status').val() == 'pending_review' || newData.child('status').val() == 'internal') && newData.child('rating').isNumber() && newData.child('rating').val() >= 1 && newData.child('rating').val() <= 5 && (!newData.child('comment').exists() || (newData.child('comment').isString() && newData.child('comment').val().length <= 2000))"
+      }
     },
     "giftcards": {
       ".read":  "auth != null && auth.token.email == 'spcarclean0@gmail.com'",

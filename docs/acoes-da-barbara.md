@@ -1,33 +1,37 @@
 # Ações que só a Bárbara pode fazer
 
 Lista viva. Cada item diz por que é necessário, o passo a passo e o que você
-deve ver quando der certo. Atualizado em 09/11/2026.
+deve ver quando der certo. Atualizado em 14/11/2026.
 
 Nunca cole senha, chave ou token em conversa, e-mail ou arquivo do repositório.
 
 ---
 
-## 1. Renovar o acesso da revisão à AWS — pendente
+## 1. Trocar a chave de acesso da AWS que está no ambiente — recomendado (risco aceito em 14/11/2026)
 
-**Por quê:** a revisão não conseguiu ler nada na AWS (a credencial da sessão
-está expirada). Sem isso ficam **não verificados**: o projeto e o plano
-(FREE/PAID), as permissões de cada serviço, o estado do Terraform, o
-`terraform plan`, os alarmes, os logs e o item S-12 do relatório.
+**Situação:** o ambiente de desenvolvimento do Claude guarda uma chave de
+acesso da AWS que não expira e tem permissão quase total (inclusive para criar
+outras permissões). Em 14/11/2026 você decidiu mantê-la para o desenvolvimento
+não parar. Fica registrado como risco aceito.
 
-**Permissão mínima necessária:** somente leitura, credencial temporária.
-Nenhuma permissão de escrita é necessária para o diagnóstico.
+**Por que ainda vale trocar:** quem obtiver essa chave pode apagar o site, o
+banco e os backups, ou criar recursos que geram custo. O deploy não depende
+dela.
 
-**Passo a passo:**
-1. Abra o Claude e vá nas configurações de conectores/plugins.
-2. Localize o conector da AWS e refaça o login (entrar de novo).
-3. Volte à conversa da revisão e escreva: "acesso AWS renovado".
+**Passo a passo, quando decidir trocar:**
+1. No console da AWS, abra **IAM > Usuários > github-actions-tracker > Credenciais de segurança**.
+2. Em **Chaves de acesso** há duas. A mais antiga (de maio) foi usada pela
+   última vez em 31/10: clique em **Ações > Desativar** e observe por uma
+   semana se algo para de funcionar. Se nada parar, exclua.
+3. Crie um usuário novo só para a revisão, com a política pronta
+   **ReadOnlyAccess**, gere uma chave para ele e coloque-a no ambiente do
+   Claude no lugar da atual.
+4. Desative a chave atual do `github-actions-tracker`.
 
-**Resultado esperado:** a revisão roda a checagem de identidade e preenche a
-tabela "Ambiente da revisão" em `docs/revisao-2026-11-09.md`.
+**Resultado esperado:** o site e o deploy continuam funcionando, e a revisão
+continua lendo a AWS, mas sem poder alterar nada.
 
-Se depois de renovar aparecer "Access Denied" em algo que antes funcionava,
-confira em **AWS Settings > Billing** se há um spend limit configurado e se ele
-foi atingido.
+**Custo:** nenhum.
 
 ---
 
@@ -73,9 +77,38 @@ valer (2.000 min/mês; cada deploy leva cerca de 1 minuto, então há folga).
 
 ---
 
-## 4. Itens que entram aqui conforme os PRs forem aprovados
+## 4. Publicar as regras novas do banco — pendente (depois do merge do PR das regras)
 
-- Publicar as regras novas do banco (depende do PR de regras).
+**Por quê:** o arquivo `database.rules.json` do repositório é só o texto das
+regras. Enquanto não for publicado no Firebase, o banco continua com as regras
+antigas, que deixam um visitante apagar a lista de espera, ler todas as
+avaliações e todos os cupons, e criar agendamento já "confirmado".
+
+**O que as regras novas mudam para o cliente:** nada. Foram testadas num
+emulador local com 88 casos, incluindo agendar, cancelar, entrar na lista de
+espera, avaliar e usar cupom e gift card exatamente como o site faz.
+
+**Como publicar.** O console do Firebase não está acessível (item 5 do
+backlog), então a publicação é feita com o segredo do banco, que está guardado
+na AWS. Há dois caminhos:
+
+- **Recomendado:** quando o acesso da revisão à AWS voltar (item 1), você me
+  autoriza e eu publico e confiro, sem o segredo passar pelo chat.
+- **Alternativa:** uma pessoa técnica de sua confiança, com acesso à AWS, roda
+  a publicação. O segredo nunca deve ser colado em conversa ou e-mail.
+
+**Resultado esperado:** logo após publicar, um agendamento de teste feito pelo
+site continua funcionando, e a lista de espera aceita uma entrada nova.
+
+**Se algo der errado:** as regras anteriores estão guardadas no histórico do
+repositório e podem ser republicadas do mesmo jeito, em um minuto.
+
+**Custo:** nenhum.
+
+---
+
+## 5. Itens que entram aqui conforme os PRs forem aprovados
+
 - Aplicar o Terraform (cabeçalhos de segurança, alarmes).
 - Item 1 do backlog (Drive): continua pausado por decisão sua.
 - Item 5 do backlog (acesso ao projeto Firebase/Google Cloud).

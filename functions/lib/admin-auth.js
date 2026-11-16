@@ -3,14 +3,9 @@
 // Confere tokens de login no servidor. Ponto único de troca do login — era o
 // que o comentário anterior previa, e é o que esta versão faz.
 //
-// Aceita DUAS origens de token, nesta ordem:
-//
-//   1. Cognito (atual) — valida a assinatura RS256 contra o JWKS do pool e
-//      exige o grupo `admin` no token. É o caminho novo da migração.
-//   2. Firebase Auth (legado) — mantido para não quebrar nada durante a
-//      transição. Na prática já não produz token: a chave de API do projeto
-//      Google foi apagada em 08/11/2026 e `signInWithEmailAndPassword` falha
-//      com `auth/api-key-not-valid`. Sai quando o frontend terminar de migrar.
+// Aceita só token do Cognito: valida a assinatura RS256 contra o JWKS do pool
+// e, para acesso administrativo, exige o grupo `admin` no token. O caminho do
+// Firebase Auth foi removido em 14/11/2026 (ver identificar()).
 //
 // A diferença de fundo: antes, "é admin" era o e-mail do token igual a uma
 // constante. Agora é a presença do grupo `admin`, atribuído no Cognito e
@@ -114,49 +109,83 @@ async function verificarTokenCognito(token) {
 
   return {
     uid: corpo.sub,
-    email: String(corpo.username || corpo.sub || '').toLowerCase(),
+    // `username` NÃO é o e-mail. O pool usa o e-mail só como apelido de login
+    // (infra/auth.tf, username_attributes), e nesse modo o Cognito grava um
+    // identificador interno aqui. Tratar este campo como e-mail fazia o
+    // servidor "reconhecer" o cliente por um código que nunca bate com o
+    // e-mail do agendamento. O e-mail de verdade vem de emailVerificado().
+    username: String(corpo.username || ''),
+    exp: corpo.exp,
     grupos: Array.isArray(corpo['cognito:groups']) ? corpo['cognito:groups'] : [],
   };
 }
 
-// --- Legado: Firebase Auth. Mantido durante a transição. ---------------
-async function lookupUser(token) {
-  const apiKey = process.env.FIREBASE_API_KEY;
-  if (!apiKey || !token) return null;
+// E-mail por token, guardado por container: evita uma chamada ao Cognito a
+// cada requisição. Curto de propósito — se o e-mail mudar, vale em minutos.
+const _emailCache = new Map(); // token -> { email, ate }
+const EMAIL_TTL_MS = 5 * 60_000;
+const EMAIL_CACHE_MAX = 500;
+
+/**
+ * O e-mail VERIFICADO do dono do token, em minúsculas — ou '' se não houver.
+ *
+ * Pergunta ao próprio Cognito (operação GetUser, autenticada pelo access token
+ * do usuário; não usa credencial da AWS). Só devolve e-mail com
+ * `email_verified = true`: o cliente pode trocar o próprio atributo `email`, e
+ * um e-mail não verificado daria a ele os agendamentos de outra pessoa.
+ *
+ * Falha de rede devolve '' — nunca um palpite. Quem chama trata "sem e-mail"
+ * como "não é dono por e-mail".
+ */
+async function emailVerificado(token) {
+  const pool = process.env.COGNITO_USER_POOL_ID;
+  if (!token || !pool) return '';
+  const agora = Date.now();
+  const guardado = _emailCache.get(token);
+  if (guardado && guardado.ate > agora) return guardado.email;
+
+  let email = '';
   try {
-    const resp = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken: token }) }
-    );
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    const user = data.users?.[0];
-    return user ? { uid: user.localId, email: String(user.email || '').toLowerCase() } : null;
-  } catch {
-    return null;
+    const resp = await fetch(`https://cognito-idp.${pool.split('_')[0]}.amazonaws.com/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AWSCognitoIdentityProviderService.GetUser',
+      },
+      body: JSON.stringify({ AccessToken: token }),
+    });
+    if (!resp.ok) return '';
+    const dados = await resp.json();
+    const attrs = {};
+    for (const a of dados.UserAttributes || []) attrs[a.Name] = a.Value;
+    if (String(attrs.email_verified) === 'true' && attrs.email) email = String(attrs.email).trim().toLowerCase();
+  } catch (err) {
+    console.error('admin-auth: falha ao consultar o e-mail no Cognito:', err.message);
+    return '';
   }
+  if (_emailCache.size >= EMAIL_CACHE_MAX) _emailCache.clear();
+  _emailCache.set(token, { email, ate: agora + EMAIL_TTL_MS });
+  return email;
 }
 
 /**
- * Quem é o dono do token, de qualquer uma das duas origens.
- * Devolve { uid, email, grupos, origem } ou null.
+ * Quem é o dono do token. Devolve { uid, email, grupos, origem } ou null.
+ * `email` é o e-mail verificado, ou '' quando não há um.
+ *
+ * Só Cognito. O caminho do Firebase Auth saiu: a chave do projeto Google foi
+ * apagada em 08/11/2026, então ele não autenticava mais ninguém — e enquanto
+ * existiu, concedia admin por comparação de e-mail.
  */
 async function identificar(token) {
   const cog = await verificarTokenCognito(token);
-  if (cog) return { ...cog, origem: 'cognito' };
-  const fb = await lookupUser(token);
-  if (fb) return { ...fb, grupos: [], origem: 'firebase' };
-  return null;
+  if (!cog) return null;
+  return { uid: cog.uid, email: await emailVerificado(token), grupos: cog.grupos, origem: 'cognito' };
 }
 
-/** O token dá acesso administrativo? */
+/** O token dá acesso administrativo? Só pela presença do grupo `admin`. */
 async function verifyAdmin(token) {
-  const u = await identificar(token);
-  if (!u) return false;
-  if (u.origem === 'cognito') return u.grupos.includes(GRUPO_ADMIN);
-  // No legado não existe grupo: cai na regra antiga, o e-mail do admin.
-  const adminEmail = (process.env.ADMIN_EMAIL || 'spcarclean0@gmail.com').toLowerCase();
-  return u.email === adminEmail;
+  const cog = await verificarTokenCognito(token);
+  return !!cog && cog.grupos.includes(GRUPO_ADMIN);
 }
 
 function bearerToken(event) {
@@ -164,9 +193,9 @@ function bearerToken(event) {
 }
 
 module.exports = {
-  lookupUser,
   verifyAdmin,
   verificarTokenCognito,
+  emailVerificado,
   identificar,
   bearerToken,
   GRUPO_ADMIN,
