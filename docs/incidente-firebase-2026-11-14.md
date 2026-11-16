@@ -99,12 +99,35 @@ já era Cognito.
    deixou de mandar leitura de nó público direto ao Firebase — era o que
    quebrava a aba Serviços enquanto o resto do painel respondia.
 
+5. **A permissão das funções na tabela foi aplicada** em 16/11, com
+   `terraform apply` direcionado (`aws_iam_role_policy.lambda_data`).
+   Conferido pelo simulador de políticas do IAM: as 7 operações de dados
+   liberadas na tabela e nos dois índices, `DeleteTable` e `UpdateTable`
+   negadas. **Era o bloqueio do painel.**
+
 **Falta, na ordem:**
 
-1. **`terraform apply`** — a role das funções não tem permissão na tabela nova e
-   a variável `DATA_TABLE` não é passada (ambos já escritos em `infra/`). Sem
-   isso o código novo sobe e responde erro. **É o único passo que depende de
-   permissão que a chave guardada no ambiente não tem** (SSM e API Gateway).
+1. **O resto do `terraform apply`** — e ele tem de vir ANTES do merge:
+
+   | O que falta | Por quê |
+   |---|---|
+   | função `unsubscribe` + grupo de logs | falta `logs:CreateLogGroup` à chave de desenvolvimento |
+   | rota `/api/unsubscribe` | falta `apigatewayv2:*` |
+   | variável `DATA_TABLE` nas 19 funções | o grupo de logs acima é dependência e falha primeiro |
+
+   **Mesclar antes disso quebra o deploy**: o workflow publica código para cada
+   arquivo em `functions/`, e `sp-car-clean-unsubscribe` não existe como função
+   — é a trava que o próprio `deploy-aws.yml` descreve. Com o deploy falhando,
+   nem o frontend sobe.
+
+   A variável `DATA_TABLE` não é urgente: o `store.js` usa
+   `process.env.DATA_TABLE || 'sp-car-clean-data'`, justamente porque esta
+   ordem (código antes da variável) já aconteceu antes neste projeto.
+
+   **Como rodar:** `scripts/aws-apply.sh`, do AWS CloudShell. Ele baixa o
+   Terraform, lê o `admin_emails` **do próprio grupo `admin` do Cognito** — em
+   vez de pedir que alguém digite, porque a lista errada faz o Terraform apagar
+   e recriar as contas admin — mostra o plano e só aplica depois de confirmação.
 2. **As Lambdas que falam HTTP direto com o Firebase** (13 arquivos) — troca
    mecânica para o `store`, uma por vez.
 3. **`firebase-backup`** — passa a exportar do DynamoDB. Até então, a rede de
