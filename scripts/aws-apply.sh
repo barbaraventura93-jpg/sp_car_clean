@@ -13,15 +13,52 @@
 # do Cognito — ou seja, você perderia o acesso ao painel por um erro de
 # digitação. Lendo do grupo `admin` que já existe, isso não pode acontecer.
 #
-# USO (no AWS CloudShell, região sa-east-1):
-#   git clone https://github.com/barbaraventura93-jpg/sp_car_clean.git
+# USO (no AWS CloudShell, região sa-east-1) — ATENÇÃO AO RAMO:
+#   git clone -b ccr-d3d7761c-vw5yj5 https://github.com/barbaraventura93-jpg/sp_car_clean.git
 #   cd sp_car_clean && bash scripts/aws-apply.sh
 #
-# Ele mostra o plano e PERGUNTA antes de aplicar. Nada acontece sem o seu "yes".
+# O RAMO IMPORTA. Aplicar a partir da `main` (que é o que um `git clone` sem
+# `-b` entrega) faria o Terraform DESTRUIR a permissão das funções na tabela do
+# DynamoDB — ela existe no estado, mas ainda não está na `main`. O site voltaria
+# a ficar sem banco. A trava abaixo recusa rodar nesse caso; não confie só nesta
+# instrução, porque instrução é o que mais se perde pelo caminho.
+#
+# Ele mostra o plano e PERGUNTA antes de aplicar. Nada acontece sem o seu "sim".
 set -euo pipefail
 
 REGION="sa-east-1"
 TFV="1.10.5"
+
+# ── trava: a configuração aqui tem de ser a da migração ───────────────
+#
+# Cada item abaixo já existe (ou vai existir) no estado do Terraform. Se a
+# configuração não os tiver, o `apply` os apagaria em vez de criá-los.
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+faltando=()
+grep -q 'aws_iam_role_policy" "lambda_data"' "$REPO/infra/data.tf" 2>/dev/null \
+  || faltando+=("infra/data.tf: política lambda_data (acesso das funções à tabela)")
+grep -q 'DATA_TABLE' "$REPO/infra/api.tf" 2>/dev/null \
+  || faltando+=("infra/api.tf: variável DATA_TABLE")
+grep -q '"unsubscribe"' "$REPO/infra/api.tf" 2>/dev/null \
+  || faltando+=("infra/api.tf: função unsubscribe em http_functions")
+
+if [ ${#faltando[@]} -gt 0 ]; then
+  echo "✗ PARE. Esta cópia do repositório não é a da migração:" >&2
+  for f in "${faltando[@]}"; do echo "    falta $f" >&2; done
+  echo >&2
+  echo "  Ramo atual: $(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')" >&2
+  echo "  Aplicar assim APAGARIA recursos que já existem — entre eles a permissão" >&2
+  echo "  das funções na tabela do DynamoDB, que é o que faz o painel ter dados." >&2
+  echo >&2
+  echo "  Use o ramo da migração:" >&2
+  echo "    git clone -b ccr-d3d7761c-vw5yj5 https://github.com/barbaraventura93-jpg/sp_car_clean.git" >&2
+  echo "  (ou, depois que o PR #67 for mesclado, a própria main)" >&2
+  exit 1
+fi
+echo "→ configuração conferida: é a da migração"
+
+# Costura para o teste: confere e sai, sem falar com a AWS.
+[ -n "${SOMENTE_CONFERIR:-}" ] && exit 0
 
 echo "→ conta e identidade"
 aws sts get-caller-identity --query '[Account,Arn]' --output text
