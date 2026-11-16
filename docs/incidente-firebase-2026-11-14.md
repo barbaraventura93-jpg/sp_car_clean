@@ -128,13 +128,15 @@ já era Cognito.
    Terraform, lê o `admin_emails` **do próprio grupo `admin` do Cognito** — em
    vez de pedir que alguém digite, porque a lista errada faz o Terraform apagar
    e recriar as contas admin — mostra o plano e só aplica depois de confirmação.
-2. **As Lambdas que falam HTTP direto com o Firebase** (13 arquivos) — troca
-   mecânica para o `store`, uma por vez.
-3. **`firebase-backup`** — passa a exportar do DynamoDB. Até então, a rede de
-   segurança é o PITR da tabela (35 dias, já ligado) e o backup de 09/11 no S3.
-4. **Endpoint público de dados** (Fase 3) — o visitante não-logado ainda lê um
-   banco que não existe. Precisa de rota nova no API Gateway, logo de
-   `terraform apply` também.
+2. ~~As Lambdas que falam HTTP direto com o Firebase~~ — **feito em 16/11.**
+   Todas as 19; `lib/core/firebase.js` foi removido.
+3. ~~`firebase-backup`~~ — **feito.** Exporta do DynamoDB no mesmo formato que o
+   importador consome, e o teste fecha o ciclo passando a exportação pelo
+   importador.
+4. ~~Endpoint público de dados~~ — **feito, e sem rota nova.** O
+   `/api/admin-data` ganhou um nível anônimo, autorizado por
+   `lib/core/regras-publicas.js` (porte fiel das regras antigas do Realtime
+   Database). O SDK do Firebase saiu do frontend.
 
 **O login dos clientes não se perdeu:** o pool do Cognito tem as 3 contas, e o
 histórico delas é reencontrado pelo e-mail canônico (GSI2), não pelo uid antigo
