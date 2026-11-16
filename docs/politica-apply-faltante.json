@@ -1,0 +1,42 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GrupoDeLogsDaFuncaoNova",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:TagResource",
+        "logs:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:logs:sa-east-1:442042534458:log-group:/aws/lambda/sp-car-clean-*"
+    },
+    {
+      "Sid": "RotaDoDescadastroNaApi",
+      "Effect": "Allow",
+      "Action": [
+        "apigateway:GET",
+        "apigateway:POST",
+        "apigateway:PATCH",
+        "apigateway:DELETE"
+      ],
+      "Resource": "arn:aws:apigateway:sa-east-1::/apis/*"
+    },
+    {
+      "Sid": "LeituraDosSegredosDoProjeto",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath",
+        "ssm:DescribeParameters",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:ssm:sa-east-1:442042534458:parameter/sp-car-clean/*",
+        "arn:aws:ssm:sa-east-1:442042534458:*"
+      ]
+    }
+  ]
+}
