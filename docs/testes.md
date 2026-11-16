@@ -130,7 +130,14 @@ Estado em 10/11/2026. "Não" é dívida conhecida, com o PR em que entra.
 
 ### Fora do `npm test`, de propósito
 
-`scripts/regras-emulador.js` roda as regras no emulador do Firebase, na própria
+`scripts/regras-emulador.js` é a **lista de referência dos casos de uso e de
+ataque às regras de dados** (88 casos). **Não mova nem renomeie este arquivo:**
+desde o PR #67 o `scripts/test-regras-publicas-emulador.js` o carrega como está
+para testar as mesmas regras no servidor (`functions/lib/core/regras-publicas.js`,
+que substitui o `database.rules.json` com o banco no DynamoDB). Caso novo
+acrescentado aqui passa a valer automaticamente para o servidor.
+
+Ele também roda as regras antigas no emulador do Firebase, na própria
 máquina, sem tocar em produção. Precisa de Java e baixa o `firebase-tools`, por
 isso não entra no `npm test`. Rode sempre que mexer em `database.rules.json`,
 antes de publicar:
