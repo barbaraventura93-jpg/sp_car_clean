@@ -239,7 +239,7 @@ auto-desliga ao estourar o teto (avisa via Telegram).
 | Camada | Tecnologia |
 |---|---|
 | Frontend | HTML5, CSS3, JavaScript puro (sem frameworks) |
-| Banco de dados | Firebase Realtime Database. O navegador lê direto só a vitrine pública; painel e conta do cliente passam pelo servidor. Migração para DynamoDB planejada (`docs/migracao-aws.md`) |
+| Banco de dados | **Em migração do Firebase para o DynamoDB.** O Firebase foi removido em 10/11/2026; os dados estão na tabela `sp-car-clean-data` (PR #67). Ver `docs/migracao-aws.md` |
 | Armazenamento de imagens e vídeos | AWS S3 (bucket de mídia) + CloudFront em `/media/*` — galeria, carrossel e fotos do check-in |
 | Autenticação | Amazon Cognito (e-mail + senha). Admin é quem está no grupo `admin` |
 | Testes | Node + `assert`, sem framework: `npm test` (ver `docs/testes.md`) |

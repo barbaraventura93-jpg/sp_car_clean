@@ -18,7 +18,7 @@ novembro/2026, ver o item 5). Confira as três coisas:
 | O que conferir | Como | Resultado esperado |
 |---|---|---|
 | A página | Abrir https://www.spcarclean.com.br | O site aparece |
-| O banco de dados | Abrir no navegador `https://sp-car-clean-default-rtdb.firebaseio.com/services.json?shallow=true` | Uma lista de códigos de serviço entre chaves. **Se aparecer "Firebase error" ou "404", o banco está fora** |
+| O banco de dados | **Em transição** (item 5): o Firebase foi removido e o banco está indo para o DynamoDB (PR #67). Esta linha ganha o passo a passo definitivo quando a migração terminar | — |
 | O painel | Entrar na Área Restrita e abrir a lista de agendamentos | Os agendamentos aparecem |
 
 Sinais de que algo está errado mesmo com a página abrindo: painel vazio, o
@@ -88,6 +88,12 @@ Não envie por e-mail nem por mensagem, e apague a cópia baixada depois de usar
 
 ### Como restaurar
 
+> **Desatualizado em parte.** O procedimento abaixo é o do Firebase, que foi
+> removido em 10/11/2026. Com o banco no DynamoDB, a restauração passa a ser
+> pela recuperação a um ponto no tempo da tabela (35 dias) ou pela reimportação
+> do backup com `scripts/importar-para-dynamodb.js` (PR #67). Esta seção será
+> reescrita quando a migração terminar.
+
 Restaurar **sobrescreve** o banco. Só faça com o banco vazio ou perdido, nunca
 "para testar".
 
@@ -132,23 +138,18 @@ A leitura foi verificada; a importação, não.
 
 ## 5. Registro de incidentes
 
-### Banco de dados fora do ar — desde 10/11/2026 (em aberto em 15/11/2026)
+### Banco de dados (Firebase) removido — 10/11/2026
 
-- **O que aconteceu:** o banco (Firebase Realtime Database) passou a responder
-  "não encontrado" (HTTP 404), inclusive na leitura pública. O endereço do
-  projeto no Firebase também. Em 08/11 a chave do projeto Google havia sido
-  apagada. A causa não foi identificada: o projeto não aparece em nenhuma conta
-  Google conhecida (item 5 do backlog).
-- **Como foi descoberto:** em 14/11, durante a revisão, ao conferir se o backup
-  diário estava sendo gravado. O último backup bom é de 09/11 às 03h17.
-- **Por que demorou quatro dias:** as funções registravam o erro no log, mas
-  não há alarme; e a página inicial abre normalmente sem o banco.
-- **Impacto:** o site não registra agendamentos e o painel abre vazio. Pelos
-  registros, nenhum cliente tentou agendar no período.
-- **O que foi feito:** backup de 09/11 conferido como íntegro; correção para o
-  site avisar o cliente quando a gravação falha (PR #70).
-- **O que falta:** recuperar o projeto Google ou restaurar o backup num banco
-  novo. Depende da dona do projeto.
+- **O que aconteceu:** a dona do projeto excluiu o projeto do Firebase em
+  10/11/2026, de propósito, para concluir a migração para a AWS. A migração
+  ainda não tinha levado o banco, então tudo que depende de dados parou: o
+  painel abre vazio e o site não registra agendamentos.
+- **Recuperação:** o backup de 09/11 (íntegro, conferido em 15/11) foi
+  importado para a tabela DynamoDB `sp-car-clean-data`. O trabalho está no
+  PR #67, que também traz o registro completo do incidente em
+  `docs/incidente-firebase-2026-11-14.md` e o que ainda falta da migração.
+- **Proteção ao cliente enquanto isso:** desde o PR #70, se a gravação de um
+  agendamento falhar o site avisa e aponta o WhatsApp, em vez de mostrar
+  "recebemos" sem ter gravado.
 - **Lições:** conferir o banco, e não só a página, depois de cada publicação;
-  criar alarme para as funções agendadas; não depender de um projeto que
-  ninguém administra.
+  alarme nas funções agendadas (backlog, item 8).

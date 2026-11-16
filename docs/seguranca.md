@@ -62,21 +62,21 @@ estado; o detalhe entra depois da correção.
 | S-09 | Função de indicação servia para spam e para gerar cupom | Corrigido e publicado |
 | S-12, M-01 | Servidor confundia um código interno com o e-mail do cliente; login antigo ainda concedia admin | Corrigido e publicado |
 | M-02 | Agente de IA de uso interno chamável por qualquer um; chat sem teto | Corrigido e publicado |
-| S-04 (parte), S-06, S-07 (parte), S-10 | Regras do banco abertas demais | Corrigido no arquivo; **falta publicar** |
+| S-04 (parte), S-06, S-07 (parte), S-10 | Regras do banco abertas demais | Corrigido no arquivo, mas **sem efeito**: o Firebase foi removido. Ver o risco "proteções no servidor" abaixo |
 | B-01, B-02 | Publicação sem testes; dependência vulnerável sem uso | Corrigido |
 
 ## 5. Riscos que continuam abertos
 
 | Risco | Situação | Decisão |
 |---|---|---|
-| **Banco de dados fora do ar** | Desde 10/11/2026 (`docs/operacao.md`, item 5) | Em recuperação; depende da dona do projeto |
-| **Regras novas do banco não publicadas** | Só valem depois de publicadas | Pendente; exige o segredo do banco |
+| **Banco em migração** | O Firebase foi removido em 10/11/2026 pela dona do projeto; os dados foram importados para o DynamoDB (PR #67), mas o site ainda não lê nem grava lá | Em andamento, a cargo de outra sessão de trabalho |
+| **As proteções das regras do banco precisam ir para o servidor** | As regras de `database.rules.json` (PR #64) valiam só para o Firebase, que não existe mais. No DynamoDB não há regras no navegador: a mesma proteção tem de existir nas funções que gravam (agendamento só nasce pendente, lista de espera só cria, avaliação pública só aprovada, cupons não listáveis) | Aberto: deve entrar junto com o endpoint público de dados do PR #67 |
 | **Preço, cupom, gift card e pontos decididos no navegador** (S-05, S-07, S-08) | O servidor ainda não recalcula | Aberto (backlog, item 7). Hoje a barreira é a conferência manual de cada pedido |
 | **Chave de acesso ampla e permanente no ambiente de desenvolvimento** (A-01) | Poder quase total sobre o projeto na AWS | **Aceito pela dona do projeto em 14/11/2026**, para não parar o desenvolvimento. Recomendação mantida: trocar |
 | **Senha antiga do painel no histórico público do repositório** (S-11) | Não abre mais o painel; o risco é reuso | Pendente: trocar onde tiver sido reutilizada |
 | **Repositório público** | Código, regras e histórico legíveis por qualquer pessoa | Pendente de decisão |
 | **Sem alarme, sem CSP, sem segunda etapa no login admin** (M-04, M-07) | Falhas passam em silêncio; falta a segunda barreira do S-02 | Aberto (backlog, item 8) |
-| **Projeto Google sem dono acessível** (M-12) | Ninguém administra o projeto do banco | Aberto (backlog, item 5) |
+| **Projeto Google sem dono acessível** (M-12) | Encerrado: o projeto foi excluído | — |
 | **Limite por IP em memória** (M-10) | Zera quando a função reinicia | Aceito: o WAF cobre o grosso |
 | **Fotos de check-in públicas por endereço** (M-05) | Endereço imprevisível, mas sem login | Aceito por ora; documentado |
 
@@ -113,7 +113,7 @@ publicação atualiza todas as funções) e confira o funcionamento.
 | Bot do Telegram | Conversa com o BotFather (`/revoke`) | `TELEGRAM_BOT_TOKEN` | O número do chat (`TELEGRAM_CHAT_ID`) não muda |
 | E-mail (EmailJS) | Painel do EmailJS | `EMAILJS_PRIVATE_KEY` | A chave pública vai nos segredos do GitHub e exige publicar o site |
 | Identificador do InfinitePay | Painel do InfinitePay | `INFINITEPAY_HANDLE` | Não é senha, mas trocar muda para onde vai o dinheiro: conferir duas vezes |
-| Segredo do banco (Firebase) | Console do Firebase > Configurações > Contas de serviço > Segredos do banco | `FIREBASE_DATABASE_SECRET` | **Hoje não é possível**: exige acesso ao projeto Google (backlog, item 5) |
+| Segredo do banco (Firebase) | — | `FIREBASE_DATABASE_SECRET` | Sem uso desde a remoção do Firebase; apagar do SSM quando a migração terminar |
 | Segredo da sincronização do Drive | Gerar um texto aleatório longo | `DRIVE_SYNC_SECRET` | Trocar também no Apps Script. Recurso pausado |
 | Chave das notificações (VAPID) | Gerada pelo Terraform | `WEB_PUSH_VAPID_PRIVATE_KEY` | Trocar invalida as inscrições: todos precisam aceitar as notificações de novo |
 | Segredo entre CloudFront e API | Gerado pelo Terraform | (interno) | Trocar exige aplicar o Terraform |
