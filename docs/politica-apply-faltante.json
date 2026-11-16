@@ -37,6 +37,49 @@
         "arn:aws:ssm:sa-east-1:442042534458:parameter/sp-car-clean/*",
         "arn:aws:ssm:sa-east-1:442042534458:*"
       ]
+    },
+    {
+      "Sid": "DnsQueOTerraformLeAoPlanejar",
+      "Effect": "Allow",
+      "Action": [
+        "route53:ListHostedZones",
+        "route53:ListHostedZonesByName"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DnsDoDominioDoSite",
+      "Effect": "Allow",
+      "Action": [
+        "route53:GetHostedZone",
+        "route53:ListResourceRecordSets",
+        "route53:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:route53:::hostedzone/*"
+    },
+    {
+      "Sid": "DnsEstadoDaMudanca",
+      "Effect": "Allow",
+      "Action": [
+        "route53:GetChange"
+      ],
+      "Resource": "arn:aws:route53:::change/*"
+    },
+    {
+      "Sid": "EtiquetasDoCertificadoEDoWaf",
+      "Effect": "Allow",
+      "Action": [
+        "acm:ListTagsForCertificate"
+      ],
+      "Resource": "arn:aws:acm:us-east-1:442042534458:certificate/*"
+    },
+    {
+      "Sid": "EtiquetasDoWaf",
+      "Effect": "Allow",
+      "Action": [
+        "wafv2:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:wafv2:us-east-1:442042534458:global/webacl/*"
     }
   ]
 }
