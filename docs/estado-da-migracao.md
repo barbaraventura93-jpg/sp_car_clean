@@ -78,13 +78,31 @@ Depois do merge: catálogo carregando, agendamento sendo criado, painel com
 dados, página de descadastro respondendo. Nada disso foi verificado em
 produção ainda — os 30 testes não substituem isso.
 
-## Decisão pendente da dona
+## Decisões da dona, recebidas por repasse (17/11, 23:56)
 
-**Item 7 do backlog (achados S-05, S-07, S-08):** hoje o navegador calcula o
-preço final com cupom e gift card e grava, e o servidor não confere. Na prática
-dá para manipular o valor de um agendamento pelo navegador. A outra sessão
-sugeriu que esta sessão assumisse, por já estar na camada de dados; não foi
-começado porque é escopo novo e a decisão é da Bárbara.
+Chegaram pela outra sessão, não pela Bárbara diretamente nesta conversa. Valem
+como informação; quem continuar deve confirmar com ela antes de agir, sobretudo
+no apply:
+
+1. **Ela aprovou o `terraform apply` do #67.**
+2. **O item 7 do backlog é desta sessão** (preço, cupom, gift card e pontos
+   conferidos no servidor).
+
+Esta sessão **não aplicou** por dois motivos: aprovação repassada por outra
+sessão não é a palavra da dona, e ela avisou na mesma hora que seguiria num
+chat novo. O apply ficou para quem continuar, com o plan já conferido acima.
+
+### Item 7 — o que é, para quem assumir
+
+Achados S-05, S-07 e S-08 de `docs/revisao-2026-11-09.md`: hoje o **navegador**
+calcula o preço final com cupom e gift card e grava, e o servidor não confere.
+Na prática, dá para manipular o valor de um agendamento pelo navegador.
+
+A camada de dados já está pronta para receber isso: `lib/core/store.js` tem a
+interface completa e `dbIncrement` atômico, e `lib/core/regras-publicas.js` já
+impede o visitante de **alterar** preço e pagamento — o que falta é o servidor
+**calcular** o valor em vez de aceitar o que vem no corpo. O lugar natural é
+junto da criação do agendamento, no caminho público do `admin-data`.
 
 ## Pontos soltos, fora do código
 
