@@ -4,6 +4,28 @@
 
 - Falar sempre em português com a Bárbara.
 
+## Credencial AWS expirada ou inválida — revalidar sem perguntar
+
+Pedido da Bárbara (18/11/2026). Vale como autorização permanente.
+
+Quando uma chamada à AWS falhar por credencial expirada ou inválida
+(`ExpiredToken`, `InvalidClientTokenId`, "expired or invalid AWS credentials"):
+
+1. **Não parar nem perguntar.** Gerar o link de login na hora:
+   `aws login --remote` (precisa do AWS CLI 2.32.0 ou mais novo; se faltar,
+   instalar o CLI v2 primeiro). O comando mostra uma URL e um código.
+2. **Abrir o link para ela:** mostrar a URL e o código logo no início da
+   resposta, e mandar notificação (PushNotification) se ela estiver longe.
+   O login em si é dela: só ela entra com a conta, e Claude não digita senha.
+3. **Revalidar sozinho:** esperar o `aws login` terminar e rodar
+   `aws sts get-caller-identity`. Se der certo, retomar a tarefa de onde parou,
+   sem pedir de novo.
+4. **Se o erro vier da ferramenta MCP da AWS** (`aws___run_script`), o
+   `aws login` do terminal não conserta: essa credencial vem do conector. Nesse
+   caso, dizer a ela para reconectar o conector da AWS nas configurações de
+   conectores do claude.ai e tentar de novo logo depois. Enquanto isso, seguir
+   pelo CLI se ele estiver autenticado.
+
 ## Testes — regra do projeto
 
 - Toda mudança roda `npm test` antes do push. O deploy na `main` só publica se
