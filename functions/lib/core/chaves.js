@@ -41,6 +41,8 @@ const NOS = {
   giftcards:    { pk: 'GIFTCARD', prefixo: '' },
   stock:        { pk: 'STOCK', prefixo: 'ITEM#' },
   stockRecipes: { pk: 'STOCK', prefixo: 'RECIPE#' },
+  // Custos que não são estoque (hoje: custo da hora de mão de obra). Só admin.
+  custos:       { pk: 'STOCK', prefixo: 'COST#' },
   feedback:     { pk: 'FEEDBACK', prefixo: '' },
   waitlist:     { pk: 'WAITLIST', prefixo: '' },
   referrals:    { pk: 'REFERRAL', prefixo: '' },

@@ -715,6 +715,104 @@ function prazoDeEntrega(dias) {
 }
 function bkLabel(b)     { return bkSvcs(b).map(sv=>`${sv.icon} ${sv.name}`).join(' + '); }
 
+// ── Mão de obra: horas de serviço × custo da hora ───────────────────────
+// Mão de obra não é estoque: não se compra nem acaba na prateleira. O serviço
+// guarda as HORAS de trabalho por porte, e o custo da hora fica em
+// custos/maoDeObra (só o admin lê), cadastrado na tela de Estoque.
+const HORAS_POR_DIA = 8;          // um dia útil de trabalho
+const VALOR_HORA_PADRAO = 30;     // R$/h, enquanto nada foi salvo no banco
+let _valorHora = VALOR_HORA_PADRAO;
+let _custosRef = null;
+
+// Horas de trabalho → dias extras de prazo (0 = entrega no mesmo dia).
+// 8 h cabem num dia; 11 h ocupam 2 dias, então a retirada é no dia seguinte.
+function diasExtrasPorHoras(horas) {
+  const h = Number(horas) || 0;
+  if (h <= 0) return 0;
+  return Math.ceil(h / HORAS_POR_DIA) - 1;
+}
+
+// Prazo do serviço: as horas do porte maior (o prazo mostrado é um só) mais os
+// dias de espera (cura, secagem), que não são trabalho.
+function prazoDoServico(horas, diasEspera) {
+  const h = Math.max(Number(horas && horas.pq) || 0, Number(horas && horas.gr) || 0);
+  return diasExtrasPorHoras(h) + Math.max(0, parseInt(diasEspera) || 0);
+}
+
+// Tira da receita os itens medidos em horas (mão de obra cadastrada como
+// insumo, como era antes) e devolve as horas somadas. É a migração do serviço
+// antigo: as horas vão para o campo próprio e saem do estoque.
+function separarMaoDeObra(receita, insumos) {
+  const resto = {};
+  const horas = { pq: 0, gr: 0 };
+  Object.entries(receita || {}).forEach(([pid, a]) => {
+    if ((insumos || {})[pid] && insumos[pid].unit === 'h') {
+      horas.pq += Number(a && a.pq) || 0;
+      horas.gr += Number(a && a.gr) || 0;
+    } else {
+      resto[pid] = a;
+    }
+  });
+  return { receita: resto, horas, tinha: horas.pq > 0 || horas.gr > 0 };
+}
+
+// Custo do serviço por porte: insumos (sem os itens em horas, que agora são
+// mão de obra) + horas × custo da hora.
+function custoDoServico(receita, insumos, horas, valorHora) {
+  const vh = Number(valorHora) || 0;
+  const out = {};
+  ['pq', 'gr'].forEach(porte => {
+    let c = 0;
+    Object.entries(receita || {}).forEach(([pid, a]) => {
+      const ins = (insumos || {})[pid];
+      if (!ins || ins.unit === 'h') return;
+      c += (Number(a && a[porte]) || 0) * (Number(ins.costPerUnit) || 0);
+    });
+    c += (Number(horas && horas[porte]) || 0) * vh;
+    out[porte] = Math.round(c * 100) / 100;
+  });
+  return out;
+}
+
+async function carregarValorHora() {
+  if (!_custosRef) return _valorHora;
+  try {
+    const v = (await _custosRef.child('maoDeObra').once('value')).val();
+    if (v && Number(v.valorHora) > 0) _valorHora = Number(v.valorHora);
+  } catch (e) { console.warn('custo da hora:', e); }
+  return _valorHora;
+}
+
+// Grava de novo o custo de todos os serviços. Roda quando muda o custo da hora
+// ou de um insumo: o relatório de lucro lê o custo GRAVADO no serviço, e sem
+// isto ele ficaria com o número antigo até alguém reabrir e salvar cada um.
+async function recalcularCustosServicos() {
+  if (!_servicesRef || !_stockRef || !_stockRecipesRef) return 0;
+  const [svSnap, stSnap, rcSnap] = await Promise.all([
+    _servicesRef.once('value'), _stockRef.once('value'), _stockRecipesRef.once('value'),
+  ]);
+  const servicos = svSnap.val() || {};
+  const insumos = stSnap.val() || {};
+  const receitas = rcSnap.val() || {};
+  let n = 0;
+  for (const [id, sv] of Object.entries(servicos)) {
+    const receita = receitas[id];
+    // Sem receita e sem horas não há de onde calcular: não zera o que existe.
+    if (!receita && !sv.horas) continue;
+    const horas = sv.horas || separarMaoDeObra(receita, insumos).horas;
+    const c = custoDoServico(receita, insumos, horas, _valorHora);
+    const moto = sv.veiculo === 'moto';
+    const pricing = {
+      pq: { cost: c.pq, sale: sv.pricing?.pq?.sale ?? sv.pq ?? 0 },
+      gr: { cost: moto ? c.pq : c.gr, sale: sv.pricing?.gr?.sale ?? sv.gr ?? 0 },
+    };
+    if (pricing.pq.cost === sv.pricing?.pq?.cost && pricing.gr.cost === sv.pricing?.gr?.cost) continue;
+    await _servicesRef.child(id).update({ pricing });
+    n++;
+  }
+  return n;
+}
+
 // BOOKING FLOW
 // ============================================================
 let booking = { services: [], carSize: 'pq', date: null, step: 1 };
@@ -6344,9 +6442,12 @@ let _sfCustoAnterior = null;    // o que estava salvo, para avisar se mudar
 // receita de A aparecer no B. Cada preenchimento vira o válido; o que chegar
 // depois citando um preenchimento anterior é descartado.
 let _sfPreenchimento = 0;
+let _sfMigrouHoras = null;      // horas que vieram da receita antiga (aviso)
+let _sfServicoAberto = null;    // o serviço como estava salvo
 
 function _sfOpcoesInsumo(sel) {
-  const itens = Object.entries(_sfInsumos)
+  // Itens em horas são mão de obra, que agora tem campo próprio.
+  const itens = Object.entries(_sfInsumos).filter(([, p]) => p.unit !== 'h')
     .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''));
   return '<option value="">— escolha o insumo —</option>' + itens.map(([id, p]) =>
     `<option value="${id}"${id === sel ? ' selected' : ''}>${esc(p.name || id)} (${esc(p.unit || '')})</option>`
@@ -6396,16 +6497,6 @@ function _getRecipeRows() {
   return out;
 }
 
-function _sfCustoDosInsumos(receita) {
-  let pq = 0, gr = 0;
-  Object.entries(receita).forEach(([pid, a]) => {
-    const c = _sfInsumos[pid]?.costPerUnit || 0;
-    pq += (a.pq || 0) * c;
-    gr += (a.gr || 0) * c;
-  });
-  return { pq: Math.round(pq * 100) / 100, gr: Math.round(gr * 100) / 100 };
-}
-
 // O custo do serviço é SEMPRE a soma dos insumos. Não há opção de digitá-lo:
 // enquanto havia, o número exibido na margem podia discordar do que os insumos
 // custam de verdade, e era o digitado que ganhava.
@@ -6425,24 +6516,31 @@ function _sfRecalcCusto() {
 
   const receita = _getRecipeRows();
   const n = Object.keys(receita).length;
+  const h = _sfHoras();
+  const temHoras = h.pq > 0 || h.gr > 0;
 
   [elPq, elGr].forEach(el => { if (el) { el.readOnly = true; el.style.background = 'rgba(0,0,0,.14)'; } });
 
-  if (!n) {
+  if (!n && !temHoras) {
     elPq.value = 0;
     if (elGr) elGr.value = 0;
-    elNota.textContent = 'Sem insumos cadastrados: o custo fica R$ 0,00 e a margem não aparece. '
-      + 'Acrescente o que este serviço consome.';
+    elNota.textContent = 'Sem insumos cadastrados nem horas de serviço: o custo fica R$ 0,00 e a margem não aparece. '
+      + 'Acrescente o que este serviço consome e quantas horas leva.';
     return;
   }
 
-  const c = _sfCustoDosInsumos(receita);
+  const c = custoDoServico(receita, _sfInsumos, h, _valorHora);
   elPq.value = c.pq;
   if (elGr) elGr.value = c.gr;
 
   const moto = document.getElementById('sfVeiculo')?.value === 'moto';
-  let nota = 'Calculado de ' + n + ' insumo(s): R$ ' + c.pq.toFixed(2).replace('.', ',')
+  const partes = [];
+  if (n) partes.push(n + ' insumo(s)');
+  if (temHoras) partes.push('mão de obra (' + _sfNum(h.pq) + ' h' + (moto ? '' : ' / ' + _sfNum(h.gr) + ' h')
+    + ' × R$ ' + _valorHora.toFixed(2).replace('.', ',') + '/h)');
+  let nota = 'Calculado de ' + partes.join(' + ') + ': R$ ' + c.pq.toFixed(2).replace('.', ',')
     + (moto ? '' : ' (pequeno) · R$ ' + c.gr.toFixed(2).replace('.', ',') + ' (grande)') + '.';
+  if (!temHoras) nota += ' Sem horas de serviço: a mão de obra não entra no custo.';
   // Se o que estava salvo era outro número, dizer — senão a margem dos cards
   // mudaria sem ninguém notar.
   if (_sfCustoAnterior && (_sfCustoAnterior.pq || _sfCustoAnterior.gr)
@@ -6456,11 +6554,31 @@ function _sfRecalcCusto() {
 
 // Mostra, no painel, a MESMA frase que o cliente vai ler no site. O rótulo
 // "Dias extras" não dizia o que 0, 1 ou 2 significam para quem agenda.
+function _sfHoras() {
+  const moto = document.getElementById('sfVeiculo')?.value === 'moto';
+  const pq = parseFloat(document.getElementById('sfHorasPq')?.value) || 0;
+  const gr = moto ? pq : (parseFloat(document.getElementById('sfHorasGr')?.value) || 0);
+  return { pq, gr };
+}
+
+function _sfNum(v) { return String(Math.round(v * 100) / 100).replace('.', ','); }
+
 function _sfPrazo() {
   const el = document.getElementById('sfDaysNota');
   if (!el) return;
-  const d = parseInt(document.getElementById('sfDays')?.value) || 0;
-  el.textContent = 'O cliente vê: "' + prazoDeEntrega(d) + '".';
+  const h = _sfHoras();
+  const espera = Math.max(0, parseInt(document.getElementById('sfEspera')?.value) || 0);
+  const d = prazoDoServico(h, espera);
+  const maior = Math.max(h.pq, h.gr);
+  let txt = '';
+  if (maior > 0) {
+    const dias = Math.ceil(maior / HORAS_POR_DIA);
+    txt = _sfNum(maior) + ' h ÷ ' + HORAS_POR_DIA + ' h por dia útil = ' + dias + ' dia' + (dias > 1 ? 's' : '') + ' de trabalho'
+      + (espera ? ' + ' + espera + ' de espera' : '') + '. ';
+  }
+  txt += 'O cliente vê: "' + prazoDeEntrega(d) + '".';
+  if (_sfMigrouHoras) txt += ' A mão de obra estava na lista de insumos e veio para cá: salve para gravar.';
+  el.textContent = txt;
 }
 
 function openServiceForm(id) {
@@ -6472,6 +6590,9 @@ function openServiceForm(id) {
   _sfInsumos = {};
   _sfRecIdx = 0;
   _sfCustoAnterior = { pq: s?._cost_pq || 0, gr: s?._cost_gr || 0 };
+  _sfServicoAberto = s;
+  _sfMigrouHoras = null;
+  carregarValorHora().then(() => _sfRecalcCusto());
   if (_stockRef && _stockRecipesRef) {
     const meu = _sfPreenchimento;
     Promise.all([_stockRef.once('value'), _stockRecipesRef.once('value')])
@@ -6496,7 +6617,25 @@ function _sfPreencheReceita(receita, insumos) {
   const lista = document.getElementById('sfRecipeList');
   if (!lista) return;
   lista.innerHTML = '';
-  Object.entries(receita).forEach(([pid, a]) => addRecipeRow(pid, a.pq ?? '', a.gr ?? ''));
+  // Mão de obra cadastrada como insumo (como era antes) vira horas de serviço.
+  const sep = separarMaoDeObra(receita, _sfInsumos);
+  _sfMigrouHoras = null;
+  const hp = document.getElementById('sfHorasPq');
+  const hg = document.getElementById('sfHorasGr');
+  const s = _sfServicoAberto;
+  if (sep.tinha && hp && !s?.horas) {
+    hp.value = sep.horas.pq;
+    if (hg) hg.value = sep.horas.gr;
+    _sfMigrouHoras = sep.horas;
+    // O prazo que o cliente vê não pode mudar sem ninguém notar: o que as
+    // horas não cobrem vira dia de espera.
+    const esp = document.getElementById('sfEspera');
+    if (esp && s && s.diasEspera == null) {
+      esp.value = Math.max(0, (s.daysExtra || 0) - diasExtrasPorHoras(Math.max(sep.horas.pq, sep.horas.gr)));
+    }
+  }
+  Object.entries(sep.receita).forEach(([pid, a]) => addRecipeRow(pid, a.pq ?? '', a.gr ?? ''));
+  _sfPrazo();
   _sfRecalcCusto();
 }
 
@@ -6519,9 +6658,17 @@ function _desenharServiceForm(id, s, wrap) {
         <div class="form-group"><label>Categoria</label>
           <select id="sfCat">${catOpts}</select>
         </div>
-        <div class="form-group"><label>Tempo de entrega</label>
-          <input id="sfDays" type="number" value="${s?.daysExtra||0}" min="0" max="10" oninput="_sfPrazo()"/>
+        <div class="form-group"><label>Horas de serviço</label>
+          <div style="display:flex;gap:.4rem">
+            <div style="flex:1;min-width:0"><div id="sfHorasPqRot" style="font-size:.66rem;color:var(--muted);margin-bottom:.15rem">🚗 Pequeno</div>
+              <input id="sfHorasPq" type="number" min="0" step="0.5" value="${s?.horas?.pq ?? ''}" placeholder="horas" oninput="_sfPrazo();_sfRecalcCusto()" style="width:100%"/></div>
+            <div class="sf-horas-gr" style="flex:1;min-width:0"><div style="font-size:.66rem;color:var(--muted);margin-bottom:.15rem">🚙 Grande</div>
+              <input id="sfHorasGr" type="number" min="0" step="0.5" value="${s?.horas?.gr ?? ''}" placeholder="horas" oninput="_sfPrazo();_sfRecalcCusto()" style="width:100%"/></div>
+          </div>
           <p id="sfDaysNota" style="margin:.3rem 0 0;font-size:.74rem;color:var(--muted)"></p>
+        </div>
+        <div class="form-group"><label>Dias de espera <span style="font-weight:400;color:var(--muted)">(cura, secagem)</span></label>
+          <input id="sfEspera" type="number" min="0" max="10" value="${s?.diasEspera ?? (s?.horas ? 0 : (s?.daysExtra || 0))}" oninput="_sfPrazo()"/>
         </div>
         <div class="form-group"><label>Ativo</label>
           <select id="sfActive"><option value="1"${s?.active!==false?' selected':''}>✅ Ativo</option><option value="0"${s?.active===false?' selected':''}>⛔ Inativo</option></select>
@@ -6583,7 +6730,9 @@ function _sfToggleVeiculo() {
   const headPq = document.getElementById('sfHeadPq');
   if (grid) grid.style.gridTemplateColumns = isMoto ? '1fr 1fr' : '1fr 1fr 1fr';
   if (headPq) headPq.textContent = isMoto ? '🏍️ Preço único' : '🚗 Pequeno';
-  document.querySelectorAll('#sfPriceGrid .sf-col-gr, #sfRecipeList .sf-rec-gr').forEach(el => {
+  const rotHoras = document.getElementById('sfHorasPqRot');
+  if (rotHoras) rotHoras.textContent = isMoto ? '🏍️ Moto' : '🚗 Pequeno';
+  document.querySelectorAll('#sfPriceGrid .sf-col-gr, #sfRecipeList .sf-rec-gr, .sf-horas-gr').forEach(el => {
     el.style.display = isMoto ? 'none' : '';
   });
 }
@@ -6622,7 +6771,9 @@ async function saveService(id) {
   const name    = document.getElementById('sfName')?.value.trim();
   const icon    = document.getElementById('sfIcon')?.value.trim() || '🔧';
   const cat     = document.getElementById('sfCat')?.value;
-  const days    = parseInt(document.getElementById('sfDays')?.value) || 0;
+  const horas   = _sfHoras();
+  const diasEspera = Math.max(0, parseInt(document.getElementById('sfEspera')?.value) || 0);
+  const days    = prazoDoServico(horas, diasEspera);
   const active  = document.getElementById('sfActive')?.value === '1';
   const interno = document.getElementById('sfInterno')?.value === '1';
   const veiculo = document.getElementById('sfVeiculo')?.value === 'moto' ? 'moto' : 'carro';
@@ -6648,11 +6799,11 @@ async function saveService(id) {
 
   // Com o custo vindo dos insumos, recalcular aqui é o que garante que o salvo
   // é a conta — e não um número que ficou na tela.
-  const c = _sfCustoDosInsumos(receita);
+  const c = custoDoServico(receita, _sfInsumos, horas, _valorHora);
   const costPq = c.pq;
   const costGr = veiculo === 'moto' ? c.pq : c.gr;
 
-  const data = { name, icon, cat, veiculo, daysExtra: days, active, interno, desc,
+  const data = { name, icon, cat, veiculo, daysExtra: days, horas, diasEspera, active, interno, desc,
     pricing: { pq: { cost: costPq, sale: salePq }, gr: { cost: costGr, sale: saleGr } },
     ...(faqs.length ? { faqs } : {}) };
 
@@ -6688,15 +6839,15 @@ async function seedServicesFromDefault() {
   if (!_servicesRef) { alert('Firebase não conectado.'); return; }
   if (!confirm('Importar os 9 serviços padrão para o Firebase? Serviços com mesmo ID serão sobrescritos.')) return;
   const defaults = {
-    'lavagem-motor':       { name:'Lavagem de Motor',          icon:'⚙️',  cat:'Serviços Especiais', active:true, daysExtra:0, desc:'Remoção de graxa e oxidação. Proteção elétrica e verniz de motor.',       pricing:{pq:{cost:0,sale:80},  gr:{cost:0,sale:130}} },
-    'lavagem-detalhada':   { name:'Lavagem Detalhada e Motor', icon:'🚿',  cat:'Estética Externa',   active:true, daysExtra:0, desc:'Snow Foam, emblemas, grades, dobradiças, caixas de roda, pneus.',          pricing:{pq:{cost:0,sale:180}, gr:{cost:0,sale:300}} },
-    'higienizacao-tecido': { name:'Higienização de Tecidos',   icon:'🧼',  cat:'Estética Interna',   active:true, daysExtra:0, desc:'Deep Clean com extratora. Ácaros, fungos, manchas e odores.',              pricing:{pq:{cost:0,sale:300}, gr:{cost:0,sale:450}} },
-    'higienizacao-couro':  { name:'Tratamento de Couro',       icon:'🛋️',  cat:'Estética Interna',   active:true, daysExtra:0, desc:'Limpeza profunda + hidratação. Evita rachaduras no couro.',                pricing:{pq:{cost:0,sale:250}, gr:{cost:0,sale:420}} },
-    'polimento-geral':     { name:'Polimento Geral',            icon:'✨',  cat:'Estética Externa',   active:true, daysExtra:1, desc:'Clay Bar, corte, refino e lustre. Remove riscos e devolve brilho.',        pricing:{pq:{cost:0,sale:320}, gr:{cost:0,sale:520}} },
-    'polimento-preto':     { name:'Polimento Carro Preto',     icon:'⬛', cat:'Estética Externa',   active:true, daysExtra:1, desc:'Boinas ultra-macias e compostos nano. Elimina hologramas.',                pricing:{pq:{cost:0,sale:500}, gr:{cost:0,sale:750}} },
-    'polimento-cristal':   { name:'Polimento & Cristalização', icon:'💎',  cat:'Estética Externa',   active:true, daysExtra:2, desc:'Correção completa + selante contra UV, poluição e chuva ácida.',           pricing:{pq:{cost:0,sale:600}, gr:{cost:0,sale:1300}}},
-    'polimento-vidros':    { name:'Polimento de Vidros',        icon:'🔍',  cat:'Serviços Especiais', active:true, daysExtra:0, desc:'Óxido de cério remove manchas e micro-riscos. Melhor visibilidade.',       pricing:{pq:{cost:0,sale:120}, gr:{cost:0,sale:180}} },
-    'reparo-trinca':       { name:'Reparo de Trinca',           icon:'🔧',  cat:'Serviços Especiais', active:true, daysExtra:0, desc:'Resina estrutural + cura UV. Economize até 90% vs trocar o vidro.',        pricing:{pq:{cost:0,sale:80},  gr:{cost:0,sale:150}} },
+    'lavagem-motor':       { name:'Lavagem de Motor',          icon:'⚙️',  cat:'Serviços Especiais', active:true, daysExtra:0, horas:{pq:1,gr:1}, diasEspera:0, desc:'Remoção de graxa e oxidação. Proteção elétrica e verniz de motor.',       pricing:{pq:{cost:0,sale:80},  gr:{cost:0,sale:130}} },
+    'lavagem-detalhada':   { name:'Lavagem Detalhada e Motor', icon:'🚿',  cat:'Estética Externa',   active:true, daysExtra:0, horas:{pq:3,gr:5}, diasEspera:0, desc:'Snow Foam, emblemas, grades, dobradiças, caixas de roda, pneus.',          pricing:{pq:{cost:0,sale:180}, gr:{cost:0,sale:300}} },
+    'higienizacao-tecido': { name:'Higienização de Tecidos',   icon:'🧼',  cat:'Estética Interna',   active:true, daysExtra:0, horas:{pq:4,gr:6.5}, diasEspera:0, desc:'Deep Clean com extratora. Ácaros, fungos, manchas e odores.',              pricing:{pq:{cost:0,sale:300}, gr:{cost:0,sale:450}} },
+    'higienizacao-couro':  { name:'Tratamento de Couro',       icon:'🛋️',  cat:'Estética Interna',   active:true, daysExtra:0, horas:{pq:2,gr:2}, diasEspera:0, desc:'Limpeza profunda + hidratação. Evita rachaduras no couro.',                pricing:{pq:{cost:0,sale:250}, gr:{cost:0,sale:420}} },
+    'polimento-geral':     { name:'Polimento Geral',            icon:'✨',  cat:'Estética Externa',   active:true, daysExtra:1, horas:{pq:6,gr:10}, diasEspera:0, desc:'Clay Bar, corte, refino e lustre. Remove riscos e devolve brilho.',        pricing:{pq:{cost:0,sale:320}, gr:{cost:0,sale:520}} },
+    'polimento-preto':     { name:'Polimento Carro Preto',     icon:'⬛', cat:'Estética Externa',   active:true, daysExtra:1, horas:{pq:8,gr:12}, diasEspera:0, desc:'Boinas ultra-macias e compostos nano. Elimina hologramas.',                pricing:{pq:{cost:0,sale:500}, gr:{cost:0,sale:750}} },
+    'polimento-cristal':   { name:'Polimento & Cristalização', icon:'💎',  cat:'Estética Externa',   active:true, daysExtra:2, horas:{pq:7,gr:11}, diasEspera:1, desc:'Correção completa + selante contra UV, poluição e chuva ácida.',           pricing:{pq:{cost:0,sale:600}, gr:{cost:0,sale:1300}}},
+    'polimento-vidros':    { name:'Polimento de Vidros',        icon:'🔍',  cat:'Serviços Especiais', active:true, daysExtra:0, horas:{pq:2,gr:2}, diasEspera:0, desc:'Óxido de cério remove manchas e micro-riscos. Melhor visibilidade.',       pricing:{pq:{cost:0,sale:120}, gr:{cost:0,sale:180}} },
+    'reparo-trinca':       { name:'Reparo de Trinca',           icon:'🔧',  cat:'Serviços Especiais', active:true, daysExtra:0, horas:{pq:1,gr:1}, diasEspera:0, desc:'Resina estrutural + cura UV. Economize até 90% vs trocar o vidro.',        pricing:{pq:{cost:0,sale:80},  gr:{cost:0,sale:150}} },
   };
   try {
     // `update`, não `set`: a política recusa substituir o nó `services` inteiro,
@@ -7108,8 +7259,6 @@ const STOCK_DEFAULTS = {
   'sabao-sujeira':          { name: 'Sabão Sujeira',                         unit: 'ml', qty: 0, costPerUnit: 0.03,  minQty: 500  },
   'desengraxante':          { name: 'Desengraxante',                         unit: 'ml', qty: 0, costPerUnit: 0.03,  minQty: 500  },
   'verniz-motor':           { name: 'Verniz de Motor',                       unit: 'ml', qty: 0, costPerUnit: 0.05,  minQty: 100  },
-  'mo':                     { name: 'Mão de Obra (R$35/h)',                  unit: 'h',  qty: 0, costPerUnit: 35.00, minQty: 0    },
-  'mo-especializada':       { name: 'Mão de Obra Especializada (R$45/h)',    unit: 'h',  qty: 0, costPerUnit: 45.00, minQty: 0    },
   'shampoo-ph':             { name: 'Shampoo pH Neutro',                     unit: 'ml', qty: 0, costPerUnit: 0.03,  minQty: 500  },
   'pretinho':               { name: 'Pretinho',                              unit: 'ml', qty: 0, costPerUnit: 0.01,  minQty: 100  },
   'limpa-rodas':            { name: 'Limpa Rodas (Descontaminante Ferroso)', unit: 'ml', qty: 0, costPerUnit: 0.08,  minQty: 200  },
@@ -7132,7 +7281,6 @@ const RECIPE_DEFAULTS = {
     'sabao-sujeira':  { pq: 300, gr: 500 },
     'desengraxante':  { pq: 400, gr: 700 },
     'verniz-motor':   { pq: 50,  gr: 80  },
-    'mo':             { pq: 1,   gr: 1   },
   },
   'lavagem-detalhada': {
     'shampoo-ph':             { pq: 300, gr: 500 },
@@ -7140,54 +7288,60 @@ const RECIPE_DEFAULTS = {
     'pretinho':               { pq: 20,  gr: 40  },
     'limpa-rodas':            { pq: 150, gr: 250 },
     'revitalizador-plastico': { pq: 30,  gr: 50  },
-    'mo':                     { pq: 3,   gr: 5   },
   },
   'higienizacao-tecido': {
     'flotador-apc': { pq: 1500, gr: 2500 },
     'bactericida':  { pq: 200,  gr: 400  },
-    'mo':           { pq: 4,    gr: 6.5  },
   },
   'higienizacao-couro': {
     'limpador-couro':   { pq: 150, gr: 250 },
     'hidratante-couro': { pq: 30,  gr: 60  },
-    'mo':               { pq: 2,   gr: 2   },
   },
   'polimento-geral': {
     'cera-corte':  { pq: 30,  gr: 50  },
     'cera-refino': { pq: 25,  gr: 40  },
     'ipa':         { pq: 150, gr: 250 },
-    'mo':          { pq: 6,   gr: 10  },
   },
   'polimento-preto': {
     'cera-corte':       { pq: 30,  gr: 50  },
     'cera-refino':      { pq: 30,  gr: 50  },
     'ipa':              { pq: 200, gr: 350 },
-    'mo-especializada': { pq: 8,   gr: 12  },
   },
   'polimento-cristal': {
     'cera-corte':        { pq: 30,  gr: 50  },
     'cera-refino':       { pq: 25,  gr: 40  },
     'ipa':               { pq: 150, gr: 250 },
     'selante-sintetico': { pq: 15,  gr: 25  },
-    'mo-especializada':  { pq: 7,   gr: 11  },
   },
   'polimento-vidros': {
     'polidor-vidro': { pq: 20, gr: 30 },
-    'mo':            { pq: 2,  gr: 2  },
   },
   'reparo-trinca': {
     'resina-estrutural': { pq: 0.5, gr: 0.5 },
     'resina-acabamento': { pq: 0.2, gr: 0.2 },
     'polidor-vidro':     { pq: 5,   gr: 5   },
-    'mo':                { pq: 1,   gr: 1   },
   },
 };
+
+async function salvarValorHora() {
+  const v = Math.round((parseFloat(document.getElementById('estValorHora')?.value) || 0) * 100) / 100;
+  if (!(v > 0)) { uiAlert('Valor inválido', 'Informe o custo da hora, maior que zero.'); return; }
+  if (!_custosRef) { uiAlert('Erro', 'Banco não conectado.'); return; }
+  try {
+    await _custosRef.child('maoDeObra').set({ valorHora: v, updatedAt: new Date().toISOString() });
+    _valorHora = v;
+    const n = await recalcularCustosServicos();
+    uiAlert('Custo da hora salvo', 'R$ ' + v.toFixed(2).replace('.', ',') + ' por hora. '
+      + (n ? n + ' serviço(s) tiveram o custo atualizado.' : 'Nenhum serviço mudou de custo.'));
+    renderAdminEstoque();
+  } catch (e) { uiAlert('Erro ao salvar', e.message); }
+}
 
 function renderAdminEstoque() {
   const el = document.getElementById('adminContent');
   if (!_stockRef) { el.innerHTML = '<p style="color:var(--muted)">Firebase não conectado.</p>'; return; }
 
-  Promise.all([_stockRef.once('value'), _stockRecipesRef.once('value')])
+  Promise.all([_stockRef.once('value'), _stockRecipesRef.once('value'), carregarValorHora()])
     .then(([stockSnap, recipesSnap]) => {
       const stock   = stockSnap.val()   || {};
       const recipes = recipesSnap.val() || {};
@@ -7196,16 +7350,14 @@ function renderAdminEstoque() {
         .map(([id, p]) => ({ id, ...p }))
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-      // Custo calculado por serviço
-      const svcCosts = Object.entries(recipes).map(([svcId, recipe]) => {
-        let costPq = 0, costGr = 0;
-        Object.entries(recipe).forEach(([pid, amounts]) => {
-          const cpu = stock[pid]?.costPerUnit || 0;
-          costPq += (amounts.pq || 0) * cpu;
-          costGr += (amounts.gr || 0) * cpu;
-        });
-        return { svcId, svcName: SVCS[svcId]?.name || svcId, costPq, costGr };
-      }).sort((a, b) => a.svcName.localeCompare(b.svcName));
+      // Custo calculado por serviço: insumos + horas × custo da hora
+      const svcIds = [...new Set([...Object.keys(recipes), ...Object.keys(SVCS).filter(id => SVCS[id]?.horas)])];
+      const svcCosts = svcIds.map(svcId => {
+        const recipe = recipes[svcId] || {};
+        const horas = SVCS[svcId]?.horas || separarMaoDeObra(recipe, stock).horas;
+        const c = custoDoServico(recipe, stock, horas, _valorHora);
+        return { svcId, svcName: SVCS[svcId]?.name || svcId, costPq: c.pq, costGr: c.gr };
+      }).filter(x => x.costPq || x.costGr).sort((a, b) => a.svcName.localeCompare(b.svcName));
 
       const lowStock = products.filter(p => p.minQty > 0 && p.qty < p.minQty);
       const totalStockVal = products.reduce((s, p) => s + (p.qty * (p.costPerUnit || 0)), 0);
@@ -7244,6 +7396,16 @@ function renderAdminEstoque() {
           ${products.length ? `<span style="margin-left:auto;font-size:.8rem;color:var(--muted)">Valor total em estoque: <strong style="color:var(--text)">R$ ${totalStockVal.toFixed(2)}</strong></span>` : ''}
         </div>
 
+        <div style="background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:10px;padding:.9rem 1.1rem;margin-bottom:1.4rem">
+          <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+            <strong style="font-size:.88rem">👷 Mão de obra — custo da hora</strong>
+            <span style="font-size:.85rem">R$</span>
+            <input id="estValorHora" type="number" min="1" step="0.5" value="${_valorHora}" style="width:100px"/>
+            <button class="btn-ghost" style="font-size:.78rem" onclick="salvarValorHora()">💾 Salvar</button>
+          </div>
+          <p style="margin:.45rem 0 0;font-size:.75rem;color:var(--muted)">Não é estoque: entra no custo de cada serviço pelas horas de serviço cadastradas nele (${HORAS_POR_DIA} h = 1 dia útil). Salvar recalcula o custo de todos os serviços.</p>
+        </div>
+
         <div style="overflow-x:auto;margin-bottom:2.5rem">
           <table class="history-table" style="min-width:680px">
             <thead><tr>
@@ -7253,7 +7415,7 @@ function renderAdminEstoque() {
               ${products.length ? products.map(p => {
                 const low = p.minQty > 0 && p.qty < p.minQty;
                 return `<tr style="${low ? 'background:rgba(239,68,68,.05)' : ''}">
-                  <td style="font-weight:500${low ? ';color:var(--red)' : ''}">${low ? '⚠️ ' : ''}${esc(p.name)}</td>
+                  <td style="font-weight:500${low ? ';color:var(--red)' : ''}">${low ? '⚠️ ' : ''}${esc(p.name)}${p.unit === 'h' ? '<div style="font-size:.7rem;font-weight:400;color:var(--muted)">Mão de obra agora é o custo da hora, acima. Pode excluir depois de salvar os serviços.</div>' : ''}</td>
                   <td style="font-weight:700${low ? ';color:var(--red)' : ''}">${esc(_fmtSaldo(p))}</td>
                   <td style="color:var(--muted)">${p.minQty > 0 ? esc(_fmtSaldo(p, p.minQty)) : '—'}</td>
                   <td>R$ ${(p.costPerUnit || 0).toFixed(4)} / ${esc(p.unit)}
@@ -7276,7 +7438,7 @@ function renderAdminEstoque() {
         </div>
 
         ${svcCosts.length ? `
-        <h3 style="font-size:.95rem;margin-bottom:.8rem">💰 Custo de Insumos por Serviço</h3>
+        <h3 style="font-size:.95rem;margin-bottom:.8rem">💰 Custo por Serviço <span style="font-weight:400;color:var(--muted);font-size:.8em">(insumos + mão de obra a R$ ${_valorHora.toFixed(2).replace('.', ',')}/h)</span></h3>
         <div style="overflow-x:auto;margin-bottom:2.5rem">
           <table class="history-table" style="min-width:420px">
             <thead><tr><th>Serviço</th><th>Carro Pequeno</th><th>Carro Grande</th></tr></thead>
@@ -7298,7 +7460,7 @@ function renderAdminEstoque() {
             .map(([svcId, recipe]) => `
             <div style="background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:10px;padding:.9rem 1rem">
               <div style="font-weight:700;font-size:.85rem;margin-bottom:.55rem">${esc(SVCS[svcId]?.name || svcId)}</div>
-              ${Object.entries(recipe).map(([pid, amounts]) => {
+              ${Object.entries(recipe).filter(([pid]) => stock[pid]?.unit !== 'h').map(([pid, amounts]) => {
                 const p = stock[pid];
                 return `<div style="font-size:.76rem;color:var(--muted);display:flex;justify-content:space-between;padding:.13rem 0;border-bottom:1px solid rgba(255,255,255,.04)">
                   <span>${esc(p?.name || pid)}</span>
@@ -7527,7 +7689,7 @@ function openProductForm(id) {
           <select id="spUnit" class="form-control" onchange="_spSincronizaUnidades()">
             <option value="ml" ${(p.unit||'ml')==='ml'?'selected':''}>ml</option>
             <option value="g"  ${p.unit==='g' ?'selected':''}>g (gramas)</option>
-            <option value="h"  ${p.unit==='h' ?'selected':''}>h (horas)</option>
+            ${p.unit==='h' ? '<option value="h" selected>h (horas)</option>' : ''}
             <option value="un" ${p.unit==='un'?'selected':''}>un (unidade)</option>
           </select>
         </div>
@@ -7634,6 +7796,8 @@ async function saveProduct(id) {
     await _stockRef.child(productId).set(payload);
     closeModal('stockProductModal');
     renderAdminEstoque();
+    // O custo do insumo mudou: o dos serviços que o usam muda junto.
+    recalcularCustosServicos().catch(e => console.warn('recalcular custos:', e));
   } catch(e) { uiAlert('Erro ao salvar', e.message); }
 }
 
@@ -7777,6 +7941,7 @@ async function deductStock(booking) {
     const consumo = consumoDoAgendamento(booking, recipesSnap.val() || {});
     const updates = {};
     Object.entries(consumo).forEach(([pid, qtd]) => {
+      if (stock[pid]?.unit === 'h') return;   // mão de obra não sai da prateleira
       const current = stock[pid]?.qty ?? 0;
       updates[pid + '/qty'] = +Math.max(0, current - qtd).toFixed(4);
     });
@@ -8524,6 +8689,7 @@ _buildHeroCarousel(HERO_FALLBACK);
     _feedbackRef       = DB.ref('feedback');
     _stockRef          = DB.ref('stock');
     _stockRecipesRef   = DB.ref('stockRecipes');
+    _custosRef         = DB.ref('custos');
     _clientLinksRef    = DB.ref('clientLinks');
     _clientLinkDismissalsRef = DB.ref('clientLinkDismissals');
     _clientOverridesRef = DB.ref('clientOverrides');
@@ -8720,6 +8886,8 @@ _buildHeroCarousel(HERO_FALLBACK);
             pq: s.pricing?.pq?.sale ?? s.pq ?? 0,
             gr: s.pricing?.gr?.sale ?? s.gr ?? 0,
             daysExtra: s.daysExtra || 0,
+            horas: s.horas || null,
+            diasEspera: s.diasEspera ?? null,
             desc: s.desc || '',
             active: s.active !== false,
             interno: s.interno === true,

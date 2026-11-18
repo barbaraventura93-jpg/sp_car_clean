@@ -69,6 +69,8 @@ const NOS = {
   // Estoque
   stock: { ler: true, raiz: { gravar: false, apagar: false }, item: { gravar: true, apagar: true } },
   stockRecipes: { ler: true, raiz: { gravar: false, apagar: false }, item: { gravar: true, apagar: true } },
+  // Custo da hora de mão de obra (custos/maoDeObra). Só o admin lê e grava.
+  custos: { ler: true, raiz: { gravar: false, apagar: false }, item: { gravar: true, apagar: false } },
 
   // Operacional
   adminPushTokens: { ler: true, raiz: { gravar: false, apagar: false }, item: { gravar: true, apagar: true } },

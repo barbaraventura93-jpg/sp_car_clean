@@ -79,7 +79,7 @@ assert.ok(gc.includes("!data.exists() && newData.child('status').val() == 'pendi
 assert.ok(!/\bdata\.child\(/.test(gc), 'giftcards: nenhuma escrita depende do cartão existente (não há ramo de alteração)');
 
 // ── Nós internos: só admin ────────────────────────────────────────────────
-for (const no of ['clientNotes', 'clientLinks', 'clientLinkDismissals', 'clientOverrides', 'stock', 'stockRecipes', 'adminPushTokens', 'aiUsage', 'aiLogs', 'aiRateLimit', 'driveImports', 'referrals']) {
+for (const no of ['clientNotes', 'clientLinks', 'clientLinkDismissals', 'clientOverrides', 'stock', 'stockRecipes', 'custos', 'adminPushTokens', 'aiUsage', 'aiLogs', 'aiRateLimit', 'driveImports', 'referrals']) {
   assert.ok(soAdmin(regras[no]['.read']) && soAdmin(regras[no]['.write']), `${no}: só admin`);
 }
 
