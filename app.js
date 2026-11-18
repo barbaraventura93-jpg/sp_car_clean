@@ -4052,9 +4052,165 @@ function _buildPriceCorrectionHtml(b) {
     <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">💵 Correção de Valor</div>
     ${paidWarning}
     <div class="summary-row"><strong>Valor final atual</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.finalPrice || b.price)}</span></div>
-    <button class="btn-edit-date" style="margin-top:.6rem" onclick="openPriceCorrection('${escAttrJs(b.id)}')">✏️ Corrigir valor</button>
+    <div class="summary-row"><strong>Serviço(s)</strong><span>${bkLabel(b)}</span></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem">
+      <button class="btn-edit-date" onclick="openPriceCorrection('${escAttrJs(b.id)}')">✏️ Corrigir valor</button>
+      <button class="btn-edit-date" onclick="openServiceCorrection('${escAttrJs(b.id)}')">🔁 Trocar serviço</button>
+    </div>
     ${historyHtml}
+    ${_buildServiceCorrectionHistory(b)}
   </div>`;
+}
+
+// ============================================================
+// TROCA DE SERVIÇO (agendamentos concluídos)
+// ============================================================
+// Para a análise de lucro: o custo de um agendamento sai dos serviços gravados
+// nele (functions/lib/core/financeiro.js). Um serviço de revendedor registrado
+// como lavagem comum dava o custo da lavagem comum. Trocar aqui corrige o custo
+// do relatório. O estoque NÃO é mexido: a baixa já feita fica como estava,
+// para não bagunçar um saldo que já pode ter sido conferido na prateleira.
+
+// Regra pura (sem tela, sem banco): devolve o agendamento corrigido ou { erro }.
+// opts: { novoValor (opcional), motivo, quem, agora }
+function aplicarTrocaDeServico(b, novos, opts) {
+  const o = opts || {};
+  if (!b || b.status !== 'completed') return { erro: 'Só agendamento concluído pode trocar de serviço.' };
+  const lista = [...new Set((novos || []).filter(Boolean))];
+  if (!lista.length) return { erro: 'Escolha pelo menos um serviço.' };
+  const antigos = (b.services || [b.service]).filter(Boolean);
+  const mesmos = antigos.length === lista.length && antigos.every(id => lista.includes(id));
+  const atual = b.finalPrice || b.price || 0;
+  const valor = o.novoValor == null ? null : Number(o.novoValor);
+  if (valor != null && !(valor > 0)) return { erro: 'Informe um valor válido, maior que zero.' };
+  const mudaValor = valor != null && Math.abs(valor - atual) >= 0.01;
+  if (mesmos && !mudaValor) return { erro: 'Nada mudou: os serviços são os mesmos.' };
+  const motivo = String(o.motivo || '').trim();
+  if (motivo.length < 10) return { erro: 'Descreva o motivo da troca (mínimo 10 caracteres).' };
+
+  const quem = o.quem || 'admin';
+  const agora = o.agora || new Date().toISOString();
+  const nb = { ...b };
+  if (!mesmos) {
+    nb.services = lista;
+    nb.service = lista[0];
+    nb.serviceCorrections = [...(b.serviceCorrections || []),
+      { oldServices: antigos, newServices: lista, reason: motivo, correctedBy: quem, correctedAt: agora }];
+    nb.lastServiceCorrectionAt = agora;
+  }
+  if (mudaValor) {
+    nb.finalPrice = valor;
+    nb.priceCorrections = [...(b.priceCorrections || []),
+      { oldPrice: atual, newPrice: valor, reason: motivo, correctedBy: quem, correctedAt: agora }];
+    nb.lastPriceCorrectionAt = agora;
+  }
+  return { booking: nb, mudaValor, antigoValor: atual };
+}
+
+function _buildServiceCorrectionHistory(b) {
+  const list = b.serviceCorrections || [];
+  if (!list.length) return '';
+  const nomes = ids => (ids || []).map(id => SVCS[id] ? SVCS[id].icon + ' ' + esc(SVCS[id].name) : esc(id)).join(' + ');
+  return `
+    <details style="margin-top:.8rem">
+      <summary style="cursor:pointer;font-size:.78rem;font-weight:700;color:var(--muted)">🔁 Histórico de troca de serviço (${list.length})</summary>
+      <div style="margin-top:.6rem;display:flex;flex-direction:column;gap:.5rem">
+        ${list.slice().reverse().map(c => `
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.6rem .8rem;font-size:.78rem">
+            <div><strong>${nomes(c.oldServices)} → ${nomes(c.newServices)}</strong> · ${new Date(c.correctedAt).toLocaleString('pt-BR')}</div>
+            <div style="color:var(--muted);margin-top:.2rem">${esc(c.reason)}</div>
+            <div style="color:var(--muted);font-size:.72rem;margin-top:.2rem">por ${esc(c.correctedBy)}</div>
+          </div>`).join('')}
+      </div>
+    </details>`;
+}
+
+function _scPorte(b) { return b.carSize === 'gr' ? 'gr' : 'pq'; }
+
+function openServiceCorrection(id) {
+  const b = getBookings().find(x => x.id === id);
+  if (!b) return;
+  const atuais = (b.services || [b.service]).filter(Boolean);
+  const porte = _scPorte(b);
+  // Ativos + os que já estão no agendamento (mesmo que desativados depois).
+  const opcoes = Object.entries(SVCS).filter(([sid, s]) => s.active !== false || atuais.includes(sid));
+  const checks = opcoes.map(([sid, s]) => `
+    <label style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.82rem;cursor:pointer">
+      <input type="checkbox" value="${sid}" ${atuais.includes(sid) ? 'checked' : ''} onchange="_scAtualiza('${escAttrJs(id)}')"/>
+      ${s.icon} ${esc(s.name)}${s.interno ? ' <span style="font-size:.66rem;color:#a0a0ff">🔒 Interno</span>' : ''}
+      <span style="color:var(--muted);font-size:.72rem">${fmtMoney(s[porte] || 0)}</span>
+    </label>`).join('');
+  document.getElementById('detailBody').innerHTML = `
+    <div class="confirm-card">
+      <h4>🔁 Trocar Serviço</h4>
+      <div class="confirm-row"><strong>Cliente</strong><span>${esc(b.name)}</span></div>
+      <div class="confirm-row"><strong>Serviço(s) atual(is)</strong><span>${bkLabel(b)}</span></div>
+      <div class="confirm-row"><strong>Valor atual</strong><span>${fmtMoney(b.finalPrice || b.price || 0)}</span></div>
+      <div class="confirm-row"><strong>Porte</strong><span>${porte === 'gr' ? '🚙 Grande' : '🚗 Pequeno'}</span></div>
+    </div>
+    <div class="form-group" style="margin-top:1rem">
+      <label>Serviço(s) que foram feitos de verdade</label>
+      <div id="scServicos">${checks}</div>
+    </div>
+    <label style="display:flex;align-items:center;gap:.5rem;margin-top:.8rem;font-size:.82rem;cursor:pointer">
+      <input type="checkbox" id="scAtualizaValor" onchange="_scAtualiza('${escAttrJs(id)}')"/>
+      <span>Atualizar o valor para o preço de tabela: <strong id="scTabela"></strong></span>
+    </label>
+    ${b.paidAmount ? `<div style="background:#FEF5E7;border:1px solid #F39C12;border-radius:8px;padding:.7rem 1rem;font-size:.78rem;color:#7a5500;line-height:1.5;margin-top:.8rem">⚠️ Este agendamento tem pagamento registrado via InfinitePay (${fmtMoney(b.paidAmount)}). No relatório, a receita continua sendo o valor pago.</div>` : ''}
+    <div class="form-group" style="margin-top:.8rem">
+      <label>Motivo da troca</label>
+      <textarea id="scMotivo" rows="2" placeholder="Ex: Serviço de revendedor registrado como lavagem comum"></textarea>
+    </div>
+    <p style="font-size:.74rem;color:var(--muted);margin-top:.6rem">O custo do relatório de lucro passa a ser o do serviço novo. O estoque não muda: a baixa já feita continua como estava.</p>`;
+  document.getElementById('detailFooter').innerHTML = `
+    <button class="btn-ghost" onclick="viewBooking('${escAttrJs(id)}')">← Voltar</button>
+    <button class="btn-approve" style="padding:.6rem 1.4rem" onclick="saveServiceCorrection('${escAttrJs(id)}')">💾 Salvar Troca</button>`;
+  _scAtualiza(id);
+}
+
+function _scEscolhidos() {
+  return [...document.querySelectorAll('#scServicos input[type=checkbox]:checked')].map(cb => cb.value);
+}
+
+function _scAtualiza(id) {
+  const b = getBookings().find(x => x.id === id);
+  const el = document.getElementById('scTabela');
+  if (!b || !el) return;
+  const porte = _scPorte(b);
+  const total = _scEscolhidos().reduce((s, sid) => s + (SVCS[sid]?.[porte] || 0), 0);
+  el.textContent = fmtMoney(total);
+}
+
+function saveServiceCorrection(id) {
+  const b = getBookings().find(x => x.id === id);
+  if (!b) return;
+  const novos = _scEscolhidos();
+  const porte = _scPorte(b);
+  const tabela = novos.reduce((s, sid) => s + (SVCS[sid]?.[porte] || 0), 0);
+  const usarTabela = document.getElementById('scAtualizaValor')?.checked;
+  const r = aplicarTrocaDeServico(b, novos, {
+    novoValor: usarTabela ? tabela : null,
+    motivo: document.getElementById('scMotivo')?.value,
+    quem: _authUser?.email || 'admin',
+  });
+  if (r.erro) { alert(r.erro); return; }
+  const nomes = novos.map(sid => SVCS[sid]?.name || sid).join(' + ');
+  if (!confirm(`Confirmar troca?\n\nServiço(s): ${nomes}` +
+      (r.mudaValor ? `\nValor: ${fmtMoney(r.antigoValor)} → ${fmtMoney(r.booking.finalPrice)}` : ''))) return;
+  updateBooking(r.booking);
+  if (r.mudaValor) {
+    fetch('/api/notify-booking', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'price-correction', id: b.id, name: b.name, phone: b.phone,
+        oldPrice: fmtMoney(r.antigoValor), newPrice: fmtMoney(r.booking.finalPrice),
+        reason: (document.getElementById('scMotivo')?.value || '').trim()
+      })
+    }).catch(() => {});
+  }
+  renderAdminBookings();
+  viewBooking(id);
 }
 
 function openPriceCorrection(id) {
