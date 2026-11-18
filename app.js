@@ -1142,16 +1142,35 @@ async function submitBooking() {
   // achando que tinha agendado, recebia o e-mail de confirmação, e o pedido
   // não existia em lugar nenhum. Falhou? Diz a verdade e aponta o WhatsApp,
   // sem gastar cupom nem gift card.
-  const gravou = !!_bookingsRef && await _gravouNoPrazo(_bookingsRef.child(id).set(b));
+  //
+  // O PREÇO É DO SERVIDOR (desde 18/11/2026). O `price` acima é só a
+  // estimativa da tela: o /api/admin-data recalcula pelo catálogo, confere o
+  // cupom e o gift card, baixa os dois na mesma transação e devolve o
+  // agendamento como ficou gravado. Daqui em diante vale o que voltou.
+  let gravado = null;
+  let recusa = null;
+  const envio = _bookingsRef
+    ? _bookingsRef.child(id).set(b).then((v) => { gravado = v; }, (e) => { recusa = e; throw e; })
+    : null;
+  const gravou = !!envio && await _gravouNoPrazo(envio);
   if (!gravou) {
-    console.error('submitBooking: o agendamento não foi gravado');
-    alert('Não conseguimos registrar seu agendamento agora. Nada foi cobrado.\n\n' +
-          'Por favor, fale com a gente pelo WhatsApp para agendar: ' + (CFG.whatsapp || '') + '.');
+    console.error('submitBooking: o agendamento não foi gravado', recusa && recusa.message);
+    // Recusa do servidor com motivo (cupom usado, serviço indisponível): mostra
+    // o motivo, para o cliente poder corrigir. Falha de rede: aponta o WhatsApp.
+    if (recusa && /cupom|gift|servi|tamanho/i.test(recusa.message || '')) {
+      alert('Não foi possível registrar o agendamento: ' + recusa.message + '\n\nNada foi cobrado.');
+    } else {
+      alert('Não conseguimos registrar seu agendamento agora. Nada foi cobrado.\n\n' +
+            'Por favor, fale com a gente pelo WhatsApp para agendar: ' + (CFG.whatsapp || '') + '.');
+    }
     return;
   }
-
-  if (_appliedCoupon)   { _markCouponUsed(_appliedCoupon.code); _appliedCoupon = null; }
-  if (_appliedGiftCard) { _useGiftCard(_appliedGiftCard.code, _appliedGiftCard.amountToUse); _appliedGiftCard = null; }
+  if (gravado && typeof gravado === 'object' && typeof gravado.price === 'number') {
+    Object.assign(b, gravado);
+  }
+  // Cupom e gift card já foram baixados pelo servidor, junto com o pedido.
+  _appliedCoupon = null;
+  _appliedGiftCard = null;
 
   // Salvar booking (usa set individual para compatibilidade futura com regras por uid)
   _bookings.push(b);
@@ -1891,19 +1910,6 @@ async function applyGiftCardInBooking() {
   if (msgEl) msgEl.innerHTML = `<div class="coupon-applied">🎁 Gift Card aplicado! ${fmtMoney(amountToUse)} abatido${leftover > 0 ? ` · ${fmtMoney(leftover)} de saldo residual para próxima visita` : ''}.</div>`;
 }
 
-async function _useGiftCard(code, amount) {
-  if (!_giftcardsRef || !code || !amount) return;
-  const snap = await _giftcardsRef.child(code).once('value');
-  const gc   = snap.val();
-  if (!gc) return;
-  const newBalance = Math.max(0, (gc.balance || 0) - amount);
-  _giftcardsRef.child(code).update({
-    balance: newBalance,
-    status: newBalance <= 0 ? 'depleted' : 'active',
-    [`uses/${Date.now()}`]: { amount, usedAt: new Date().toISOString() }
-  }).catch(console.error);
-}
-
 async function renderAdminGiftCards() {
   const el = document.getElementById('adminContent');
   el.innerHTML = '<h2>🎁 Gift Cards</h2><p style="color:var(--muted)">Carregando...</p>';
@@ -2038,11 +2044,6 @@ async function applyCouponInBooking() {
   }
   _appliedCoupon = result;
   if (msgEl) msgEl.innerHTML = `<div class="coupon-applied">✅ ${esc(result.label)} aplicado!</div>`;
-}
-
-async function _markCouponUsed(code) {
-  if (!_couponsRef || !code) return;
-  _couponsRef.child(code).update({ used: true, usedAt: new Date().toISOString() }).catch(() => {});
 }
 
 // ============================================================

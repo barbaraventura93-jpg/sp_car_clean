@@ -72,8 +72,11 @@ assert.strictEqual(regras.coupons.$code['.write'], undefined, 'coupons: visitant
 assert.ok(soAdmin(regras.giftcards['.read']), 'giftcards: lista só para admin');
 const gc = regras.giftcards.$code['.write'];
 assert.ok(gc.includes("newData.child('status').val() == 'pending' && newData.child('balance').val() == 0"), 'giftcards: nasce pendente e sem saldo');
-assert.ok(gc.includes("newData.child('balance').val() <= data.child('balance').val()"), 'giftcards: saldo só diminui');
-assert.ok(gc.includes("newData.child('amount').val() == data.child('amount').val()"), 'giftcards: valor de face não muda');
+// Desde 18/11/2026 o visitante só CRIA: gastar saldo é do servidor, junto com o
+// agendamento. Escrita em cartão existente reabriria o uso infinito e o "zerar
+// o cartão alheio".
+assert.ok(gc.includes("!data.exists() && newData.child('status').val() == 'pending'"), 'giftcards: visitante só cria');
+assert.ok(!/\bdata\.child\(/.test(gc), 'giftcards: nenhuma escrita depende do cartão existente (não há ramo de alteração)');
 
 // ── Nós internos: só admin ────────────────────────────────────────────────
 for (const no of ['clientNotes', 'clientLinks', 'clientLinkDismissals', 'clientOverrides', 'stock', 'stockRecipes', 'adminPushTokens', 'aiUsage', 'aiLogs', 'aiRateLimit', 'driveImports', 'referrals']) {

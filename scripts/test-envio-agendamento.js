@@ -27,15 +27,26 @@ const _gravouNoPrazo = new Function(APP.slice(ini, fim) + '; return _gravouNoPra
 const s0 = APP.indexOf('async function submitBooking()');
 const corpo = APP.slice(s0, APP.indexOf('\nasync function ', s0 + 10) > 0 ? APP.indexOf('\nfunction ', s0 + 10) : undefined);
 const pos = (trecho) => { const p = corpo.indexOf(trecho); assert.ok(p > 0, `não achei em submitBooking: ${trecho}`); return p; };
-const gravacao = pos('await _gravouNoPrazo(_bookingsRef.child(id).set(b))');
+pos('_bookingsRef.child(id).set(b)');
+const gravacao = pos('await _gravouNoPrazo(envio)');
 const desistencia = pos('if (!gravou) {');
 assert.ok(gravacao < desistencia, 'confere o resultado logo depois de gravar');
 assert.ok(/if \(!gravou\) \{[\s\S]{0,700}?return;\s*\}/.test(corpo), 'se não gravou, a função para ali');
-for (const depois of ['_markCouponUsed(', '_useGiftCard(', "sendEmail('template_update'", '_bookings.push(b)', "chamarMe('indexar-agendamento'"]) {
+// Cupom e gift card são baixados pelo SERVIDOR, na mesma transação do pedido
+// (lib/core/agendamento-publico.js, desde 18/11/2026). O navegador baixar por
+// conta própria era o defeito: o cupom de uso único nunca era baixado (a regra
+// negava) e o gift card era descontado no valor que a tela escolhia.
+for (const proibido of ['_markCouponUsed(', '_useGiftCard(']) {
+  assert.ok(!corpo.includes(proibido), `submitBooking não pode mais chamar ${proibido} — quem baixa é o servidor`);
+}
+assert.ok(!/function _markCouponUsed|function _useGiftCard/.test(APP), 'as baixas pelo navegador foram removidas do app.js');
+for (const depois of ["sendEmail('template_update'", '_bookings.push(b)', "chamarMe('indexar-agendamento'"]) {
   assert.ok(pos(depois) > desistencia, `"${depois}" só pode acontecer depois de confirmar a gravação`);
 }
 assert.ok(!/_bookingsRef\.child\(id\)\.set\(b\)\.catch/.test(corpo), 'não pode sobrar gravação disparada sem esperar');
-assert.ok(/!!_bookingsRef &&/.test(corpo), 'sem conexão com o banco também é falha, não sucesso');
+assert.ok(/!!envio &&/.test(corpo) && /const envio = _bookingsRef\s*\?/.test(corpo), 'sem conexão com o banco também é falha, não sucesso');
+// O valor que vale é o que o servidor devolveu, não a estimativa da tela.
+assert.ok(pos('Object.assign(b, gravado)') > desistencia, 'adota o agendamento como o servidor gravou');
 
 // Se uma espera nunca terminar, o Node encerra sozinho por falta do que fazer —
 // com código 0, como se tivesse passado. Este guarda transforma isso em falha.

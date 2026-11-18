@@ -46,6 +46,13 @@ store.dbPatch = async (c, v) => {
   banco[k] = { ...(banco[k] || {}), ...v };
 };
 store.dbDelete = async (c) => { escritas.push({ chave: semBarra(c), apagar: true }); };
+// A criação do agendamento público é uma transação (pedido + cupom + gift card).
+store.dbTransacao = async (lista) => {
+  for (const e of lista) {
+    escritas.push({ chave: e.caminho, valor: e.valor || e.campos });
+    if (e.tipo === 'criar') banco[e.caminho] = e.valor;
+  }
+};
 
 const { handler } = require(R('functions/admin-data.js'));
 
@@ -66,7 +73,7 @@ const admin = (corpo) => chamar(corpo, { token: 'token-admin' });
 
 (async () => {
   banco = {
-    services: { lavagem: { name: 'Lavagem', pricing: {} } },
+    services: { lavagem: { name: 'Lavagem', pricing: { pq: { sale: 180 }, gr: { sale: 260 } } } },
     config: { maxPerDay: 3 },
     bookings: { 'SPC-1': { id: 'SPC-1', email: 'ana@x.com', price: 150, status: 'approved' } },
     'bookings/SPC-1': { id: 'SPC-1', email: 'ana@x.com', name: 'Ana', phone: '119', price: 150,
@@ -114,10 +121,14 @@ const admin = (corpo) => chamar(corpo, { token: 'token-admin' });
 
   // ── visitante: cria o próprio agendamento ───────────────────────────
   const pedido = { id: 'SPC-NOVO', status: 'pending', name: 'Bia', email: 'bia@x.com',
-                   phone: '11988888888', date: '2026-12-20', price: 200 };
+                   phone: '11988888888', date: '2026-12-20', services: ['lavagem'], carSize: 'pq',
+                   price: 200 };
   r = await visitante({ op: 'gravar', caminho: 'bookings/SPC-NOVO', dados: pedido });
   assert.strictEqual(r.status, 200, 'agendar é o que o site precisa fazer');
   assert.strictEqual(escritas.length, 1);
+  // O preço é o do catálogo (180), não o que veio no corpo (200).
+  assert.strictEqual(banco['bookings/SPC-NOVO'].price, 180, 'o servidor decide o preço');
+  assert.strictEqual(r.dados.price, 180, 'e devolve ao site o valor que gravou');
 
   // ── visitante: dinheiro é intocável ─────────────────────────────────
   for (const campo of ['paidAmount', 'finalPrice', 'paymentConfirmedAt', 'pointsAwardedAt']) {
@@ -125,6 +136,17 @@ const admin = (corpo) => chamar(corpo, { token: 'token-admin' });
     assert.strictEqual(r.status, 403, `não pode criar agendamento com ${campo}`);
     assert.strictEqual(escritas.length, 0, `${campo}: não pode ter gravado nada`);
   }
+
+  // ── visitante: saldo de gift card só muda pelo servidor ─────────────
+  // Uso infinito e "zerar o cartão alheio" (fechados em 18/11/2026): baixa
+  // direta do saldo era permitida porque "só diminui".
+  banco['giftcards/GIFT-A'] = { code: 'GIFT-A', status: 'active', amount: 200, balance: 200 };
+  for (const dados of [{ balance: 50 }, { balance: 0, status: 'depleted' }]) {
+    r = await visitante({ op: 'mesclar', caminho: 'giftcards/GIFT-A', dados });
+    assert.strictEqual(r.status, 403, 'visitante não mexe no saldo: ' + JSON.stringify(dados));
+  }
+  assert.strictEqual(banco['giftcards/GIFT-A'].balance, 200, 'saldo intacto');
+  assert.strictEqual(escritas.length, 0);
 
   // ── visitante: mesclar é validado pelo RESULTADO, não pelo pedaço ───
   //

@@ -33,7 +33,16 @@ e a página pública de descadastro (`functions/unsubscribe.js`).
 
 ## O que falta, na ordem
 
-### 1. `terraform apply` (é o que destrava tudo)
+### 1. `terraform apply` — FEITO em 18/11/2026, ~00:15 UTC
+
+Aprovado pela Bárbara diretamente na conversa. Rodado com `scripts/aws-apply.sh`
+a partir do ramo `ccr-d3d7761c-vw5yj5` (`0a65b19`). O plano foi o mesmo de
+17/11 (5 criações, 20 alterações, 0 destruições), com `admin_emails` lido do
+grupo `admin` do Cognito. Resultado: `5 added, 19 changed, 0 destroyed`. O
+`scheduler_invoke` relido ficou igual, por isso 19 e não 20. Conferido na
+AWS: `DATA_TABLE` nas 20 funções, e `sp-car-clean-unsubscribe` ativa.
+
+O registro abaixo fica como referência.
 
 ```
 cd infra

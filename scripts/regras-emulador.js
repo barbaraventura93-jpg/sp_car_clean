@@ -130,7 +130,11 @@ const pedido = (id, extra = {}) => ({
   await nega('criar gift card pendente com saldo', visitante('PUT', 'giftcards/GIFT-ATAQUE0002', gift({ code: 'GIFT-ATAQUE0002', balance: 100 })));
   await nega('ativar o próprio gift card', visitante('PATCH', 'giftcards/GIFT-TESTE00001', { status: 'active', balance: 100 }));
   await admin('PATCH', 'giftcards/GIFT-TESTE00001', { status: 'active', balance: 100 }); // o webhook ativa
-  await permite('usar parte do saldo', visitante('PATCH', 'giftcards/GIFT-TESTE00001', { balance: 40 }));
+  // Desde 18/11/2026 o saldo só é gasto pelo servidor, junto com o agendamento
+  // (functions/lib/core/agendamento-publico.js). Baixa direta pelo visitante era
+  // uso infinito (aplicar o desconto e não baixar) e zerar cartão alheio.
+  await nega('visitante baixa o saldo direto', visitante('PATCH', 'giftcards/GIFT-TESTE00001', { balance: 40 }));
+  await nega('visitante zera cartão alheio', visitante('PATCH', 'giftcards/GIFT-TESTE00001', { balance: 0, status: 'depleted' }));
   await nega('aumentar o saldo', visitante('PATCH', 'giftcards/GIFT-TESTE00001', { balance: 100 }));
   await nega('saldo negativo', visitante('PATCH', 'giftcards/GIFT-TESTE00001', { balance: -5 }));
   await nega('mudar o valor de face', visitante('PATCH', 'giftcards/GIFT-TESTE00001', { amount: 1000 }));
