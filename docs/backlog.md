@@ -411,25 +411,46 @@ credencial atual da revisão não lê. Passo a passo em
 
 ---
 
-## 7. Preço, cupom, gift card e pontos calculados no servidor — ABERTO
+## 7. Preço, cupom, gift card e pontos calculados no servidor — FEITO (18/11/2026)
 
 **O problema medido (09/11/2026):** o preço final de um agendamento, com cupom
-e gift card já abatidos, é calculado e gravado pelo navegador. O servidor não
-confere. Marcar um cupom como usado depende de uma escrita que as regras negam
-ao visitante, então cupom de uso único não é baixado. Os pontos de fidelidade
-saem do preço que o próprio cliente gravou. Achados S-05, S-07 e S-08 de
-`docs/revisao-2026-11-09.md`.
+e gift card já abatidos, era calculado e gravado pelo navegador, e o servidor
+não conferia. O cupom de uso único nunca era baixado (a regra negava a escrita
+ao visitante). O gift card era descontado pelo navegador, num passo separado.
+Os pontos saíam do preço que o próprio cliente gravou. Achados S-05, S-07 e
+S-08 de `docs/revisao-2026-11-09.md`.
 
-Hoje a barreira é a sua conferência manual de cada pedido antes de aprovar.
+**O que foi feito:** quando o site cria um agendamento, o `/api/admin-data`:
 
-**O que resolveria:** uma função no servidor que cria o agendamento, calcula o
-preço, baixa o cupom e o gift card numa operação só. É o maior item que
-sobrou da revisão.
+- calcula o preço pelo catálogo do banco (`functions/lib/core/precificacao.js`)
+  e descarta `price`, `couponDiscount` e `giftCardUsed` que vierem no corpo;
+- confere o cupom e o gift card contra os registros do banco;
+- grava o agendamento, baixa o cupom e desconta o gift card numa transação do
+  DynamoDB (`functions/lib/core/agendamento-publico.js` e `store.dbTransacao`).
+  Dois pedidos simultâneos com o mesmo cupom ou o mesmo saldo: só um passa.
 
-**Muda para o cliente:** os pontos passariam a cair só depois do pagamento
-confirmado ou da conclusão do serviço.
+O site mostra o valor que o servidor devolveu. Para o cliente honesto, o valor
+é o mesmo de antes: as regras são as mesmas que a tela já aplicava.
 
-**Próxima ação: da Bárbara** — aprovar o escopo antes de eu começar.
+**Muda para você:** o agendamento novo vem com `basePrice` (soma dos serviços)
+e `pricedBy: "server"`. Serviço desativado ou fora do catálogo agora recusa o
+pedido, em vez de entrar por R$ 0.
+
+**Testes:** `scripts/test-precificacao.js` (regras, ataques e concorrência) e
+`scripts/test-porta-dados.js` (o preço gravado é o do catálogo).
+
+**Ficou aberto, para você decidir:**
+
+1. **Quando os pontos caem.** Hoje caem quando o cliente aperta "confirmar
+   pagamento" num agendamento que você aprovou, e saem do valor que você
+   definiu na aprovação. A proposta original era só depois do pagamento
+   confirmado pela InfinitePay ou da conclusão do serviço. Isso deixaria sem
+   pontos quem paga em dinheiro ou Pix direto, até você concluir o serviço.
+2. **O visitante ainda pode diminuir o saldo de um gift card** pela regra
+   antiga (`usarGiftCard` em `regras-publicas.js`). Não ganha dinheiro com
+   isso: o abatimento no agendamento agora é do servidor. Mas quem souber o
+   código consegue zerar o cartão de outra pessoa. Fechar exige mudar também
+   os casos de `scripts/regras-emulador.js`, que é da sessão de revisão.
 
 ---
 

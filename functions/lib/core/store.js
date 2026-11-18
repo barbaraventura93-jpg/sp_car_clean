@@ -483,6 +483,91 @@ async function exportarTudo() {
   return { dados: fora, itens: itens.length, ignorados };
 }
 
+/**
+ * Várias escritas que acontecem TODAS ou NENHUMA (TransactWriteItems).
+ *
+ * Existe para a criação do agendamento com cupom e gift card: gravar o pedido,
+ * marcar o cupom como usado e descontar o saldo do gift card. Feito em passos
+ * separados, dois pedidos simultâneos com o mesmo cupom de uso único passariam
+ * os dois — cada um leu "não usado" antes do outro gravar. Com a transação e as
+ * condições abaixo, o segundo falha inteiro e nada dele é gravado.
+ *
+ * Cada escrita é uma de:
+ *   { tipo: 'criar', caminho, valor }
+ *       grava o registro só se ele ainda NÃO existe.
+ *   { tipo: 'atualizar', caminho, campos, seIgual, seAusenteOuIgual }
+ *       SET de campos de primeiro nível dentro de `dados`, só se o registro
+ *       existe e cada campo de `seIgual` tem exatamente aquele valor (e cada um
+ *       de `seAusenteOuIgual` está ausente ou com aquele valor).
+ *
+ * Se alguma condição falhar, lança um erro com `condicaoFalhou = true` e o
+ * índice da escrita que falhou em `indice` (quando o DynamoDB informa).
+ */
+async function dbTransacao(escritas) {
+  if (!Array.isArray(escritas) || !escritas.length || escritas.length > 25) {
+    throw new Error('dbTransacao exige de 1 a 25 escritas');
+  }
+  const itens = escritas.map((e, n) => {
+    const k = chaves.chaveDe(e.caminho, e.valor);
+    if (k.tipo !== 'item' || k.campo) throw new Error(`dbTransacao: ${e.caminho} não é um registro`);
+
+    if (e.tipo === 'criar') {
+      const extras = chaves.extrasDe(k.no, ultimoSegmento(e.caminho) || k.sk, e.valor);
+      return { Put: {
+        TableName: TABELA,
+        Item: itemParaAttrs({ pk: k.pk, sk: k.sk, no: k.no, ...extras, dados: e.valor }),
+        ConditionExpression: 'attribute_not_exists(pk)',
+      } };
+    }
+
+    if (e.tipo === 'atualizar') {
+      const nomes = { '#d': 'dados' };
+      const valores = {};
+      const sets = [];
+      const conds = ['attribute_exists(pk)'];
+      Object.entries(e.campos || {}).forEach(([campo, v], i) => {
+        nomes[`#c${i}`] = campo;
+        valores[`:c${i}`] = paraAttr(v);
+        sets.push(`#d.#c${i} = :c${i}`);
+      });
+      Object.entries(e.seIgual || {}).forEach(([campo, v], i) => {
+        nomes[`#q${i}`] = campo;
+        valores[`:q${i}`] = paraAttr(v);
+        conds.push(`#d.#q${i} = :q${i}`);
+      });
+      Object.entries(e.seAusenteOuIgual || {}).forEach(([campo, v], i) => {
+        nomes[`#a${i}`] = campo;
+        valores[`:a${i}`] = paraAttr(v);
+        conds.push(`(attribute_not_exists(#d.#a${i}) OR #d.#a${i} = :a${i})`);
+      });
+      if (!sets.length) throw new Error(`dbTransacao: nada a atualizar em ${e.caminho} (#${n})`);
+      return { Update: {
+        TableName: TABELA,
+        Key: { pk: { S: k.pk }, sk: { S: k.sk } },
+        UpdateExpression: `SET ${sets.join(', ')}`,
+        ConditionExpression: conds.join(' AND '),
+        ExpressionAttributeNames: nomes,
+        ExpressionAttributeValues: valores,
+      } };
+    }
+    throw new Error(`dbTransacao: tipo desconhecido '${e.tipo}'`);
+  });
+
+  try {
+    await enviar('TransactWriteItems', { TransactItems: itens });
+  } catch (err) {
+    const motivos = err?.CancellationReasons || [];
+    const indice = motivos.findIndex((m) => m && m.Code === 'ConditionalCheckFailed');
+    if (err?.name === 'TransactionCanceledException' && indice >= 0) {
+      const e = new Error('condição da transação não satisfeita');
+      e.condicaoFalhou = true;
+      e.indice = indice;
+      throw e;
+    }
+    throw err;
+  }
+}
+
 /** BatchWriteItem em fatias de 25, com um reenvio dos não-processados. */
 async function escreverEmLote(escritas) {
   for (let i = 0; i < escritas.length; i += 25) {
@@ -498,7 +583,7 @@ async function escreverEmLote(escritas) {
 }
 
 module.exports = {
-  dbPath, dbGet, dbSet, dbPatch, dbPush, dbDelete, dbIncrement, exportarTudo,
+  dbPath, dbGet, dbSet, dbPatch, dbPush, dbDelete, dbIncrement, dbTransacao, exportarTudo,
   // expostos para teste e para o importador
   paraAttr, deAttr, itemParaAttrs, novoId, TABELA, _injetar,
 };

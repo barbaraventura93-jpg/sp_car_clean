@@ -128,6 +128,7 @@ function autorizado(op, segmentos) {
 
 const store = require('./lib/core/store');
 const publicas = require('./lib/core/regras-publicas');
+const agendamentoPublico = require('./lib/core/agendamento-publico');
 
 // Op da API → operação no banco. Mantido como mapa explícito: um `if` em
 // cadeia convidaria a acrescentar operação sem passar pela tabela de
@@ -264,6 +265,29 @@ exports.handler = async (event) => {
   const autor = ehAdmin
     ? (quem ? `${quem.email || quem.uid} (${quem.origem})` : 'admin')
     : `visitante ${clientIp(event)}`;
+
+  // Agendamento NOVO criado pelo site: o preço é do servidor, e cupom e gift
+  // card são baixados na mesma transação (lib/core/agendamento-publico.js).
+  // A alteração de um agendamento existente (cancelar) segue o caminho comum,
+  // em que regras-publicas já impede mexer no preço.
+  if (!ehAdmin && op === 'gravar' && v.segmentos[0] === 'bookings' && v.segmentos.length === 2) {
+    try {
+      const existente = await store.dbGet(caminho);
+      if (existente === null || existente === undefined) {
+        let quemVisita = null;
+        if (token) {
+          try { quemVisita = await identificar(token); } catch { quemVisita = null; }
+        }
+        const r = await agendamentoPublico.criarAgendamentoPublico(v.segmentos[1], dados, quemVisita, { store });
+        if (r.erro) return reply(r.status, cors, { ok: false, error: r.erro });
+        console.log(`admin-data: ${autor} criou ${caminho} por R$ ${r.agendamento.price} (preço do servidor)`);
+        return reply(200, cors, { ok: true, dados: r.agendamento });
+      }
+    } catch (err) {
+      console.error(`admin-data: ${autor} criar ${caminho} falhou: ${err.message}`);
+      return reply(502, cors, { ok: false, error: 'falha ao acessar o banco' });
+    }
+  }
 
   try {
     const executar = EXECUTAR[op];
