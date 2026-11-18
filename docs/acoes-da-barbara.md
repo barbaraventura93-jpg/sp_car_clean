@@ -9,6 +9,12 @@ Nunca cole senha, chave ou token em conversa, e-mail ou arquivo do repositório.
 
 ## 1. Trocar a chave de acesso da AWS que está no ambiente — recomendado (risco aceito em 14/11/2026)
 
+**Atualização 18/11/2026:** as permissões da chave foram reduzidas aos
+recursos `sp-car-clean-*` (opção B, com apply direcionado; ver `docs/iam/` e
+A-01 em `docs/revisao-2026-11-09.md`). Ela não apaga mais nada nem mexe no
+IAM. Mudanças no IAM passam a ser feitas por você, no CloudShell. O que ainda
+vale fazer abaixo é só a troca por credencial temporária.
+
 **Situação:** o ambiente de desenvolvimento do Claude guarda uma chave de
 acesso da AWS que não expira e tem permissão quase total (inclusive para criar
 outras permissões). Em 14/11/2026 você decidiu mantê-la para o desenvolvimento
