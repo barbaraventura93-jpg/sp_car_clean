@@ -102,6 +102,25 @@ echo "$EMAILS" | sed 's/^/    /'
 
 LISTA="$(echo "$EMAILS" | python3 -c 'import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
 
+# Quem recebe os avisos dos alarmes (infra/alarmes.tf): MANTÉM quem já
+# confirmou a inscrição no tópico. Sem isto, `alert_emails` ficaria vazio, o
+# Terraform voltaria aos dois e-mails de admin e mandaria de novo o pedido de
+# confirmação para quem a Bárbara escolheu não receber (decisão de 18/11/2026).
+# Na primeira vez (tópico ainda não existe, ou ninguém confirmou), vai `[]` e o
+# Terraform usa os e-mails de admin — é o comportamento esperado.
+ALERTA="[]"
+TOPICO="$(aws sns list-topics --region "$REGION" \
+  --query "Topics[?ends_with(TopicArn, ':sp-car-clean-alertas')].TopicArn | [0]" --output text)"
+if [ -n "$TOPICO" ] && [ "$TOPICO" != "None" ]; then
+  CONFIRMADOS="$(aws sns list-subscriptions-by-topic --topic-arn "$TOPICO" --region "$REGION" \
+    --query "Subscriptions[?Protocol=='email' && SubscriptionArn!='PendingConfirmation'].Endpoint" \
+    --output text | tr '\t' '\n' | sed '/^None$/d' | sort -u)"
+  if [ -n "$CONFIRMADOS" ]; then
+    ALERTA="$(echo "$CONFIRMADOS" | python3 -c 'import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')"
+    echo "  avisos dos alarmes: mantidos para quem já confirmou ($(echo "$CONFIRMADOS" | wc -l | tr -d ' '))"
+  fi
+fi
+
 printf 'bucket = "%s"\n' "$BUCKET" > "${INFRA}/backend.hcl"
 cd "$INFRA"
 
@@ -109,7 +128,7 @@ echo "→ init (estado em s3://${BUCKET})"
 terraform init -input=false -backend-config=backend.hcl >/dev/null
 
 echo "→ plano"
-terraform plan -input=false -var="admin_emails=${LISTA}" -out=plano.tfplan
+terraform plan -input=false -var="admin_emails=${LISTA}" -var="alert_emails=${ALERTA}" -out=plano.tfplan
 
 cat <<'AVISO'
 
