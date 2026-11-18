@@ -93,7 +93,7 @@ const admin = (corpo) => chamar(corpo, { token: 'token-admin' });
   assert.strictEqual((await visitante({ op: 'ler', caminho: 'config' })).status, 200);
 
   // ── visitante: a base do negócio NÃO abre ───────────────────────────
-  for (const caminho of ['bookings', 'stock', 'clientProfiles', 'aiConfig', 'coupons',
+  for (const caminho of ['bookings', 'stock', 'custos', 'clientProfiles', 'aiConfig', 'coupons',
                          'giftcards', 'referrals', 'clientNotes', 'aiLogs']) {
     const resp = await visitante({ op: 'ler', caminho });
     assert.strictEqual(resp.status, 403, `visitante não pode listar ${caminho}`);

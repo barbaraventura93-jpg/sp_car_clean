@@ -141,7 +141,7 @@ const pedido = (id, extra = {}) => ({
   await nega('listar todos os gift cards', visitante('GET', 'giftcards'));
 
   // ── Nós administrativos: fechados para visitante ────────────────────────
-  for (const no of ['clientProfiles', 'clientNotes', 'stock', 'stockRecipes', 'referrals', 'aiConfig', 'aiUsage', 'aiLogs', 'driveImports', 'adminPushTokens']) {
+  for (const no of ['clientProfiles', 'clientNotes', 'stock', 'stockRecipes', 'custos', 'referrals', 'aiConfig', 'aiUsage', 'aiLogs', 'driveImports', 'adminPushTokens']) {
     await nega(`visitante lê ${no}`, visitante('GET', no));
     await nega(`visitante grava em ${no}`, visitante('PUT', `${no}/x`, { a: 1 }));
   }

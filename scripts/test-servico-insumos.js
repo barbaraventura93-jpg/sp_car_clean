@@ -78,22 +78,31 @@ const INSUMOS = {
     assert.strictEqual(r.travado, true, 'campo calculado não aceita digitação');
     assert.ok(r.nota.includes('9,00') && r.nota.includes('13,50'), 'a nota mostra os dois: ' + r.nota);
 
-    // ── acrescentar mão de obra entra na conta ──────────────────────────
-    await pg.evaluate(() => window.addRecipeRow('mo', 1, 2));
+    // ── mão de obra entra na conta pelas HORAS de serviço ───────────────
+    // Desde 18/11/2026 a mão de obra não é insumo (não é estocável): são as
+    // horas do serviço × o custo da hora. Aqui a hora vale R$ 35.
+    await pg.evaluate(() => { _valorHora = 35; });
+    await pg.fill('#sfHorasPq', '1');
+    await pg.fill('#sfHorasGr', '2');
     r = await ler();
-    assert.strictEqual(parseFloat(r.pq), 44,   '9 + 35 = 44: ' + r.pq);
-    assert.strictEqual(parseFloat(r.gr), 83.5, '13,50 + 70 = 83,50: ' + r.gr);
-    // A unidade aparece ao lado da quantidade — "1" sem unidade é adivinhação.
+    assert.strictEqual(parseFloat(r.pq), 44,   '9 + 1 h × 35 = 44: ' + r.pq);
+    assert.strictEqual(parseFloat(r.gr), 83.5, '13,50 + 2 h × 35 = 83,50: ' + r.gr);
+    assert.deepStrictEqual(Object.keys(r.receita), ['shampoo-ph'], 'a mão de obra não vira insumo');
+    // A unidade aparece ao lado da quantidade — "300" sem unidade é adivinhação.
     const unidades = await pg.$$eval('[id^="sfRecUn"]', es => es.map(e => e.textContent));
-    assert.ok(unidades.includes('ml') && unidades.includes('h'), 'unidades à mostra: ' + unidades);
+    assert.ok(unidades.includes('ml'), 'unidades à mostra: ' + unidades);
+    // E o insumo antigo em horas não aparece mais para escolher.
+    const opcoes = await pg.$$eval('#sfRecProd0 option', os => os.map(o => o.value));
+    assert.ok(!opcoes.includes('mo'), 'mão de obra fora da lista de insumos: ' + opcoes);
 
     // ── mexer na quantidade recalcula na hora ───────────────────────────
     await pg.fill('#sfRecPq0', '600');
     r = await ler();
     assert.strictEqual(parseFloat(r.pq), 53, '600 ml × 0,03 + 35 = 53: ' + r.pq);
 
-    // ── tirar um insumo tira da conta E da receita salva ────────────────
-    await pg.evaluate(() => window.removeRecipeRow(1));
+    // ── tirar as horas tira a mão de obra da conta ──────────────────────
+    await pg.fill('#sfHorasPq', '');
+    await pg.fill('#sfHorasGr', '');
     r = await ler();
     assert.strictEqual(parseFloat(r.pq), 18, 'sem a mão de obra: ' + r.pq);
     assert.deepStrictEqual(Object.keys(r.receita), ['shampoo-ph'], 'a receita acompanha');
