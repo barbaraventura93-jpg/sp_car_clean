@@ -46,7 +46,7 @@ continua lendo a AWS, mas sem poder alterar nada.
 
 ---
 
-## 1a. Ativar MFA no `barbara-admin` — urgente (18/11/2026)
+## 1a. Ativar MFA no `barbara-admin` — FEITO em 18/11/2026
 
 **Por quê:** o `barbara-admin` tem acesso total (`AdministratorAccess`) e senha
 de console, sem MFA. Quem descobrir a senha entra como administradora.
@@ -58,7 +58,7 @@ de console, sem MFA. Quem descobrir a senha entra como administradora.
 
 ---
 
-## 1b. Liberar custos para o `barbara-admin` — uma vez, como root (18/11/2026)
+## 1b. Liberar custos para o `barbara-admin` — FEITO em 18/11/2026
 
 **Por quê:** a AWS esconde custos de todo usuário que não é root até o root
 liberar ("IAM user access not activated"). Liberado, o root fica só para
