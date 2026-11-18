@@ -96,3 +96,9 @@ variable "auth_deletion_protection" {
   type        = bool
   default     = true
 }
+
+variable "alert_emails" {
+  description = "E-mails que recebem os alarmes (infra/alarmes.tf). Vazio = os mesmos de admin_emails. Cada endereço precisa confirmar a inscrição pelo link que a AWS envia por e-mail."
+  type        = list(string)
+  default     = []
+}
