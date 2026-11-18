@@ -87,7 +87,40 @@ const BLOQUEADOS = new Set(['config/adminPassword']);
 const PROFUNDIDADE_MAX = 4;
 const CORPO_MAX_BYTES = 256 * 1024;
 
-const OPS = new Set(['ler', 'gravar', 'mesclar', 'apagar']);
+const OPS = new Set(['ler', 'gravar', 'mesclar', 'apagar', 'confirmar-recebimento']);
+
+// Pagamento recebido DIRETO pela empresa (dinheiro ou Pix fora do site). Só a
+// admin registra, e é o que libera os pontos do cliente (lib/core/pontos.js).
+// Operação própria, e não um `mesclar` qualquer, porque precisa de duas coisas
+// que a escrita genérica não faz: conferir o estado do agendamento e creditar
+// os pontos no servidor, uma vez só.
+const METODOS_DIRETOS = new Set(['dinheiro', 'pix', 'cartao-maquininha', 'outro']);
+const ENCERRADOS = new Set(['cancelled', 'rejected']);
+
+async function confirmarRecebimento(id, dados, autor) {
+  const metodo = dados && dados.metodo;
+  if (!METODOS_DIRETOS.has(metodo)) return { status: 400, erro: 'forma de pagamento inválida' };
+  const valor = dados.valor === undefined || dados.valor === null ? null : Number(dados.valor);
+  if (valor !== null && (!Number.isFinite(valor) || valor <= 0 || valor > 100000)) {
+    return { status: 400, erro: 'valor recebido inválido' };
+  }
+  const b = await store.dbGet(`bookings/${id}`);
+  if (!b) return { status: 404, erro: 'agendamento não encontrado' };
+  if (b.paymentConfirmedAt) return { status: 409, erro: 'o pagamento deste agendamento já foi confirmado' };
+  if (ENCERRADOS.has(b.status)) return { status: 409, erro: `agendamento ${b.status} não recebe pagamento` };
+
+  const agora = new Date().toISOString();
+  await store.dbPatch(`bookings/${id}`, {
+    paymentConfirmedAt: agora,
+    paymentMethod: metodo,
+    paymentConfirmedBy: autor,
+    ...(valor !== null ? { receivedAmount: valor } : {}),
+    // Concluído continua concluído; o resto passa a confirmado.
+    ...(b.status === 'completed' ? {} : { status: 'confirmed', confirmedAt: b.confirmedAt || agora }),
+  });
+  const pontosCreditados = await pontos.creditarPorPagamento(id, { store });
+  return { status: 200, dados: { paymentConfirmedAt: agora, pontos: pontosCreditados } };
+}
 
 function reply(statusCode, cors, body) {
   return { statusCode, headers: { ...cors, 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
@@ -131,6 +164,7 @@ function autorizado(op, segmentos) {
 const store = require('./lib/core/store');
 const publicas = require('./lib/core/regras-publicas');
 const agendamentoPublico = require('./lib/core/agendamento-publico');
+const pontos = require('./lib/core/pontos');
 
 // Op da API → operação no banco. Mantido como mapa explícito: um `if` em
 // cadeia convidaria a acrescentar operação sem passar pela tabela de
@@ -239,6 +273,24 @@ exports.handler = async (event) => {
   if (consulta !== undefined && !consultaValida(consulta)) {
     return reply(400, cors, { ok: false, error: 'consulta inválida' });
   }
+  if (op === 'confirmar-recebimento') {
+    if (!ehAdmin) return reply(403, cors, { ok: false, error: 'só a admin confirma recebimento' });
+    if (v.segmentos[0] !== 'bookings' || v.segmentos.length !== 2) {
+      return reply(400, cors, { ok: false, error: 'confirmar-recebimento vale só para um agendamento' });
+    }
+    let quem = null;
+    try { quem = await identificar(token); } catch { /* só para o registro */ }
+    const autor = quem ? (quem.email || quem.uid) : 'admin';
+    try {
+      const r = await confirmarRecebimento(v.segmentos[1], dados, autor);
+      if (r.erro) return reply(r.status, cors, { ok: false, error: r.erro });
+      console.log(`admin-data: ${autor} confirmou recebimento de ${caminho} (${dados.metodo}); pontos: ${r.dados.pontos.creditado}`);
+      return reply(200, cors, { ok: true, dados: r.dados });
+    } catch (err) {
+      console.error(`admin-data: ${autor} confirmar-recebimento ${caminho} falhou: ${err.message}`);
+      return reply(502, cors, { ok: false, error: 'falha ao acessar o banco' });
+    }
+  }
   if (ehAdmin) {
     if (!autorizado(op, v.segmentos)) {
       return reply(403, cors, { ok: false, error: `operação '${op}' não permitida em '${caminho}'` });
@@ -311,4 +363,4 @@ exports.handler = async (event) => {
 
 // Exportado para teste: a política é o coração da segurança desta função, e
 // precisa ser verificável sem rede.
-exports._interno = { NOS, BLOQUEADOS, validarCaminho, autorizado, autorizarPublico, aplicarFiltro, consultaValida };
+exports._interno = { NOS, BLOQUEADOS, validarCaminho, autorizado, autorizarPublico, aplicarFiltro, consultaValida, confirmarRecebimento };

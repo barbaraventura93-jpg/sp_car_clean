@@ -65,6 +65,19 @@ store.dbPatch = async (caminho, corpo) => {
   db[chave] = { ...db[chave], ...corpo };
 };
 store.dbSet = store.dbPatch;
+// Crédito de pontos (lib/core/pontos.js): transação aplicada ao banco em
+// memória. Não entra em `escritas`, que conta as escritas do próprio webhook.
+store.dbTransacao = async (lista) => {
+  for (const e of lista) {
+    const atual = db[e.caminho];
+    for (const [k, v] of Object.entries(e.seAusenteOuIgual || {})) {
+      if (!atual || (atual[k] !== undefined && atual[k] !== v)) {
+        throw Object.assign(new Error('condição'), { condicaoFalhou: true });
+      }
+    }
+  }
+  for (const e of lista) db[e.caminho] = { ...db[e.caminho], ...e.campos };
+};
 
 const { handler, _interno } = require(path.resolve(__dirname, '../functions/infinitepay-webhook.js'));
 
@@ -161,6 +174,28 @@ const agendamento = (extra) => ({ [`bookings/${BOOK}`]: { id: BOOK, status: 'app
   r = await chamar({ order_nsu: BOOK, status: 'paid' });
   assert.strictEqual(r.msg, 'already confirmed');
   assert.strictEqual(escritas.length, 1, 'repetição não escreve de novo');
+
+  // ── Pontos caem com o pagamento confirmado pelo site (regra de 18/11/2026)
+  preparar({ banco: { ...agendamento({ clientUid: 'u1', finalPrice: 100 }),
+    'clientProfiles/u1': { points: 5 }, config: { pointsPerReal: 1 } } });
+  r = await chamar({ order_nsu: BOOK, status: 'paid' });
+  assert.strictEqual(r.msg, 'confirmed');
+  assert.strictEqual(db['clientProfiles/u1'].points, 105, 'pontos sobre o valor do serviço, não sobre o pago com taxa');
+  assert.ok(db[`bookings/${BOOK}`].pointsAwardedAt);
+  await chamar({ order_nsu: BOOK, status: 'paid' });
+  assert.strictEqual(db['clientProfiles/u1'].points, 105, 'webhook repetido não credita de novo');
+
+  // ── REGRESSÃO: o cliente apertou "já paguei" (status confirmed, sem
+  // pagamento verificado) e o pagamento real chega depois. Antes de
+  // 18/11/2026 isto respondia "already confirmed" e descartava o pagamento:
+  // sem paymentConfirmedAt, sem valor pago registrado e sem pontos.
+  preparar({ banco: { ...agendamento({ status: 'confirmed', clientUid: 'u1', finalPrice: 100 }),
+    'clientProfiles/u1': { points: 0 }, config: {} } });
+  r = await chamar({ order_nsu: BOOK, status: 'paid', transaction_nsu: 'T7' });
+  assert.strictEqual(r.msg, 'confirmed', 'pagamento real depois do "já paguei" do cliente é registrado');
+  assert.ok(db[`bookings/${BOOK}`].paymentConfirmedAt);
+  assert.strictEqual(db[`bookings/${BOOK}`].paidAmount, 104);
+  assert.strictEqual(db['clientProfiles/u1'].points, 100);
 
   // Pedido ainda em análise que recebe pagamento: confirma (comportamento
   // que já existia e foi mantido).

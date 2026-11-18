@@ -316,6 +316,10 @@ const DB = (function () {
   return {
     ref: (caminho) => criarRef(caminho),
     configurar,
+    // Pagamento recebido direto (dinheiro/Pix), só admin: o servidor registra
+    // e credita os pontos. Operação própria do /api/admin-data.
+    confirmarRecebimento: (id, metodo, valor) =>
+      chamarLambda('confirmar-recebimento', `bookings/${id}`, valor ? { metodo, valor } : { metodo }),
     _interno: {
       LEITURA_PUBLICA, novaChavePush, usarLambdaParaLer, usarLambdaParaEscrever,
       aplicarConsulta, INTERVALO_POLL_MS,
