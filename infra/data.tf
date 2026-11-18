@@ -92,3 +92,39 @@ resource "aws_dynamodb_table" "data" {
 
   tags = { Name = "sp-car-clean-data" }
 }
+
+# ---------------------------------------------------------------------
+# Acesso das funções à tabela
+#
+# Sem isto o código novo sobe e responde erro: a role das funções tinha
+# permissão para o SSM, o S3 e a tabela de push, mas nenhuma para a tabela de
+# dados — ela foi criada na Fase 0, quando nada apontava para ela.
+#
+# As ações são as que o lib/core/store.js usa, e só elas: não há Delete*Table,
+# não há Update*Table, e `Scan` está aqui porque a leitura de `clientProfiles`
+# inteiro é varredura com filtro (ver o comentário em store.js).
+# ---------------------------------------------------------------------
+data "aws_iam_policy_document" "lambda_data" {
+  statement {
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:BatchGetItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:BatchWriteItem",
+    ]
+    resources = [
+      aws_dynamodb_table.data.arn,
+      "${aws_dynamodb_table.data.arn}/index/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "lambda_data" {
+  name   = "data-table"
+  role   = aws_iam_role.lambda.id
+  policy = data.aws_iam_policy_document.lambda_data.json
+}

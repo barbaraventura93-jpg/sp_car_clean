@@ -15,6 +15,10 @@
 //   4. Serviços proibidos no projeto: Lambda@Edge, StackSets, replicação
 //      entre regiões, chave KMS multi-região
 //   5. Deploy que não depende dos testes, ou que publica fora da main
+//   6. Função em functions/ que ninguém registrou no Terraform — ela entra no
+//      zip, é publicada e nunca recebe requisição nenhuma, sem erro em lugar
+//      nenhum. Foi o que aconteceu com `unsubscribe.js`: o link de descadastro
+//      no rodapé do e-mail apontaria para um 404.
 
 const assert = require('assert');
 const fs = require('fs');
@@ -143,6 +147,29 @@ function analisarWorkflow(yaml) {
   return problemas;
 }
 
+/**
+ * Toda função em functions/ tem que estar em `http_functions` (rota na API) ou
+ * em `scheduled_functions` (cron). Função pura: recebe os nomes e o texto do
+ * api.tf, devolve a lista de problemas.
+ */
+function analisarRegistro(nomesFn, apiTf) {
+  const texto = semComentarios(apiTf);
+  const lista = (texto.match(/http_functions\s*=\s*\[([\s\S]*?)\]/) || [, ''])[1];
+  const mapa = (texto.match(/scheduled_functions\s*=\s*\{([\s\S]*?)\n\s*\}/) || [, ''])[1];
+  const registradas = new Set([
+    ...(lista.match(/"([^"]+)"/g) || []),
+    ...(mapa.match(/"([^"]+)"\s*=/g) || []),
+  ].map((x) => x.replace(/[^a-zA-Z0-9_-]/g, '')));
+
+  const problemas = [];
+  for (const nome of nomesFn) {
+    if (!registradas.has(nome)) {
+      problemas.push(`função ${nome} não está em http_functions nem em scheduled_functions (infra/api.tf)`);
+    }
+  }
+  return problemas;
+}
+
 // ── Os arquivos de verdade ────────────────────────────────────────────────
 const arquivos = {};
 for (const f of fs.readdirSync(INFRA).filter((n) => n.endsWith('.tf'))) {
@@ -153,6 +180,13 @@ assert.deepStrictEqual(analisarInfra(arquivos), [], 'a infra não pode ter nenhu
 
 const workflow = fs.readFileSync(path.join(RAIZ, '.github/workflows/deploy-aws.yml'), 'utf8');
 assert.deepStrictEqual(analisarWorkflow(workflow), [], 'o deploy tem que depender dos testes e publicar só da main');
+
+const nomesFn = fs.readdirSync(path.join(RAIZ, 'functions'))
+  .filter((n) => n.endsWith('.js'))
+  .map((n) => n.replace(/\.js$/, ''));
+assert.ok(nomesFn.length >= 15, `esperava as funções em functions/, achei ${nomesFn.length}`);
+assert.deepStrictEqual(analisarRegistro(nomesFn, arquivos['api.tf']), [],
+  'toda função em functions/ precisa de rota ou cron no Terraform');
 
 // ── Teste do teste: cada regra tem que acusar quando é quebrada ───────────
 // Um verificador que nunca reprova não protege nada. Aqui cada caso quebra a
@@ -186,6 +220,13 @@ quebra('needs: testes', 'needs: []', 'needs: testes');
 quebra('run: npm test', 'run: echo sem-teste', 'npm test');
 quebra("github.ref == 'refs/heads/main'", 'true', 'branch main');
 
-console.log('infra (estático): buckets, IAM, região, serviços proibidos e trava do deploy — todos passaram');
+// Teste do teste nº 6: uma função não registrada tem que acusar.
+assert.deepStrictEqual(analisarRegistro(['fantasma'], arquivos['api.tf']),
+  ['função fantasma não está em http_functions nem em scheduled_functions (infra/api.tf)']);
+// E uma registrada só no cron (sem rota HTTP) não pode acusar.
+assert.deepStrictEqual(analisarRegistro(['birthday-check'], arquivos['api.tf']), []);
+assert.deepStrictEqual(analisarRegistro(['unsubscribe'], arquivos['api.tf']), []);
 
-module.exports = { analisarInfra, analisarWorkflow };
+console.log('infra (estático): buckets, IAM, região, serviços proibidos, trava do deploy e registro das funções — todos passaram');
+
+module.exports = { analisarInfra, analisarWorkflow, analisarRegistro };

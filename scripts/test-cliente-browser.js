@@ -87,8 +87,14 @@ const SESSAO_CLIENTE = {
   assert.strictEqual(r.ehAdmin, false, 'cliente NÃO é admin');
   assert.strictEqual(r.ehCliente, true, 'cliente é reconhecido como cliente');
   assert.strictEqual(r.painelAdminVisivel, false, 'painel admin NÃO aparece');
-  assert.strictEqual(r.lambdaParaLerRestrito, false, 'cliente não roteia leitura pela Lambda');
-  assert.strictEqual(r.lambdaParaEscrever, false, 'cliente não roteia escrita pela Lambda');
+  // Desde 16/11/2026 TODO acesso a dados vai pela API, para cliente, visitante
+  // e admin — o banco virou DynamoDB e quem autoriza é o servidor, não as
+  // regras do Firebase. O que este teste trava é outra coisa, e ela continua
+  // valendo: o cliente logado NÃO vira admin (`ehAdmin: false`, painel
+  // invisível). Quem garante que o cliente não lê o que não é dele são
+  // scripts/test-regras-publicas.js e scripts/test-porta-dados.js.
+  assert.strictEqual(r.lambdaParaLerRestrito, true, 'cliente também lê pela API');
+  assert.strictEqual(r.lambdaParaEscrever, true, 'e também escreve pela API');
   assert.strictEqual(depois.contaDoClienteAberta, true,
     '"Minha Conta" ABRE mesmo com o Firebase negando o perfil (pelo .catch())');
   assert.strictEqual(depois.painelAdminVisivel, false, 'painel admin segue fechado');

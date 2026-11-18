@@ -8317,27 +8317,18 @@ function _buildHeroCarousel(media) {
 }
 _buildHeroCarousel(HERO_FALLBACK);
 
-(function initFirebase() {
-  const firebaseConfig = {
-    apiKey: (window.__ENV && window.__ENV.FIREBASE_API_KEY) || '',
-    authDomain: "sp-car-clean.firebaseapp.com",
-    databaseURL: "https://sp-car-clean-default-rtdb.firebaseio.com",
-    projectId: "sp-car-clean",
-    messagingSenderId: "726947312422",
-    appId: "1:726947312422:web:f6a0bcebc57f19b3f107e7"
-  };
+(function initBanco() {
   try {
-    firebase.initializeApp(firebaseConfig);
-    _fbDB        = firebase.database();
-    // Roteia o acesso a dados: nó restrito com admin logado vai pela Lambda
-    // /api/admin-data (que fala com o Firebase usando o segredo do banco); o
-    // resto continua indo direto, preservando tempo real e latência do site.
-    // O critério de "é admin" é o MESMO do servidor — grupo `admin` no token do
-    // Cognito, o que o functions/lib/admin-auth.js exige. Usar isAdmin() (e-mail
-    // igual a CFG.adminEmail) deixaria a segunda conta administrativa de fora:
-    // as escritas dela iriam direto ao Firebase e seriam recusadas sem explicação.
+    // Todo acesso a dados vai por /api/admin-data, que valida e autoriza no
+    // servidor — e desde 16/11/2026 fala com o DynamoDB. O SDK do Firebase saiu
+    // do frontend junto com o projeto, que foi excluído em 10/11.
+    //
+    // `ehAdmin` usa o MESMO critério do servidor: grupo `admin` no token do
+    // Cognito, o que functions/lib/admin-auth.js exige. Usar isAdmin() (e-mail
+    // igual a CFG.adminEmail) deixaria a segunda conta administrativa de fora.
+    // Ele não decide permissão — só evita pedir ao servidor o que já se sabe
+    // que será recusado, e escolhe o que mostrar na tela.
     DB.configurar({
-      firebaseDb: _fbDB,
       ehAdmin: () => {
         const u = AUTH.currentUser;
         return !!u && Array.isArray(u.grupos) && u.grupos.includes('admin');
@@ -9114,6 +9105,14 @@ async function iaGerarReativacao() {
       alert('Erro: ' + (data.error || data.reason || 'desconhecido'));
       return;
     }
+    // Sem rascunho não há o que revisar — e o motivo quase sempre é
+    // descadastro. Abrir o modal vazio parece bug.
+    if (!(data.drafts || []).length) {
+      alert(data.pulados
+        ? `Nenhum texto gerado: ${data.pulados} cliente(s) pediram para não receber e-mails de marketing.`
+        : 'Nenhum texto gerado.');
+      return;
+    }
     iaShowReativacaoReview(data.drafts || []);
   } catch (err) {
     overlay.remove();
@@ -9237,7 +9236,7 @@ async function iaUpsellSuggest(email, serviceId, lastBooking) {
 const IA_DEFAULTS = {
   ping:       { monthlyBudgetCalls: 10,  maxTokens: 256,  schedule: null,            name: 'Ping (Teste)',            desc: 'Valida a conectividade com a Claude API.' },
   relatorio:  { monthlyBudgetCalls: 10,  maxTokens: 1024, schedule: 'weekly:mon:08', name: 'Relatório Semanal',        desc: 'Resumo executivo semanal enviado via Telegram às segundas.' },
-  reativacao: { monthlyBudgetCalls: 60,  maxTokens: 1024, schedule: null,            name: 'Reativação de Inativos',   desc: 'E-mails personalizados para clientes sem retorno há 90+ dias.' },
+  reativacao: { monthlyBudgetCalls: 60,  maxTokens: 1024, schedule: 'weekly:tue:08', name: 'Reativação de Inativos',   desc: 'Terças, envia e-mail para quem não volta há 90+ dias — respeitando o descadastro. No painel, gera textos para revisão.' },
   agenda:     { monthlyBudgetCalls: 30,  maxTokens: 512,  schedule: null,            name: 'Otimizador de Agenda',     desc: 'Ranqueia candidatos da waitlist para vagas liberadas.' },
   upsell:     { monthlyBudgetCalls: 300, maxTokens: 256,  schedule: null,            name: 'Sugestão de Complemento',  desc: 'Sugere 1 complemento no agendamento com base no histórico.' },
   concierge:  { monthlyBudgetCalls: 500, maxTokens: 600,  schedule: null,            name: 'Chat Concierge',           desc: 'Widget de chat público que responde dúvidas e recomenda serviços.' },

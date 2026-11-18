@@ -1,4 +1,4 @@
-const { dbPush, dbDelete, dbGet } = require('./firebase');
+const { dbPush, dbDelete, dbGet } = require('./store');
 
 const MAX_LOGS = 200;
 

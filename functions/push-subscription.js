@@ -10,7 +10,7 @@
 
 const { publicKey, isValidSubscription, saveSubscription, saveClientSubscription, clientTarget } = require('./lib/webpush');
 const { verifyAdmin, identificar, bearerToken } = require('./lib/admin-auth');
-const { dbGet } = require('./lib/core/firebase');
+const { dbGet } = require('./lib/core/store');
 const { clientIp, rateLimit, originAllowed, corsHeaders } = require('./lib/guard');
 
 // Alvos que o cliente provou serem dele (token e/ou código + e-mail do agendamento).

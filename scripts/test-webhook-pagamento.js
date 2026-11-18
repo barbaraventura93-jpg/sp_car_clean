@@ -17,12 +17,10 @@ const assert = require('assert');
 const path = require('path');
 
 process.env.INFINITEPAY_HANDLE = 'loja-de-teste';
-process.env.FIREBASE_DATABASE_URL = 'https://banco.invalid';
 process.env.FIREBASE_DATABASE_SECRET = 'segredo-de-teste';
 delete process.env.EMAILJS_SERVICE_ID; // nenhum e-mail sai do teste
 delete process.env.PUSH_TABLE;
 
-const BANCO = 'https://banco.invalid/';
 let db, check, escritas, chamadasCheck, bancoFora;
 
 function preparar({ banco = {}, pagamento = { success: true, paid: true, amount: 10400, paid_amount: 10400, capture_method: 'pix' } } = {}) {
@@ -40,20 +38,33 @@ global.fetch = async (url, opt = {}) => {
     if (typeof check === 'number') return { ok: false, status: check, json: async () => ({}) };
     return { ok: true, status: 200, json: async () => check };
   }
-  if (url.startsWith(BANCO)) {
-    if (bancoFora) return { ok: false, status: 500, json: async () => ({}) };
-    assert.ok(url.includes('.json?auth='), 'toda chamada ao banco leva a credencial');
-    const chave = decodeURIComponent(url.slice(BANCO.length).split('.json')[0]);
-    if (opt.method === 'PATCH') {
-      const corpo = JSON.parse(opt.body);
-      escritas.push({ chave, corpo });
-      db[chave] = { ...db[chave], ...corpo };
-      return { ok: true, status: 200, json: async () => db[chave] };
-    }
-    return { ok: true, status: 200, json: async () => (chave in db ? db[chave] : null) };
-  }
   throw new Error('o teste não pode sair para a rede: ' + url);
 };
+
+// Dublê do banco.
+//
+// Era interceptado em `fetch`, porque o Realtime Database era falado por HTTP.
+// Desde 16/11/2026 o banco é o DynamoDB e a costura é o módulo
+// `lib/core/store`. Precisa ser trocado ANTES do `require` da função: o
+// `store-http` desestrutura nada, mas o `store` é capturado por referência
+// dentro dele, então o que importa é patchar o módulo antes do primeiro uso.
+//
+// As chaves são as mesmas de antes (`bookings/SPC-1`), e por isso as asserções
+// do teste não mudaram.
+const store = require(path.resolve(__dirname, '../functions/lib/core/store.js'));
+const semBarra = (c) => String(c).replace(/^\/+/, '');
+store.dbGet = async (caminho) => {
+  if (bancoFora) throw new Error('banco fora');
+  const chave = semBarra(caminho);
+  return chave in db ? db[chave] : null;
+};
+store.dbPatch = async (caminho, corpo) => {
+  if (bancoFora) throw new Error('banco fora');
+  const chave = semBarra(caminho);
+  escritas.push({ chave, corpo });
+  db[chave] = { ...db[chave], ...corpo };
+};
+store.dbSet = store.dbPatch;
 
 const { handler, _interno } = require(path.resolve(__dirname, '../functions/infinitepay-webhook.js'));
 

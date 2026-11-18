@@ -186,6 +186,30 @@ Então:
 
 Cada fase termina com verificação e teste seu. Nada é cortado sem rollback.
 
+> **Estado em 16/11/2026.** O Firebase foi excluído em 10/11, o que tirou o
+> "rollback" de cena: não há mais para onde voltar, e as fases deixaram de
+> poder rodar em paralelo com o banco antigo.
+>
+> | Fase | Estado |
+> |---|---|
+> | 0 — Fundação | **feita.** 12.396 itens importados do backup de 09/11 e conferidos nó por nó |
+> | 1 — Painel admin | **feita no código.** A permissão da role foi aplicada em 16/11 |
+> | 2 — Escrita pública | **feita.** A escrita dupla descrita abaixo não se aplica: não existe segundo banco para onde escrever |
+> | 3 — Leitura pública | **feita** — e sem rota nova: o `/api/admin-data` ganhou um nível de acesso anônimo, com autorização por nó |
+> | 4 — Lambdas | **feita.** Todas as 19; `lib/core/firebase.js` foi removido |
+>
+> **Falta só o `terraform apply`** (`bash scripts/aws-apply.sh`, do CloudShell):
+> a função `unsubscribe` + rota, e a variável `DATA_TABLE`. Enquanto não rodar,
+> o merge quebra o deploy — ver `docs/incidente-firebase-2026-11-14.md`.
+>
+> **Onde a autorização do visitante vive agora:** as regras do
+> `database.rules.json` não são aplicadas por ninguém (o DynamoDB não tem regra
+> de banco). O porte delas é `functions/lib/core/regras-publicas.js`, com teste
+> em `scripts/test-regras-publicas.js` e `scripts/test-porta-dados.js`. O
+> arquivo de regras fica como registro do que foi portado — e é por isso que
+> `scripts/test-regras-banco.js` continua valendo a pena: ele é a referência
+> contra a qual o porte foi conferido.
+
 ### Fase 0 — Fundação · risco nulo
 
 Tabela DynamoDB com os dois GSIs, pool Cognito, usuário admin, e o script de

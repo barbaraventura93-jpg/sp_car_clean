@@ -36,8 +36,9 @@ module.exports = {
     const brand     = config?.businessName || 'SP Car Clean';
     const maxPerDay = config?.maxPerDay    || 2;
 
-    const activeStatus = new Set(['confirmed', 'approved', 'completed']);
-    const bkVal = b => b.paidAmount || b.finalPrice || b.price || 0;
+    const fin = require('../core/financeiro');
+    const activeStatus = fin.STATUS_ATIVO;
+    const bkVal = fin.receitaDoAgendamento;
 
     const inRange = (b, from, to) => {
       const d = b.startDate || b.date;
@@ -47,10 +48,14 @@ module.exports = {
     const lastBks = bkList.filter(b => inRange(b, lastMonday, lastSunday));
     const prevBks = bkList.filter(b => inRange(b, prevMonday, prevSunday));
 
-    // Receita
-    const lastRev = lastBks.reduce((s, b) => s + bkVal(b), 0);
-    const prevRev = prevBks.reduce((s, b) => s + bkVal(b), 0);
-    const revDelta = prevRev > 0 ? Math.round((lastRev - prevRev) / prevRev * 100) : null;
+    // Receita, custo e lucro. O custo vem dos insumos que cada serviço consome
+    // (`pricing.<porte>.cost`), que o cadastro de serviço calcula.
+    const resumo = fin.resumoFinanceiro(lastBks, svcMap);
+    const antes  = fin.resumoFinanceiro(prevBks, svcMap);
+    const lastRev  = resumo.receita;
+    const prevRev  = antes.receita;
+    const revDelta = fin.variacao(lastRev, prevRev);
+    const lucroDelta = fin.variacao(resumo.lucro, antes.lucro);
 
     // Serviço mais vendido
     const svcCount = {};
@@ -88,30 +93,60 @@ module.exports = {
         return `${v.name} (${days} dias sem visita)`;
       });
 
+    const pct = v => v === null ? '' : ` (${v >= 0 ? '+' : ''}${v}% vs anterior)`;
+    const money = v => `R$ ${v.toFixed(2).replace('.', ',')}`;
+
+    // Serviços realizados na semana que não têm insumos cadastrados: o custo
+    // deles entra como zero, o que infla o lucro. Dizer isso é parte do número.
+    const semCusto = resumo.semCusto
+      .map(id => svcMap[id]?.name || id)
+      .slice(0, 4);
+
     const context = [
       `Semana: ${fmtRange(lastMonday, lastSunday)}`,
       `Agendamentos: ${lastBks.length} (semana anterior: ${prevBks.length})`,
-      `Receita bruta: R$ ${lastRev.toFixed(2)} (semana anterior: R$ ${prevRev.toFixed(2)}${revDelta !== null ? ', variação: ' + (revDelta >= 0 ? '+' : '') + revDelta + '%' : ''})`,
+      `Receita: ${money(resumo.receita)} (anterior ${money(antes.receita)})`,
+      `Custo de insumos: ${money(resumo.custo)} (anterior ${money(antes.custo)})`,
+      `Lucro: ${money(resumo.lucro)} (anterior ${money(antes.lucro)})`,
+      resumo.margem !== null ? `Margem: ${resumo.margem}%${antes.margem !== null ? ` (anterior ${antes.margem}%)` : ''}` : '',
+      semCusto.length ? `ATENÇÃO: estes serviços não têm insumos cadastrados, então o custo deles entrou como zero e o lucro acima está superestimado: ${semCusto.join(', ')}` : '',
       `Serviço mais realizado: ${topSvcName}`,
       `Taxa de ocupação: ${occupancy}% (${lastBks.length} de ${maxSlots} vagas)`,
       `Clientes sem retorno há 90+ dias — top 5: ${inactive90.length ? inactive90.join(' | ') : 'nenhum no momento'}`,
-    ].join('\n');
+    ].filter(Boolean).join('\n');
 
     const result = await core.claude.complete({
       system: `Você é o assistente de gestão da ${brand}. Escreva em português. Seja direto e objetivo.`,
       messages: [{
         role: 'user',
-        content: `Com base nos dados abaixo, escreva um resumo executivo semanal em no máximo 12 linhas. Inclua os números fornecidos, variação vs semana anterior quando disponível, e exatamente 1 recomendação acionável ao final. Sem saudações, sem floreios.\n\n${context}`
+        content: `Escreva a LEITURA de uma semana de operação, em no máximo 8 linhas: o que os números dizem, o que mudou em relação à semana anterior e exatamente 1 recomendação acionável ao final.\n\nNÃO repita os números: eles já aparecem numa tabela acima do seu texto. Comente o que eles significam. Se houver aviso de serviço sem insumo cadastrado, trate isso como a principal pendência. Sem saudações, sem floreios.\n\n${context}`
       }],
-      maxTokens: 800
+      maxTokens: 600
     });
 
-    const msg = `📊 *Relatório Semanal — ${brand}*\n_${fmtRange(lastMonday, lastSunday)}_\n\n${result.text}`;
+    // Os números vão na mensagem DIRETO, não pela IA. Modelo de linguagem
+    // reescrevendo valor financeiro é jeito de publicar número errado com
+    // aparência de certo; o texto dele comenta, não informa.
+    const tabela = [
+      `💰 Receita   *${money(resumo.receita)}*${pct(revDelta)}`,
+      `📦 Custo     ${money(resumo.custo)}`,
+      `✅ Lucro     *${money(resumo.lucro)}*${pct(lucroDelta)}`,
+      resumo.margem !== null ? `📈 Margem    ${resumo.margem}%` : '',
+      '',
+      `🗓️ ${lastBks.length} agendamento(s) · ocupação ${occupancy}%`,
+      `⭐ Mais vendido: ${topSvcName}`,
+    ].filter(Boolean).join('\n');
+
+    const aviso = semCusto.length
+      ? `\n\n⚠️ _Custo subestimado: ${semCusto.join(', ')} ${semCusto.length === 1 ? 'não tem insumos cadastrados' : 'não têm insumos cadastrados'}._`
+      : '';
+
+    const msg = `📊 *Relatório Semanal — ${brand}*\n_${fmtRange(lastMonday, lastSunday)}_\n\n${tabela}${aviso}\n\n${result.text}`;
     await core.telegram.sendTelegram(msg);
 
     return {
       ok: true,
-      summary: `Relatório enviado (${lastBks.length} agend. · R$ ${lastRev.toFixed(2)})`
+      summary: `Relatório enviado (${lastBks.length} agend. · receita ${money(resumo.receita)} · lucro ${money(resumo.lucro)})`
     };
   }
 };
