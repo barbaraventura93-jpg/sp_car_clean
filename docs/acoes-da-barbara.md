@@ -9,10 +9,16 @@ Nunca cole senha, chave ou token em conversa, e-mail ou arquivo do repositório.
 
 ## 1. Trocar a chave de acesso da AWS que está no ambiente — recomendado (risco aceito em 14/11/2026)
 
-**Andamento em 18/11/2026:** a chave antiga (de maio, sobra do GitHub Actions)
-foi **desativada**, não excluída: se nada parar até 25/11, pode excluir. A
-chave atual perdeu o poder de criar permissões (`IAMFullAccess` trocado por
-`IAMReadOnlyAccess`). Continua valendo trocar a chave atual quando der.
+**Feito em 18/11/2026**, depois do aviso da AWS de "conta possivelmente
+acessada por terceiros" (o Lambda ficou bloqueado na conta inteira):
+- a chave de maio (…WCX7) foi excluída;
+- a chave de agosto (…YVWI) foi **desativada**, não excluída: se nada parar
+  até 25/11, pode excluir;
+- a chave nova (…YTCL) foi criada pelo `barbara-admin` e está no ambiente;
+- o usuário perdeu o poder de criar permissões (`IAMFullAccess` trocado por
+  `IAMReadOnlyAccess`).
+
+Falta ainda o passo 3 acima (usuário só de leitura para a revisão), se quiser.
 
 **Situação:** o ambiente de desenvolvimento do Claude guarda uma chave de
 acesso da AWS que não expira e tem permissão quase total (inclusive para criar
