@@ -4015,15 +4015,20 @@ function viewBooking(id) {
   const _delBtn  = `<button class="btn-reject" style="margin-right:auto" onclick="deleteBooking('${escAttrJs(b.id)}')">🗑️ Excluir</button>`;
   const _ciBtn   = `<button class="btn-ghost" onclick="openCheckin('${escAttrJs(b.id)}')">📋 Check-in</button>`;
   const _doneBtn = `<button class="btn-approve" onclick="markCompleted('${escAttrJs(b.id)}')">🏁 Entregar & Concluir</button>`;
+  // Pagamento recebido direto (dinheiro, Pix fora do site): é o que libera os
+  // pontos do cliente. Some depois de confirmado — pelo site ou por aqui.
+  const _paidBtn = (!b.paymentConfirmedAt && (_canEdit || b.status === 'completed'))
+    ? `<button class="btn-ghost" onclick="confirmarRecebimentoDireto('${escAttrJs(b.id)}')">💵 Pagamento recebido</button>`
+    : '';
   footer.innerHTML = b.status==='pending'
     ? `${_delBtn}<button class="btn-reject" onclick="rejectBooking('${escAttrJs(b.id)}');closeModal('detailModal')">Rejeitar</button>
        <button class="btn-approve" onclick="closeModal('detailModal');openApprove('${escAttrJs(b.id)}')">Aprovar & Definir Orçamento</button>`
     : _checkedIn
-    ? `${_delBtn}${_doneBtn}<button class="btn-edit-date" onclick="openEditDate('${escAttrJs(b.id)}')">📅 Reagendar Entrega</button>`
+    ? `${_delBtn}${_paidBtn}${_doneBtn}<button class="btn-edit-date" onclick="openEditDate('${escAttrJs(b.id)}')">📅 Reagendar Entrega</button>`
     : _canEdit
-    ? `${_delBtn}${_ciBtn}${_doneBtn}<button class="btn-cancel" onclick="cancelBooking('${escAttrJs(b.id)}')">🚫 Cancelar</button>
+    ? `${_delBtn}${_ciBtn}${_paidBtn}${_doneBtn}<button class="btn-cancel" onclick="cancelBooking('${escAttrJs(b.id)}')">🚫 Cancelar</button>
        <button class="btn-edit-date" onclick="openEditDate('${escAttrJs(b.id)}')">📅 Alterar Data</button>`
-    : `${_delBtn}<button class="btn-primary" onclick="closeModal('detailModal')">Fechar</button>`;
+    : `${_delBtn}${_paidBtn}<button class="btn-primary" onclick="closeModal('detailModal')">Fechar</button>`;
   document.getElementById('detailModal').style.display = 'flex';
 }
 
@@ -4595,6 +4600,35 @@ function cancelBooking(id) {
   renderAdminBookings();
   // Hook silencioso — agente de agenda (Onda 1)
   try { iaDispatchAgenda(cancelledDate, b.service || b.services?.[0], b.carSize); } catch {}
+}
+
+// Pagamento recebido direto pela empresa. Quem registra e credita os pontos é
+// o servidor (/api/admin-data, op `confirmar-recebimento`, e lib/core/pontos.js):
+// a tela só pergunta a forma e mostra o resultado.
+const _METODOS_RECEBIMENTO = { '1': 'dinheiro', '2': 'pix', '3': 'cartao-maquininha', '4': 'outro' };
+async function confirmarRecebimentoDireto(id) {
+  const b = getBookings().find(x => x.id === id);
+  if (!b) return;
+  const escolha = prompt(
+    `Pagamento recebido de "${b.name}" (${fmtMoney(b.finalPrice || b.price)}).\n\n` +
+    'Como foi pago?\n1 = Dinheiro\n2 = Pix direto\n3 = Cartão na maquininha\n4 = Outro');
+  if (escolha === null) return;
+  const metodo = _METODOS_RECEBIMENTO[String(escolha).trim()];
+  if (!metodo) { alert('Opção inválida. Digite 1, 2, 3 ou 4.'); return; }
+  try {
+    const r = await DB.confirmarRecebimento(id, metodo);
+    b.paymentConfirmedAt = r && r.paymentConfirmedAt;
+    b.paymentMethod = metodo;
+    if (b.status !== 'completed') b.status = 'confirmed';
+    const p = (r && r.pontos) || {};
+    alert(p.creditado > 0
+      ? `✅ Pagamento registrado. ${p.creditado} pontos creditados ao cliente.`
+      : `✅ Pagamento registrado. Sem pontos: ${p.motivo || 'nada a creditar'}.`);
+    closeModal('detailModal');
+    renderAdminBookings();
+  } catch (e) {
+    alert('Não foi possível registrar o pagamento: ' + e.message);
+  }
 }
 
 async function markCompleted(id) {

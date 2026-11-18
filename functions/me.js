@@ -20,12 +20,12 @@
 //
 // O que mudou de lugar, e por quê:
 //
-//   • Pontos passam a ser calculados AQUI. Antes, `customerConfirm()` no
-//     navegador chamava `_awardPoints()`, que escrevia
-//     `clientProfiles/<uid>.points` direto. Como ponto vira desconto, isso é
-//     dinheiro que o cliente editava no próprio aparelho. Agora o servidor lê
-//     o preço do agendamento e a regra de pontos do `config`, e credita uma
-//     única vez (marcado por `pointsAwardedAt` no agendamento).
+//   • Pontos NÃO são creditados aqui (desde 18/11/2026). O "confirmar
+//     pagamento" do cliente é a palavra dele, sem pagamento verificado. Os
+//     pontos caem quando o pagamento é CONFIRMADO: pelo webhook da InfinitePay
+//     ou pela admin registrando o recebimento direto (lib/core/pontos.js).
+//     Antes disso, o navegador escrevia `clientProfiles/<uid>.points` direto,
+//     e depois este endpoint creditava na confirmação do cliente.
 //
 //   • `salvar-perfil` tem lista de campos permitidos. Sem ela, "salvar meu
 //     endereço" aceitaria `points` no mesmo corpo.
@@ -123,36 +123,6 @@ async function meusAgendamentos(uid) {
   return lista.filter(Boolean);
 }
 
-/**
- * Credita os pontos do agendamento, uma única vez.
- *
- * `pointsAwardedAt` no agendamento é o que torna isto idempotente: sem essa
- * marca, repetir a confirmação creditaria de novo — e repetir uma requisição é
- * a coisa mais fácil que existe.
- */
-async function creditarPontos(agendamento, uid) {
-  if (agendamento.pointsAwardedAt) return { creditado: 0, motivo: 'já creditado' };
-  const cfg = (await firebase('GET', 'config').catch(() => null)) || {};
-  const porReal = Number(cfg.pointsPerReal);
-  const fator = Number.isFinite(porReal) && porReal > 0 ? porReal : 1;
-  const preco = Number(agendamento.finalPrice || agendamento.price || 0);
-  if (!Number.isFinite(preco) || preco <= 0) return { creditado: 0, motivo: 'sem valor' };
-
-  const ganhos = Math.floor(preco * fator);
-  if (ganhos <= 0) return { creditado: 0, motivo: 'sem valor' };
-
-  const perfil = (await firebase('GET', `clientProfiles/${encodeURIComponent(uid)}`)) || {};
-  const atual = Number(perfil.points || 0);
-  const historico = Array.isArray(perfil.pointsHistory) ? perfil.pointsHistory : [];
-  historico.push({ at: new Date().toISOString(), delta: ganhos, bookingId: agendamento.id, motivo: 'serviço confirmado' });
-
-  await firebase('PATCH', `clientProfiles/${encodeURIComponent(uid)}`, {
-    points: atual + ganhos,
-    pointsHistory: historico.slice(-100),
-  });
-  return { creditado: ganhos, saldo: atual + ganhos };
-}
-
 exports.handler = async (event) => {
   const cors = corsHeaders(event);
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors, body: '' };
@@ -239,14 +209,16 @@ exports.handler = async (event) => {
         return reply(409, cors, { ok: false, error: `agendamento em status '${agendamento.status}' não pode ser confirmado` });
       }
 
-      const pontos = await creditarPontos(agendamento, uid);
+      // Sem pontos aqui: eles caem com o pagamento CONFIRMADO (webhook ou
+      // admin), não com a palavra do cliente. Ver lib/core/pontos.js.
       const agora = new Date().toISOString();
       const mudanca = { status: 'confirmed', confirmedAt: agendamento.confirmedAt || agora };
-      if (pontos.creditado > 0) mudanca.pointsAwardedAt = agora;
       await firebase('PATCH', `bookings/${encodeURIComponent(id)}`, mudanca);
 
-      console.log(`me: ${uid} confirmou ${id}; pontos creditados: ${pontos.creditado}`);
-      return reply(200, cors, { ok: true, dados: { pontos } });
+      console.log(`me: ${uid} confirmou ${id} (pontos aguardam a confirmação do pagamento)`);
+      return reply(200, cors, { ok: true, dados: {
+        pontos: { creditado: 0, motivo: 'os pontos caem quando o pagamento for confirmado' },
+      } });
     }
 
     return reply(400, cors, { ok: false, error: 'op inválida' });

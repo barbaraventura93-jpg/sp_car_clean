@@ -439,13 +439,17 @@ pedido, em vez de entrar por R$ 0.
 **Testes:** `scripts/test-precificacao.js` (regras, ataques e concorrência) e
 `scripts/test-porta-dados.js` (o preço gravado é o do catálogo).
 
-**Ficou aberto, para você decidir:**
+**Decidido e feito (18/11/2026): os pontos caem com o pagamento CONFIRMADO.**
+Pelo site, quando o webhook da InfinitePay confirma. Em dinheiro ou Pix direto,
+quando você aperta **"💵 Pagamento recebido"** no detalhe do agendamento e
+escolhe a forma. O "confirmar pagamento" do cliente não credita mais. Cada
+agendamento credita uma vez só, mesmo que o site e você confirmem
+(`functions/lib/core/pontos.js`, teste em `scripts/test-pontos.js`).
 
-1. **Quando os pontos caem.** Hoje caem quando o cliente aperta "confirmar
-   pagamento" num agendamento que você aprovou, e saem do valor que você
-   definiu na aprovação. A proposta original era só depois do pagamento
-   confirmado pela InfinitePay ou da conclusão do serviço. Isso deixaria sem
-   pontos quem paga em dinheiro ou Pix direto, até você concluir o serviço.
+Junto, um defeito antigo do webhook: se o cliente tivesse apertado "já paguei"
+antes, o pagamento real que chegasse depois era descartado como "já
+confirmado", sem registrar o valor pago. Agora "já confirmado" só vale quando
+o pagamento foi verificado.
 
 **Também fechado (18/11/2026), a pedido da Bárbara:** o visitante não altera
 mais gift card existente, nem para diminuir o saldo. Antes, dava para aplicar o
