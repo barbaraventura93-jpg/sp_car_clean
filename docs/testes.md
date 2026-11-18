@@ -118,6 +118,7 @@ Estado em 10/11/2026. "Não" é dívida conhecida, com o PR em que entra.
 | Bucket sem acesso público, IAM sem `*`, região, serviços proibidos | sim: `test-infra-estatico.js` |
 | Deploy depende dos testes e só publica da `main` | sim: `test-infra-estatico.js` |
 | `terraform fmt` e `validate` | sim, no job `testes` do workflow |
+| Alarmes: erro em qualquer função e backup não feito (inclui a frase do log de que o alarme depende) | sim: `test-alarmes.js` |
 | `npm audit` (alta ou crítica reprova) | sim, no job `testes` do workflow |
 | `build.js` (versão dos assets) e `sw.js` (cache) | indireto (o build roda em todo `npm test`); teste próprio — PR 6 |
 
