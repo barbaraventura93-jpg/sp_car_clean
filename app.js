@@ -37,6 +37,12 @@ const SVCS = {
 
 const CATS_ORDER = ['Estética Interna','Estética Externa','Serviços Especiais'];
 
+// Serviço interno (🔒 — ex.: o de revendedor) existe só para o agendamento
+// manual do painel. Nunca aparece na vitrine, no agendamento online, em
+// sugestão ao cliente nem no botão da IA do site. É a regra única: todo lugar
+// que mostra serviço ao cliente passa por aqui.
+function svcPublico(s) { return !!s && s.active !== false && s.interno !== true; }
+
 // ============================================================
 // STORAGE — Firebase Realtime Database + cache em memória
 // ============================================================
@@ -714,6 +720,7 @@ function bkLabel(b)     { return bkSvcs(b).map(sv=>`${sv.icon} ${sv.name}`).join
 let booking = { services: [], carSize: 'pq', date: null, step: 1 };
 
 function openBooking(preService) {
+  if (preService && !svcPublico(SVCS[preService])) preService = null;
   const isMoto = preService && SVCS[preService]?.veiculo === 'moto';
   const bodyType = isMoto ? '' : 'hatch';
   const carSize = isMoto ? 'pq' : bodySize(bodyType);
@@ -777,7 +784,7 @@ function renderBookingStep() {
       </div>`}`;
 
     const cards = Object.entries(SVCS)
-      .filter(([,s]) => s.active !== false && (isMotoSel ? s.veiculo === 'moto' : s.veiculo !== 'moto'))
+      .filter(([,s]) => svcPublico(s) && (isMotoSel ? s.veiculo === 'moto' : s.veiculo !== 'moto'))
       .map(([id,s]) => `
       <div class="svc-pick-card ${booking.services.includes(id)?'selected':''}" onclick="selectService('${id}')">
         <div class="svc-pick-icon">${s.icon}</div>
@@ -2335,7 +2342,7 @@ function _computeClientSuggestion(myBookings) {
   const svcCount = {};
   done.forEach(b => (b.services||[b.service]).filter(Boolean).forEach(id => svcCount[id] = (svcCount[id]||0)+1));
   const topSvc = Object.entries(svcCount).sort((a,b)=>b[1]-a[1])[0]?.[0];
-  if (!topSvc || !SVCS[topSvc]) return null;
+  if (!topSvc || !svcPublico(SVCS[topSvc])) return null;
 
   return { svcId: topSvc, daysSince: Math.round(daysSinceLast) };
 }
@@ -2957,7 +2964,7 @@ function abBuildServiceList(vType) {
     lbl.style.cssText = 'display:flex;align-items:flex-start;gap:.45rem;cursor:pointer;font-size:.78rem;padding:.3rem .35rem;border-radius:6px;line-height:1.3;transition:background .15s';
     lbl.onmouseenter = () => lbl.style.background = 'rgba(72,201,245,.07)';
     lbl.onmouseleave = () => lbl.style.background = '';
-    lbl.innerHTML = `<input type="checkbox" value="${id}" onchange="abUpdatePrice()" style="margin-top:2px;accent-color:var(--accent);width:14px;height:14px;flex-shrink:0"/> <span>${s.icon} ${esc(s.name)} <span style="color:var(--muted);font-size:.7rem">R$${s.pq}</span></span>`;
+    lbl.innerHTML = `<input type="checkbox" value="${id}" onchange="abUpdatePrice()" style="margin-top:2px;accent-color:var(--accent);width:14px;height:14px;flex-shrink:0"/> <span>${s.icon} ${esc(s.name)}${s.interno ? ' <span style="font-size:.62rem;color:#a0a0ff">🔒 Interno</span>' : ''} <span style="color:var(--muted);font-size:.7rem">R$${s.pq}</span></span>`;
     list.appendChild(lbl);
   };
   if (isMoto) {
@@ -4046,9 +4053,165 @@ function _buildPriceCorrectionHtml(b) {
     <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">💵 Correção de Valor</div>
     ${paidWarning}
     <div class="summary-row"><strong>Valor final atual</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.finalPrice || b.price)}</span></div>
-    <button class="btn-edit-date" style="margin-top:.6rem" onclick="openPriceCorrection('${escAttrJs(b.id)}')">✏️ Corrigir valor</button>
+    <div class="summary-row"><strong>Serviço(s)</strong><span>${bkLabel(b)}</span></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem">
+      <button class="btn-edit-date" onclick="openPriceCorrection('${escAttrJs(b.id)}')">✏️ Corrigir valor</button>
+      <button class="btn-edit-date" onclick="openServiceCorrection('${escAttrJs(b.id)}')">🔁 Trocar serviço</button>
+    </div>
     ${historyHtml}
+    ${_buildServiceCorrectionHistory(b)}
   </div>`;
+}
+
+// ============================================================
+// TROCA DE SERVIÇO (agendamentos concluídos)
+// ============================================================
+// Para a análise de lucro: o custo de um agendamento sai dos serviços gravados
+// nele (functions/lib/core/financeiro.js). Um serviço de revendedor registrado
+// como lavagem comum dava o custo da lavagem comum. Trocar aqui corrige o custo
+// do relatório. O estoque NÃO é mexido: a baixa já feita fica como estava,
+// para não bagunçar um saldo que já pode ter sido conferido na prateleira.
+
+// Regra pura (sem tela, sem banco): devolve o agendamento corrigido ou { erro }.
+// opts: { novoValor (opcional), motivo, quem, agora }
+function aplicarTrocaDeServico(b, novos, opts) {
+  const o = opts || {};
+  if (!b || b.status !== 'completed') return { erro: 'Só agendamento concluído pode trocar de serviço.' };
+  const lista = [...new Set((novos || []).filter(Boolean))];
+  if (!lista.length) return { erro: 'Escolha pelo menos um serviço.' };
+  const antigos = (b.services || [b.service]).filter(Boolean);
+  const mesmos = antigos.length === lista.length && antigos.every(id => lista.includes(id));
+  const atual = b.finalPrice || b.price || 0;
+  const valor = o.novoValor == null ? null : Number(o.novoValor);
+  if (valor != null && !(valor > 0)) return { erro: 'Informe um valor válido, maior que zero.' };
+  const mudaValor = valor != null && Math.abs(valor - atual) >= 0.01;
+  if (mesmos && !mudaValor) return { erro: 'Nada mudou: os serviços são os mesmos.' };
+  const motivo = String(o.motivo || '').trim();
+  if (motivo.length < 10) return { erro: 'Descreva o motivo da troca (mínimo 10 caracteres).' };
+
+  const quem = o.quem || 'admin';
+  const agora = o.agora || new Date().toISOString();
+  const nb = { ...b };
+  if (!mesmos) {
+    nb.services = lista;
+    nb.service = lista[0];
+    nb.serviceCorrections = [...(b.serviceCorrections || []),
+      { oldServices: antigos, newServices: lista, reason: motivo, correctedBy: quem, correctedAt: agora }];
+    nb.lastServiceCorrectionAt = agora;
+  }
+  if (mudaValor) {
+    nb.finalPrice = valor;
+    nb.priceCorrections = [...(b.priceCorrections || []),
+      { oldPrice: atual, newPrice: valor, reason: motivo, correctedBy: quem, correctedAt: agora }];
+    nb.lastPriceCorrectionAt = agora;
+  }
+  return { booking: nb, mudaValor, antigoValor: atual };
+}
+
+function _buildServiceCorrectionHistory(b) {
+  const list = b.serviceCorrections || [];
+  if (!list.length) return '';
+  const nomes = ids => (ids || []).map(id => SVCS[id] ? SVCS[id].icon + ' ' + esc(SVCS[id].name) : esc(id)).join(' + ');
+  return `
+    <details style="margin-top:.8rem">
+      <summary style="cursor:pointer;font-size:.78rem;font-weight:700;color:var(--muted)">🔁 Histórico de troca de serviço (${list.length})</summary>
+      <div style="margin-top:.6rem;display:flex;flex-direction:column;gap:.5rem">
+        ${list.slice().reverse().map(c => `
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.6rem .8rem;font-size:.78rem">
+            <div><strong>${nomes(c.oldServices)} → ${nomes(c.newServices)}</strong> · ${new Date(c.correctedAt).toLocaleString('pt-BR')}</div>
+            <div style="color:var(--muted);margin-top:.2rem">${esc(c.reason)}</div>
+            <div style="color:var(--muted);font-size:.72rem;margin-top:.2rem">por ${esc(c.correctedBy)}</div>
+          </div>`).join('')}
+      </div>
+    </details>`;
+}
+
+function _scPorte(b) { return b.carSize === 'gr' ? 'gr' : 'pq'; }
+
+function openServiceCorrection(id) {
+  const b = getBookings().find(x => x.id === id);
+  if (!b) return;
+  const atuais = (b.services || [b.service]).filter(Boolean);
+  const porte = _scPorte(b);
+  // Ativos + os que já estão no agendamento (mesmo que desativados depois).
+  const opcoes = Object.entries(SVCS).filter(([sid, s]) => s.active !== false || atuais.includes(sid));
+  const checks = opcoes.map(([sid, s]) => `
+    <label style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.82rem;cursor:pointer">
+      <input type="checkbox" value="${sid}" ${atuais.includes(sid) ? 'checked' : ''} onchange="_scAtualiza('${escAttrJs(id)}')"/>
+      ${s.icon} ${esc(s.name)}${s.interno ? ' <span style="font-size:.66rem;color:#a0a0ff">🔒 Interno</span>' : ''}
+      <span style="color:var(--muted);font-size:.72rem">${fmtMoney(s[porte] || 0)}</span>
+    </label>`).join('');
+  document.getElementById('detailBody').innerHTML = `
+    <div class="confirm-card">
+      <h4>🔁 Trocar Serviço</h4>
+      <div class="confirm-row"><strong>Cliente</strong><span>${esc(b.name)}</span></div>
+      <div class="confirm-row"><strong>Serviço(s) atual(is)</strong><span>${bkLabel(b)}</span></div>
+      <div class="confirm-row"><strong>Valor atual</strong><span>${fmtMoney(b.finalPrice || b.price || 0)}</span></div>
+      <div class="confirm-row"><strong>Porte</strong><span>${porte === 'gr' ? '🚙 Grande' : '🚗 Pequeno'}</span></div>
+    </div>
+    <div class="form-group" style="margin-top:1rem">
+      <label>Serviço(s) que foram feitos de verdade</label>
+      <div id="scServicos">${checks}</div>
+    </div>
+    <label style="display:flex;align-items:center;gap:.5rem;margin-top:.8rem;font-size:.82rem;cursor:pointer">
+      <input type="checkbox" id="scAtualizaValor" onchange="_scAtualiza('${escAttrJs(id)}')"/>
+      <span>Atualizar o valor para o preço de tabela: <strong id="scTabela"></strong></span>
+    </label>
+    ${b.paidAmount ? `<div style="background:#FEF5E7;border:1px solid #F39C12;border-radius:8px;padding:.7rem 1rem;font-size:.78rem;color:#7a5500;line-height:1.5;margin-top:.8rem">⚠️ Este agendamento tem pagamento registrado via InfinitePay (${fmtMoney(b.paidAmount)}). No relatório, a receita continua sendo o valor pago.</div>` : ''}
+    <div class="form-group" style="margin-top:.8rem">
+      <label>Motivo da troca</label>
+      <textarea id="scMotivo" rows="2" placeholder="Ex: Serviço de revendedor registrado como lavagem comum"></textarea>
+    </div>
+    <p style="font-size:.74rem;color:var(--muted);margin-top:.6rem">O custo do relatório de lucro passa a ser o do serviço novo. O estoque não muda: a baixa já feita continua como estava.</p>`;
+  document.getElementById('detailFooter').innerHTML = `
+    <button class="btn-ghost" onclick="viewBooking('${escAttrJs(id)}')">← Voltar</button>
+    <button class="btn-approve" style="padding:.6rem 1.4rem" onclick="saveServiceCorrection('${escAttrJs(id)}')">💾 Salvar Troca</button>`;
+  _scAtualiza(id);
+}
+
+function _scEscolhidos() {
+  return [...document.querySelectorAll('#scServicos input[type=checkbox]:checked')].map(cb => cb.value);
+}
+
+function _scAtualiza(id) {
+  const b = getBookings().find(x => x.id === id);
+  const el = document.getElementById('scTabela');
+  if (!b || !el) return;
+  const porte = _scPorte(b);
+  const total = _scEscolhidos().reduce((s, sid) => s + (SVCS[sid]?.[porte] || 0), 0);
+  el.textContent = fmtMoney(total);
+}
+
+function saveServiceCorrection(id) {
+  const b = getBookings().find(x => x.id === id);
+  if (!b) return;
+  const novos = _scEscolhidos();
+  const porte = _scPorte(b);
+  const tabela = novos.reduce((s, sid) => s + (SVCS[sid]?.[porte] || 0), 0);
+  const usarTabela = document.getElementById('scAtualizaValor')?.checked;
+  const r = aplicarTrocaDeServico(b, novos, {
+    novoValor: usarTabela ? tabela : null,
+    motivo: document.getElementById('scMotivo')?.value,
+    quem: _authUser?.email || 'admin',
+  });
+  if (r.erro) { alert(r.erro); return; }
+  const nomes = novos.map(sid => SVCS[sid]?.name || sid).join(' + ');
+  if (!confirm(`Confirmar troca?\n\nServiço(s): ${nomes}` +
+      (r.mudaValor ? `\nValor: ${fmtMoney(r.antigoValor)} → ${fmtMoney(r.booking.finalPrice)}` : ''))) return;
+  updateBooking(r.booking);
+  if (r.mudaValor) {
+    fetch('/api/notify-booking', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'price-correction', id: b.id, name: b.name, phone: b.phone,
+        oldPrice: fmtMoney(r.antigoValor), newPrice: fmtMoney(r.booking.finalPrice),
+        reason: (document.getElementById('scMotivo')?.value || '').trim()
+      })
+    }).catch(() => {});
+  }
+  renderAdminBookings();
+  viewBooking(id);
 }
 
 function openPriceCorrection(id) {
@@ -5922,7 +6085,7 @@ function openComboForm(id) {
   const svcChecks = Object.entries(SVCS).map(([sid, s]) =>
     `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.82rem;cursor:pointer">
       <input type="checkbox" value="${sid}" ${selectedIds.includes(sid) ? 'checked' : ''} onchange="updateComboFinalPricePreview()"/>
-      ${s.icon} ${esc(s.name)} <span style="color:var(--muted);font-size:.72rem">(pq: ${fmtMoney(s.pq)} / gr: ${fmtMoney(s.gr)})</span>
+      ${s.icon} ${esc(s.name)}${s.interno ? ' <span style="font-size:.66rem;color:#a0a0ff">🔒 Interno</span>' : ''} <span style="color:var(--muted);font-size:.72rem">(pq: ${fmtMoney(s.pq)} / gr: ${fmtMoney(s.gr)})</span>
     </label>`
   ).join('');
   const isInternal = combo?.internal === true;
@@ -6135,7 +6298,7 @@ function buildServiceList(svcs) {
       <div class="svc-admin-header">
         <span class="svc-admin-icon">${s.icon || '🔧'}</span>
         <div class="svc-admin-meta">
-          <div class="svc-admin-name">${esc(s.name)} <span style="font-size:.62rem;font-weight:600;color:var(--muted);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:.05rem .35rem;margin-left:.3rem">${vBadge}</span></div>
+          <div class="svc-admin-name">${esc(s.name)} <span style="font-size:.62rem;font-weight:600;color:var(--muted);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:.05rem .35rem;margin-left:.3rem">${vBadge}</span>${s.interno ? '<span style="font-size:.62rem;font-weight:600;padding:.05rem .4rem;border-radius:6px;margin-left:.3rem;background:rgba(150,150,255,.15);color:#a0a0ff">🔒 Interno</span>' : ''}</div>
           <div class="svc-admin-sub">${s.cat || ''} · ${prazoDeEntrega(s.daysExtra)}</div>
         </div>
         <button class="btn-toggle-svc${isActive ? '' : ' off'}" onclick="toggleService('${id}')">
@@ -6364,6 +6527,12 @@ function _desenharServiceForm(id, s, wrap) {
           <select id="sfActive"><option value="1"${s?.active!==false?' selected':''}>✅ Ativo</option><option value="0"${s?.active===false?' selected':''}>⛔ Inativo</option></select>
         </div>
       </div>
+      <div class="form-row full"><div class="form-group"><label>Visibilidade</label>
+        <select id="sfInterno">
+          <option value="0"${s?.interno!==true?' selected':''}>🌐 Público — aparece no site para clientes</option>
+          <option value="1"${s?.interno===true?' selected':''}>🔒 Interno — só no agendamento manual do painel (ex.: revendedor)</option>
+        </select>
+      </div></div>
       <div class="form-row full"><div class="form-group"><label>Descrição</label><input id="sfDesc" value="${s?.desc||''}"/></div></div>
       <div style="margin-top:1.2rem">
         <div style="font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.6rem">Insumos consumidos</div>
@@ -6455,6 +6624,7 @@ async function saveService(id) {
   const cat     = document.getElementById('sfCat')?.value;
   const days    = parseInt(document.getElementById('sfDays')?.value) || 0;
   const active  = document.getElementById('sfActive')?.value === '1';
+  const interno = document.getElementById('sfInterno')?.value === '1';
   const veiculo = document.getElementById('sfVeiculo')?.value === 'moto' ? 'moto' : 'carro';
   const desc    = document.getElementById('sfDesc')?.value.trim();
   let salePq  = parseFloat(document.getElementById('sfSalePq')?.value) || 0;
@@ -6482,7 +6652,7 @@ async function saveService(id) {
   const costPq = c.pq;
   const costGr = veiculo === 'moto' ? c.pq : c.gr;
 
-  const data = { name, icon, cat, veiculo, daysExtra: days, active, desc,
+  const data = { name, icon, cat, veiculo, daysExtra: days, active, interno, desc,
     pricing: { pq: { cost: costPq, sale: salePq }, gr: { cost: costGr, sale: saleGr } },
     ...(faqs.length ? { faqs } : {}) };
 
@@ -8083,7 +8253,7 @@ function getDisplayCats() {
   const ORDER = ['Estética Interna', 'Estética Externa', 'Serviços Especiais'];
   const groups = {};
   Object.entries(SVCS).forEach(([id, s]) => {
-    if (s.active === false) return;
+    if (!svcPublico(s)) return;
     if (s.veiculo === 'moto') return; // motos têm bloco próprio
     const cat = s.cat || 'Outros';
     if (!groups[cat]) groups[cat] = [];
@@ -8119,7 +8289,7 @@ function _svcCardHtml(id, price) {
 // IDs de serviços de moto ativos (bloco próprio na vitrine)
 function getMotoServices() {
   return Object.entries(SVCS)
-    .filter(([, s]) => s.active !== false && s.veiculo === 'moto')
+    .filter(([, s]) => svcPublico(s) && s.veiculo === 'moto')
     .map(([id]) => id);
 }
 
@@ -8552,6 +8722,7 @@ _buildHeroCarousel(HERO_FALLBACK);
             daysExtra: s.daysExtra || 0,
             desc: s.desc || '',
             active: s.active !== false,
+            interno: s.interno === true,
             _cost_pq: s.pricing?.pq?.cost ?? 0,
             _cost_gr: s.pricing?.gr?.cost ?? 0,
             faqs: Array.isArray(s.faqs) ? s.faqs : (s.faqs ? Object.values(s.faqs) : []),
@@ -9625,7 +9796,7 @@ function _conciergeAppend(role, text, serviceId) {
   bubble.style.cssText = `max-width:80%;padding:.5rem .75rem;border-radius:${isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px'};font-size:.83rem;line-height:1.45;white-space:pre-wrap;word-break:break-word;${isUser ? 'background:var(--accent);color:#fff' : 'background:rgba(255,255,255,.08);color:inherit'}`;
   bubble.textContent = text;
   wrap.appendChild(bubble);
-  if (serviceId && SVCS[serviceId]) {
+  if (serviceId && svcPublico(SVCS[serviceId])) {
     const btn = document.createElement('button');
     btn.className = 'btn-primary';
     btn.style.cssText = 'font-size:.75rem;padding:.25rem .65rem;margin-top:.4rem;display:block';
