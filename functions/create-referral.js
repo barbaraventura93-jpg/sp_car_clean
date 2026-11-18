@@ -1,8 +1,11 @@
 // Função "Indique um Amigo"
-// Recebe a indicação feita pelo cliente (nome/e-mail/telefone do amigo),
-// cria o cupom de boas-vindas do amigo no Firebase e registra a indicação.
-// Roda server-side com o FIREBASE_DATABASE_SECRET para não depender das regras
-// de escrita do cliente (mesmo padrão do birthday-check.js).
+// Recebe a indicação feita pelo cliente (nome/e-mail/telefone do amigo), cria o
+// cupom de boas-vindas do amigo e registra a indicação.
+// Roda no servidor, com acesso direto ao banco (DynamoDB desde 16/11/2026) —
+// assim o navegador não precisa de permissão de escrita nesses nós (mesmo
+// padrão do birthday-check.js).
+
+const { dbGet, dbSet, dbPush } = require('./lib/core/store');
 
 const FRIEND_PCT   = Number(process.env.REFERRAL_FRIEND_PCT   || 15); // % desconto p/ o amigo
 const REFERRER_PCT = Number(process.env.REFERRAL_REFERRER_PCT || 15); // % desconto p/ quem indicou (na conversão)
@@ -46,17 +49,11 @@ exports.handler = async (event) => {
     return { statusCode: 429, body: JSON.stringify({ ok: false, error: 'too-many-requests' }) };
   }
 
-  const dbUrl    = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
-  const dbSecret = process.env.FIREBASE_DATABASE_SECRET;
   const sjsService = process.env.EMAILJS_SERVICE_ID;
   const sjsPublic  = process.env.EMAILJS_PUBLIC_KEY;
   const sjsPrivate = process.env.EMAILJS_PRIVATE_KEY;
   const sjsTemplate= process.env.EMAILJS_TEMPLATE_UPDATE || 'template_update';
   const siteUrl    = (process.env.URL || 'https://www.spcarclean.com.br').replace(/\/$/, '');
-
-  if (!dbUrl || !dbSecret) {
-    return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'db-not-configured' }) };
-  }
 
   let data;
   try { data = JSON.parse(event.body || '{}'); }
@@ -93,8 +90,7 @@ exports.handler = async (event) => {
 
   try {
     // Evita indicar duas vezes o mesmo e-mail.
-    const existingResp = await fetch(`${dbUrl}/referrals.json?auth=${dbSecret}`);
-    const existing = await existingResp.json();
+    const existing = await dbGet('/referrals');
     if (existing && typeof existing === 'object') {
       const dup = Object.values(existing).some(r => r && (r.friendEmail || '').toLowerCase() === friendEmail);
       if (dup) return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'already-referred' }) };
@@ -106,30 +102,21 @@ exports.handler = async (event) => {
     const friendCode = refCode('AMIGO');
 
     // 1) Cupom nominal (por e-mail) do amigo indicado
-    await fetch(`${dbUrl}/coupons/${friendCode}.json?auth=${dbSecret}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await dbSet(`/coupons/${friendCode}`, ({
         code: friendCode, discountType: 'percent', discountValue: FRIEND_PCT,
         minValue: 0, used: false, clientEmail: friendEmail, validUntil: expiry,
         createdAt: now.toISOString(),
         note: `Indicação de ${referrerName || 'cliente'} — bônus de boas-vindas`
-      })
-    });
+    }));
 
     // 2) Registro da indicação (o amigo vira "Oportunidade" na base)
-    const referralResp = await fetch(`${dbUrl}/referrals.json?auth=${dbSecret}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await dbPush('/referrals', ({
         referrerName, referrerEmail, referrerPhone, referrerUid,
         friendName, friendEmail, friendPhone,
         friendCouponCode: friendCode, referrerCouponCode: null,
         status: 'pending', sourceBookingId,
         createdAt: now.toISOString(), convertedAt: null, convertedBookingId: null
-      })
-    });
-    await referralResp.json().catch(() => null);
+    }));
 
     // 3) E-mails (best-effort) via EmailJS REST
     const sendEmail = async (params) => {

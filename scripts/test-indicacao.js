@@ -9,13 +9,17 @@
 // devolvendo o código do cupom na resposta — o que deixava qualquer pessoa
 // gerar um cupom para si.
 //
-// Sem rede: `fetch` é um dublê do banco e do serviço de e-mail. Nenhum e-mail
-// sai daqui, e os endereços são inventados (.invalid).
+// Sem rede: o banco e o serviço de e-mail são dublês. Nenhum e-mail sai daqui,
+// e os endereços são inventados (.invalid).
+//
+// A costura do banco mudou em 16/11/2026: era `fetch` (quando o banco era o
+// Realtime Database, falado por HTTP) e agora é o módulo `lib/core/store`. As
+// asserções são as mesmas — o que este teste trava é o comportamento da
+// função, não por onde ela grava.
 
 const assert = require('assert');
 const path = require('path');
 
-process.env.FIREBASE_DATABASE_URL = 'https://banco.invalid';
 process.env.FIREBASE_DATABASE_SECRET = 'segredo-de-teste';
 process.env.EMAILJS_SERVICE_ID = 'servico';
 process.env.EMAILJS_PUBLIC_KEY = 'publica';
@@ -27,15 +31,19 @@ global.fetch = async (url, opt = {}) => {
     emails.push(JSON.parse(opt.body).template_params);
     return { ok: true, status: 200, text: async () => 'OK' };
   }
-  if (url.startsWith('https://banco.invalid/')) {
-    const chave = decodeURIComponent(url.slice('https://banco.invalid/'.length).split('.json')[0]);
-    if (opt.method === 'PUT' || opt.method === 'POST') {
-      gravados.push({ chave, corpo: JSON.parse(opt.body) });
-      return { ok: true, status: 200, json: async () => ({ name: '-chave' }) };
-    }
-    return { ok: true, status: 200, json: async () => (chave === 'referrals' ? indicacoes : null) };
-  }
   throw new Error('o teste não pode sair para a rede: ' + url);
+};
+
+// Dublê do banco. Precisa ser instalado ANTES do `require` da função: ela
+// desestrutura `dbGet`/`dbSet`/`dbPush` ao carregar, e trocar depois não
+// alcançaria as referências já capturadas.
+const store = require(path.resolve(__dirname, '../functions/lib/core/store.js'));
+const semBarra = (c) => String(c).replace(/^\/+/, '');
+store.dbGet = async (caminho) => (semBarra(caminho) === 'referrals' ? indicacoes : null);
+store.dbSet = async (caminho, corpo) => { gravados.push({ chave: semBarra(caminho), corpo }); };
+store.dbPush = async (caminho, corpo) => {
+  gravados.push({ chave: semBarra(caminho), corpo });
+  return { name: '-chave' };
 };
 
 const { handler, _interno } = require(path.resolve(__dirname, '../functions/create-referral.js'));

@@ -11,7 +11,7 @@
 
 const { pushBookingUpdate } = require('./lib/webpush');
 const { verifyAdmin, bearerToken } = require('./lib/admin-auth');
-const { dbGet } = require('./lib/core/firebase');
+const { dbGet } = require('./lib/core/store');
 const { clientIp, rateLimit, originAllowed, corsHeaders } = require('./lib/guard');
 
 exports.handler = async (event) => {

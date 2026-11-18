@@ -9,6 +9,9 @@
 // mesma resposta genérica, para não revelar se um código existe (anti-oráculo),
 // e há rate-limit por IP.
 
+// O banco é o DynamoDB desde 16/11/2026.
+const { dbGet } = require('./lib/core/store');
+
 const RL_WINDOW_MS = 3_600_000; // 1 hora
 const RL_MAX       = 30;        // tentativas por IP/hora
 const rlStore      = {};        // em memória — reseta a cada cold start
@@ -45,19 +48,8 @@ exports.handler = async (event) => {
   const ip = (event.headers['x-forwarded-for'] || 'unknown').split(',')[0].trim();
   if (!checkRL(ip)) return reply(429, { ok: false, error: 'muitas tentativas — tente mais tarde' });
 
-  const dbUrl    = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
-  const dbSecret = process.env.FIREBASE_DATABASE_SECRET;
-  if (!dbUrl || !dbSecret) {
-    console.error('booking-status: FIREBASE_DATABASE_URL ou FIREBASE_DATABASE_SECRET não configurado');
-    return reply(500, { ok: false, error: 'indisponível' });
-  }
-
   try {
-    const resp = await fetch(
-      `${dbUrl}/bookings/${encodeURIComponent(code)}.json?auth=${dbSecret}`
-    );
-    if (!resp.ok) return notFound();
-    const booking = await resp.json();
+    const booking = await dbGet(`bookings/${code}`);
     if (!booking || typeof booking !== 'object') return notFound();
 
     // Confere o e-mail do agendamento (case-insensitive).

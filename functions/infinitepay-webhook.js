@@ -11,6 +11,7 @@
 // reenviar, em vez de confirmar às cegas (fail-closed).
 
 const { pushBookingUpdate } = require('./lib/webpush');
+const { firebase } = require('./lib/core/store-http');
 
 const PAYMENT_CHECK_URL = 'https://api.checkout.infinitepay.io/payment_check';
 const PAID_STATUSES     = ['paid', 'approved', 'captured', 'succeeded', 'complete', 'completed'];
@@ -39,17 +40,11 @@ exports.handler = async (event) => {
   }
 
   const handle   = process.env.INFINITEPAY_HANDLE;
-  const dbUrl    = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
-  const dbSecret = process.env.FIREBASE_DATABASE_SECRET;
 
   // Sem o handle não há como verificar a autenticidade → fail-closed (peça reenvio).
   if (!handle) {
     console.error('infinitepay-webhook: INFINITEPAY_HANDLE não configurado — pagamento não verificado');
     return retry('handle not configured');
-  }
-  if (!dbUrl || !dbSecret) {
-    console.error('infinitepay-webhook: FIREBASE_DATABASE_URL ou FIREBASE_DATABASE_SECRET não configurado');
-    return retry('db not configured');
   }
 
   // ── Verificação server-side contra a API oficial do InfinitePay ──────────
@@ -71,7 +66,7 @@ exports.handler = async (event) => {
   // ── Ativação de Gift Card ────────────────────────────────────────────────
   if (String(order_nsu).startsWith('GIFT-')) {
     try {
-      const gc = await dbReq('GET', dbUrl, dbSecret, `/giftcards/${encodeURIComponent(order_nsu)}`);
+      const gc = await dbReq('GET', `/giftcards/${encodeURIComponent(order_nsu)}`);
       if (!gc) return ok('gift card not found');
       if (gc.status === 'active') return ok('gift card already active');
       // Só um cartão AINDA NÃO PAGO pode ser ativado. O webhook pode ser
@@ -89,7 +84,7 @@ exports.handler = async (event) => {
         return ok('amount mismatch');
       }
 
-      await dbReq('PATCH', dbUrl, dbSecret, `/giftcards/${encodeURIComponent(order_nsu)}`, {
+      await dbReq('PATCH', `/giftcards/${encodeURIComponent(order_nsu)}`, {
         status: 'active',
         balance: gc.amount,
         activatedAt: new Date().toISOString(),
@@ -108,7 +103,7 @@ exports.handler = async (event) => {
 
   // ── Confirmação de agendamento ───────────────────────────────────────────
   try {
-    const booking = await dbReq('GET', dbUrl, dbSecret, `/bookings/${encodeURIComponent(order_nsu)}`);
+    const booking = await dbReq('GET', `/bookings/${encodeURIComponent(order_nsu)}`);
     if (!booking) return ok('booking not found');
     if (booking.status === 'confirmed') return ok('already confirmed');
     // Só confirma o que está esperando pagamento. Pelo mesmo motivo do gift
@@ -130,7 +125,7 @@ exports.handler = async (event) => {
       return ok('amount mismatch');
     }
 
-    await dbReq('PATCH', dbUrl, dbSecret, `/bookings/${encodeURIComponent(order_nsu)}`, {
+    await dbReq('PATCH', `/bookings/${encodeURIComponent(order_nsu)}`, {
       status: 'confirmed',
       paymentConfirmedAt: new Date().toISOString(),
       paymentTransactionId: transaction_nsu || '',
@@ -210,13 +205,10 @@ function amountIsShort(paidCents, expectedCents) {
   return paidCents < expectedCents - 1;
 }
 
-async function dbReq(method, dbUrl, dbSecret, path, body) {
-  const resp = await fetch(`${dbUrl}${path}.json?auth=${dbSecret}`, {
-    method,
-    ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
-  });
-  if (!resp.ok) throw new Error(`Firebase ${method} ${path} → HTTP ${resp.status}`);
-  return resp.json();
+// Banco: DynamoDB desde 16/11/2026. O nome e os verbos ficaram porque é o que
+// os quatro pontos de chamada abaixo usam; quem traduz é lib/core/store-http.js.
+async function dbReq(method, path, body) {
+  return firebase(method, path, body);
 }
 
 async function sendGiftEmail(gc, order_nsu) {

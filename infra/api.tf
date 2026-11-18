@@ -21,6 +21,9 @@ locals {
     "notify-booking",
     "notify-client",
     "push-subscription",
+    # Página pública de descadastro de marketing: sem login, um clique, aberta
+    # a partir do link no rodapé do e-mail (functions/unsubscribe.js).
+    "unsubscribe",
     "upload-url",
   ]
 
@@ -130,6 +133,13 @@ resource "aws_lambda_function" "fn" {
   environment {
     # BACKUP_BUCKET só na função que grava o backup: posto no mapa comum, ele
     # alteraria a configuração das 15 funções a cada apply, sem necessidade.
+    #
+    # DATA_TABLE é a tabela de dados do negócio, que substituiu o Firebase em
+    # 16/11/2026. Vai no mapa comum porque quase toda função lê dados.
+    #
+    # Comentário dentro do mapa reabre o grupo de alinhamento do `terraform
+    # fmt` com outra largura — foi o que reprovou o CI uma vez. Por isso a
+    # explicação fica aqui fora, e não entre as variáveis.
     variables = merge(
       {
         FN_NAME              = each.key
@@ -137,6 +147,7 @@ resource "aws_lambda_function" "fn" {
         URL                  = local.site_url
         ORIGIN_VERIFY_SECRET = random_password.origin_verify.result
         PUSH_TABLE           = aws_dynamodb_table.push.name
+        DATA_TABLE           = aws_dynamodb_table.data.name
         MEDIA_BUCKET         = aws_s3_bucket.media.bucket
         MEDIA_BASE_URL       = local.media_base_url
 
@@ -160,6 +171,7 @@ resource "aws_lambda_function" "fn" {
     aws_iam_role_policy_attachment.lambda_logs,
     aws_iam_role_policy.lambda_ssm,
     aws_iam_role_policy.lambda_push,
+    aws_iam_role_policy.lambda_data,
     aws_iam_role_policy.lambda_media,
     aws_iam_role_policy.lambda_backup,
     aws_ssm_parameter.vapid_private_key,
