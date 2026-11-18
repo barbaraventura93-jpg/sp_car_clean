@@ -155,8 +155,13 @@ assert.strictEqual(gravar('giftcards/G1', { status: 'pending', balance: 0, amoun
 assert.strictEqual(gravar('giftcards/G1', { status: 'pending', balance: 0, amount: '200' }), false);
 
 const ativo = { code: 'G1', status: 'active', amount: 200, balance: 200 };
-assert.strictEqual(gravar('giftcards/G1', { ...ativo, balance: 50 }, ativo), true, 'gastar diminui saldo');
-assert.strictEqual(gravar('giftcards/G1', { ...ativo, balance: 0, status: 'depleted' }, ativo), true);
+// ATAQUE (fechado em 18/11/2026): baixar o saldo direto. Era permitido "porque
+// só diminui", e isso abria o uso infinito (aplicar o desconto no agendamento e
+// nunca mandar a baixa) e zerar o cartão de outra pessoa. Gastar saldo agora é
+// só do servidor, junto com o agendamento (test-precificacao.js).
+assert.strictEqual(gravar('giftcards/G1', { ...ativo, balance: 50 }, ativo), false, 'visitante não baixa saldo');
+assert.strictEqual(gravar('giftcards/G1', { ...ativo, balance: 0, status: 'depleted' }, ativo), false,
+  'visitante não zera cartão alheio');
 
 // ATAQUE: recarregar o próprio gift card, ou aumentar o valor de face.
 assert.strictEqual(gravar('giftcards/G1', { ...ativo, balance: 500 }, ativo), false, 'saldo não sobe');

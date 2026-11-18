@@ -446,11 +446,14 @@ pedido, em vez de entrar por R$ 0.
    definiu na aprovação. A proposta original era só depois do pagamento
    confirmado pela InfinitePay ou da conclusão do serviço. Isso deixaria sem
    pontos quem paga em dinheiro ou Pix direto, até você concluir o serviço.
-2. **O visitante ainda pode diminuir o saldo de um gift card** pela regra
-   antiga (`usarGiftCard` em `regras-publicas.js`). Não ganha dinheiro com
-   isso: o abatimento no agendamento agora é do servidor. Mas quem souber o
-   código consegue zerar o cartão de outra pessoa. Fechar exige mudar também
-   os casos de `scripts/regras-emulador.js`, que é da sessão de revisão.
+
+**Também fechado (18/11/2026), a pedido da Bárbara:** o visitante não altera
+mais gift card existente, nem para diminuir o saldo. Antes, dava para aplicar o
+desconto e nunca mandar a baixa (o mesmo cartão valia de novo), ou zerar o
+cartão de outra pessoa sabendo o código. Agora só o servidor (junto com o
+agendamento) e o admin mexem no saldo. Mudou em `regras-publicas.js`, em
+`database.rules.json` (referência antiga, mantida igual) e nos casos de
+`scripts/regras-emulador.js`.
 
 ---
 

@@ -137,6 +137,17 @@ const admin = (corpo) => chamar(corpo, { token: 'token-admin' });
     assert.strictEqual(escritas.length, 0, `${campo}: não pode ter gravado nada`);
   }
 
+  // ── visitante: saldo de gift card só muda pelo servidor ─────────────
+  // Uso infinito e "zerar o cartão alheio" (fechados em 18/11/2026): baixa
+  // direta do saldo era permitida porque "só diminui".
+  banco['giftcards/GIFT-A'] = { code: 'GIFT-A', status: 'active', amount: 200, balance: 200 };
+  for (const dados of [{ balance: 50 }, { balance: 0, status: 'depleted' }]) {
+    r = await visitante({ op: 'mesclar', caminho: 'giftcards/GIFT-A', dados });
+    assert.strictEqual(r.status, 403, 'visitante não mexe no saldo: ' + JSON.stringify(dados));
+  }
+  assert.strictEqual(banco['giftcards/GIFT-A'].balance, 200, 'saldo intacto');
+  assert.strictEqual(escritas.length, 0);
+
   // ── visitante: mesclar é validado pelo RESULTADO, não pelo pedaço ───
   //
   // É aqui que mora o erro fácil: olhar só `{status:'cancelled'}` e aprovar,

@@ -106,14 +106,14 @@ function criarGiftCard(novo) {
     && numero(novo.amount) && novo.amount > 0;
 }
 
-// Gastar gift card: só diminui saldo, e só enquanto está ativo.
-function usarGiftCard(novo, atual) {
-  if (!novo || typeof novo !== 'object' || !atual || typeof atual !== 'object') return false;
-  if (atual.status !== 'active') return false;
-  if (novo.amount !== atual.amount || novo.code !== atual.code) return false;
-  if (!numero(novo.balance) || novo.balance < 0 || novo.balance > atual.balance) return false;
-  return novo.status === 'active' || novo.status === 'depleted';
-}
+// Gastar gift card NÃO é mais escrita do visitante (desde 18/11/2026).
+//
+// Antes, o visitante podia baixar o saldo de qualquer cartão ativo, desde que
+// só diminuísse. Isso deixava duas brechas: o navegador aplicava o desconto no
+// agendamento e podia simplesmente não mandar a baixa (o mesmo cartão valia de
+// novo), e quem conhecesse o código zerava o cartão de outra pessoa sem usar.
+// Agora o saldo só muda pelo servidor, na mesma transação que cria o
+// agendamento (lib/core/agendamento-publico.js), ou pelo admin.
 
 /**
  * O visitante pode gravar `novo` em `segmentos`?
@@ -131,7 +131,7 @@ function podeGravar(segmentos, novo, atual) {
   if (no === 'bookings') return existe ? alterarAgendamento(novo, atual) : criarAgendamento(novo, id);
   if (no === 'waitlist') return !existe && criarEspera(novo, id);
   if (no === 'feedback') return !existe && criarAvaliacao(novo);
-  if (no === 'giftcards') return existe ? usarGiftCard(novo, atual) : criarGiftCard(novo);
+  if (no === 'giftcards') return !existe && criarGiftCard(novo);
   return false;
 }
 
