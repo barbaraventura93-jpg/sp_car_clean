@@ -9,6 +9,17 @@ Nunca cole senha, chave ou token em conversa, e-mail ou arquivo do repositório.
 
 ## 1. Trocar a chave de acesso da AWS que está no ambiente — recomendado (risco aceito em 14/11/2026)
 
+**Feito em 18/11/2026**, depois do aviso da AWS de "conta possivelmente
+acessada por terceiros" (o Lambda ficou bloqueado na conta inteira):
+- a chave de maio (…WCX7) foi excluída;
+- a chave de agosto (…YVWI) foi **desativada**, não excluída: se nada parar
+  até 25/11, pode excluir;
+- a chave nova (…YTCL) foi criada pelo `barbara-admin` e está no ambiente;
+- o usuário perdeu o poder de criar permissões (`IAMFullAccess` trocado por
+  `IAMReadOnlyAccess`).
+
+Falta ainda o passo 3 acima (usuário só de leitura para a revisão), se quiser.
+
 **Situação:** o ambiente de desenvolvimento do Claude guarda uma chave de
 acesso da AWS que não expira e tem permissão quase total (inclusive para criar
 outras permissões). Em 14/11/2026 você decidiu mantê-la para o desenvolvimento
@@ -32,6 +43,32 @@ dela.
 continua lendo a AWS, mas sem poder alterar nada.
 
 **Custo:** nenhum.
+
+---
+
+## 1a. Ativar MFA no `barbara-admin` — FEITO em 18/11/2026
+
+**Por quê:** o `barbara-admin` tem acesso total (`AdministratorAccess`) e senha
+de console, sem MFA. Quem descobrir a senha entra como administradora.
+
+**Passo a passo:** entre como `barbara-admin` > nome no canto superior direito
+> **Security credentials** > **Assign MFA device** (app autenticador ou passkey).
+
+**Resultado esperado:** o login do `barbara-admin` pede o segundo fator.
+
+---
+
+## 1b. Liberar custos para o `barbara-admin` — FEITO em 18/11/2026
+
+**Por quê:** a AWS esconde custos de todo usuário que não é root até o root
+liberar ("IAM user access not activated"). Liberado, o root fica só para
+emergência.
+
+**Passo a passo:** como root > nome da conta > **Account** > **IAM user and role
+access to Billing information** > **Edit** > **Activate IAM Access** > **Update**.
+Se a tela não estiver lá, procure em AWS Settings > Billing.
+
+**Resultado esperado:** o `barbara-admin` abre o Cost Explorer sem erro.
 
 ---
 
