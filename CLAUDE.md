@@ -4,6 +4,51 @@
 
 - Falar sempre em português com a Bárbara.
 
+## Credencial AWS expirada ou inválida — revalidar sem perguntar
+
+Pedido da Bárbara (18/11/2026). Vale como autorização permanente.
+
+Quando uma chamada à AWS falhar por credencial expirada ou inválida
+(`ExpiredToken`, `InvalidClientTokenId`, "expired or invalid AWS credentials"):
+
+1. **Não parar nem perguntar.** Gerar o link de login na hora:
+   `aws login --remote` (precisa do AWS CLI 2.32.0 ou mais novo; se faltar,
+   instalar o CLI v2 primeiro). O comando mostra uma URL e um código.
+2. **Abrir o link para ela:** mostrar a URL e o código logo no início da
+   resposta, e mandar notificação (PushNotification) se ela estiver longe.
+   O login em si é dela: só ela entra com a conta, e Claude não digita senha.
+   **Pedir que ela entre com o usuário `barbara-admin`, nunca com o root.**
+   Login de root dispara e-mail de "conta acessada" e deixa a sessão com a
+   chave mestra da conta (decisão de 18/11/2026, depois de um alerta assim).
+3. **Revalidar sozinho:** esperar o `aws login` terminar e rodar
+   `aws sts get-caller-identity`. Se der certo, retomar a tarefa de onde parou,
+   sem pedir de novo.
+4. **Se o erro vier da ferramenta MCP da AWS** (`aws___run_script`), o
+   `aws login` do terminal não conserta: essa credencial vem do conector. Nesse
+   caso, dizer a ela para reconectar o conector da AWS nas configurações de
+   conectores do claude.ai e tentar de novo logo depois. Enquanto isso, seguir
+   pelo CLI se ele estiver autenticado.
+
+## Permissões da chave do ambiente (`github-actions-tracker`)
+
+Desde 18/11/2026 a chave do ambiente **só lê o IAM** (`IAMReadOnlyAccess`).
+Ela não cria papel, política nem chave, e não se dá permissão nova.
+
+- Mudança de IAM (inclusive `terraform apply` que mexe em `aws_iam_*`) é feita
+  com o login do `barbara-admin` via `aws login`, com ela ciente do que muda.
+- Não devolver `IAMFullAccess` à chave nem criar política "temporária" nela.
+- O deploy não usa essa chave: entra pelo papel OIDC `sp-car-clean-github-deploy`.
+
+## Testes — regra do projeto
+
+- Toda mudança roda `npm test` antes do push. O deploy na `main` só publica se
+  o job `testes` passar.
+- Todo bug corrigido ganha teste de regressão (falha antes, passa depois).
+- Toda regra de negócio nova ganha teste.
+- Não pular nem desativar teste para ficar verde. Não usar `--no-verify`.
+- Padrão: Node + `assert` em `scripts/test-*.js`, sem rede, sem dado real de
+  cliente, sem dependência nova. Como rodar, escrever e ler: `docs/testes.md`.
+
 ## AWS Agent Toolkit — regras da experiência nova
 
 > **help_level salvo: HIGH (Alta)** — ao construir na AWS, explicar cada passo antes

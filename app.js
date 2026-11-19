@@ -37,6 +37,12 @@ const SVCS = {
 
 const CATS_ORDER = ['Estética Interna','Estética Externa','Serviços Especiais'];
 
+// Serviço interno (🔒 — ex.: o de revendedor) existe só para o agendamento
+// manual do painel. Nunca aparece na vitrine, no agendamento online, em
+// sugestão ao cliente nem no botão da IA do site. É a regra única: todo lugar
+// que mostra serviço ao cliente passa por aqui.
+function svcPublico(s) { return !!s && s.active !== false && s.interno !== true; }
+
 // ============================================================
 // STORAGE — Firebase Realtime Database + cache em memória
 // ============================================================
@@ -65,6 +71,9 @@ let _checkinBookingId = null;
 let _checkinPhotos    = {};
 
 let _bookings = [];
+// Espelho do que já está no banco, por id, para o setBookings gravar só o
+// que mudou. Preenchido pelo listener de /bookings.
+let _bookingsRemotos = {};
 let _blocked  = [];
 let _dayLoad  = {};   // lotação pública por dia { 'YYYY-MM-DD': nº de vagas ocupadas } — sem dados pessoais
 let _fbDB, _bookingsRef, _blockedRef, _cfgRef, _galleryRef, _servicesRef, _combosRef, _clientProfilesRef, _couponsRef, _waitlistRef, _feedbackRef, _giftcardsRef, _stockRef, _stockRecipesRef, _dayLoadRef, _bookingIndexRef, _portfolioRef, _referralsRef;
@@ -246,10 +255,47 @@ let _pendingSurveyCode = null;
 let _surveyRating = 0;
 let _surveyBookingData = null;
 
+// Todo dado que veio de fora (cliente, banco, erro de rede) passa por aqui
+// antes de entrar em innerHTML. Nome, carro, placa e observação são escritos
+// por qualquer visitante: sem escape, um "nome" com <img onerror=...> rodaria
+// no navegador de quem abre o painel. O teste scripts/test-painel-escape.js
+// reprova interpolação nova desses campos sem esc()/escAttrJs().
 function escHtml(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 const esc = escHtml;
+// Para valor dentro de aspas simples num atributo de evento:
+//   onclick="abrir('${escAttrJs(b.id)}')"
+// Ali o texto é lido duas vezes: o navegador desfaz o escape de HTML e SÓ
+// DEPOIS interpreta o JavaScript. Então esc() sozinho não basta — um &#39;
+// volta a ser aspa e fecha a string. Primeiro escapa para JS, depois para HTML.
+function escAttrJs(s) {
+  const js = String(s ?? '')
+    .replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"')
+    .replace(/\r/g, '\\r').replace(/\n/g, '\\n')
+    .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
+    .replace(/</g, '\\x3C').replace(/>/g, '\\x3E');
+  return escHtml(js);
+}
+
+// Dados do próprio cliente pelo servidor. As regras do banco liberam o dado do
+// cliente por `auth.uid`, do Firebase Auth, que não existe mais desde a migração
+// para o Cognito — então ler/gravar direto responde 401. Ver functions/me.js.
+// O uid NUNCA vai no corpo: o servidor tira do token.
+async function chamarMe(op, dados) {
+  const user = AUTH.currentUser;
+  if (!user) throw new Error('Sessão expirada. Entre novamente.');
+  const resp = await fetch('/api/me', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await user.getIdToken() },
+    body: JSON.stringify(dados === undefined ? { op } : { op, dados }),
+  });
+  const corpo = await resp.json().catch(() => ({}));
+  if (!resp.ok || corpo.ok === false) {
+    throw new Error(corpo.error || `Falha ao acessar seus dados (HTTP ${resp.status})`);
+  }
+  return corpo.dados;
+}
 
 const isAdmin  = () => _authUser != null && _authUser.email === CFG.adminEmail;
 const isClient = () => _authUser != null && _authUser.email !== CFG.adminEmail;
@@ -257,12 +303,30 @@ const isClient = () => _authUser != null && _authUser.email !== CFG.adminEmail;
 function getBookings() { return _bookings; }
 function getBlocked()  { return _blocked; }
 
+// Grava agendamento por agendamento, não o nó inteiro. Três razões, todas
+// medidas: a política do /api/admin-data proíbe substituir `bookings` por
+// completo (é a operação que apagaria a base de uma vez), o corpo da
+// requisição tem teto de 256 KB, e nenhum dos oito pontos que chamam isto
+// remove agendamento por aqui — todos alteram um só, e a exclusão tem caminho
+// próprio (`child(id).remove()`). Como `set` no filho substitui o agendamento
+// inteiro, o efeito é idêntico ao do `set` na raiz.
 function setBookings(arr) {
   _bookings = arr;
   if(!_fbDB) return;
-  const obj = {};
-  arr.forEach(b => { obj[b.id] = b; });
-  _bookingsRef.set(obj).catch(e => console.error('Firebase setBookings:', e));
+  const atual = {};
+  arr.forEach(b => { atual[b.id] = JSON.stringify(b); });
+  Object.keys(atual).forEach(id => {
+    if (_bookingsRemotos[id] === atual[id]) return;
+    _bookingsRef.child(id).set(JSON.parse(atual[id]))
+      .then(() => { _bookingsRemotos[id] = atual[id]; })
+      .catch(e => console.error('Firebase setBookings:', e));
+  });
+  // Id que saiu do array sai do banco — mesma semântica do `set` na raiz.
+  Object.keys(_bookingsRemotos).forEach(id => {
+    if (atual[id] !== undefined) return;
+    delete _bookingsRemotos[id];
+    _bookingsRef.child(id).remove().catch(e => console.error('Firebase setBookings (remover):', e));
+  });
 }
 
 function updateBooking(b) {
@@ -292,18 +356,14 @@ function _recomputeDayLoad() {
 // A leitura da coleção /bookings é restrita ao admin. O cliente lê os próprios
 // registros pelo índice bookingIndex/$uid → cada bookings/$id (permitido pela regra
 // por-id: clientUid == auth.uid). Popula _bookings só com o que é dele.
+// Pelo servidor: `bookingIndex/$uid` exige auth do Firebase e responde 401 ao
+// navegador. Fail-open como antes — a tela abre mesmo se a lista falhar.
 function _loadMyBookings(uid, cb) {
-  if (!uid || !_bookingIndexRef || !_bookingsRef) { if (cb) cb(); return; }
-  _bookingIndexRef.child(uid).once('value', idxSnap => {
-    const ids = Object.keys(idxSnap.val() || {});
-    if (!ids.length) { _bookings = []; if (cb) cb(); return; }
-    Promise.all(ids.map(id =>
-      _bookingsRef.child(id).once('value').then(s => s.val()).catch(() => null)
-    )).then(list => {
-      _bookings = list.filter(Boolean);
-      if (cb) cb();
-    });
-  }, e => { console.warn('Firebase bookingIndex:', e); if (cb) cb(); });
+  if (!uid) { if (cb) cb(); return; }
+  chamarMe('agendamentos')
+    .then(lista => { _bookings = Array.isArray(lista) ? lista : []; })
+    .catch(e => { console.warn('meus agendamentos:', e.message); })
+    .finally(() => { if (cb) cb(); });
 }
 
 // Re-renderiza o calendário público de agendamento se estiver visível
@@ -320,7 +380,9 @@ function setBlocked(arr) {
   if(!_fbDB) return;
   const obj = {};
   arr.forEach(d => { obj[d] = true; });
-  _blockedRef.set(arr.length ? obj : null).catch(e => console.error('Firebase setBlocked:', e));
+  // `{}` em vez de `null`: no RTDB os dois apagam o nó, mas pela Lambda `null`
+  // vira 'apagar' na raiz, que a política recusa. O resultado no banco é o mesmo.
+  _blockedRef.set(arr.length ? obj : {}).catch(e => console.error('Firebase setBlocked:', e));
 }
 
 // ============================================================
@@ -641,13 +703,122 @@ window.calNext = function(cid, m, y, mode) {
 function bkSvcs(b)      { return (b.services||[b.service]).filter(Boolean).map(id=>SVCS[id]||{icon:'⚠️',name:'Serviço removido do catálogo',pq:0,gr:0,daysExtra:0}); }
 function bkPrice(b,sz)  { return bkSvcs(b).reduce((s,sv)=>s+(sv[sz||b.carSize]||0),0); }
 function bkMaxDays(b)   { return Math.max(0,...bkSvcs(b).map(sv=>sv.daysExtra||0)); }
+
+// Quando o cliente retira o carro, em uma frase. Existe num lugar só porque a
+// versão anterior vivia inline e dizia "Retirada em 2 dias" para QUALQUER valor
+// acima de 1 — um serviço de 3 dias prometia 2 ao cliente.
+function prazoDeEntrega(dias) {
+  const d = Math.max(0, parseInt(dias) || 0);
+  if (d === 0) return 'Entrega no mesmo dia';
+  if (d === 1) return 'Retirada no dia seguinte';
+  return 'Retirada em ' + d + ' dias';
+}
 function bkLabel(b)     { return bkSvcs(b).map(sv=>`${sv.icon} ${sv.name}`).join(' + '); }
+
+// ── Mão de obra: horas de serviço × custo da hora ───────────────────────
+// Mão de obra não é estoque: não se compra nem acaba na prateleira. O serviço
+// guarda as HORAS de trabalho por porte, e o custo da hora fica em
+// custos/maoDeObra (só o admin lê), cadastrado na tela de Estoque.
+const HORAS_POR_DIA = 8;          // um dia útil de trabalho
+const VALOR_HORA_PADRAO = 30;     // R$/h, enquanto nada foi salvo no banco
+let _valorHora = VALOR_HORA_PADRAO;
+let _custosRef = null;
+
+// Horas de trabalho → dias extras de prazo (0 = entrega no mesmo dia).
+// 8 h cabem num dia; 11 h ocupam 2 dias, então a retirada é no dia seguinte.
+function diasExtrasPorHoras(horas) {
+  const h = Number(horas) || 0;
+  if (h <= 0) return 0;
+  return Math.ceil(h / HORAS_POR_DIA) - 1;
+}
+
+// Prazo do serviço: as horas do porte maior (o prazo mostrado é um só) mais os
+// dias de espera (cura, secagem), que não são trabalho.
+function prazoDoServico(horas, diasEspera) {
+  const h = Math.max(Number(horas && horas.pq) || 0, Number(horas && horas.gr) || 0);
+  return diasExtrasPorHoras(h) + Math.max(0, parseInt(diasEspera) || 0);
+}
+
+// Tira da receita os itens medidos em horas (mão de obra cadastrada como
+// insumo, como era antes) e devolve as horas somadas. É a migração do serviço
+// antigo: as horas vão para o campo próprio e saem do estoque.
+function separarMaoDeObra(receita, insumos) {
+  const resto = {};
+  const horas = { pq: 0, gr: 0 };
+  Object.entries(receita || {}).forEach(([pid, a]) => {
+    if ((insumos || {})[pid] && insumos[pid].unit === 'h') {
+      horas.pq += Number(a && a.pq) || 0;
+      horas.gr += Number(a && a.gr) || 0;
+    } else {
+      resto[pid] = a;
+    }
+  });
+  return { receita: resto, horas, tinha: horas.pq > 0 || horas.gr > 0 };
+}
+
+// Custo do serviço por porte: insumos (sem os itens em horas, que agora são
+// mão de obra) + horas × custo da hora.
+function custoDoServico(receita, insumos, horas, valorHora) {
+  const vh = Number(valorHora) || 0;
+  const out = {};
+  ['pq', 'gr'].forEach(porte => {
+    let c = 0;
+    Object.entries(receita || {}).forEach(([pid, a]) => {
+      const ins = (insumos || {})[pid];
+      if (!ins || ins.unit === 'h') return;
+      c += (Number(a && a[porte]) || 0) * (Number(ins.costPerUnit) || 0);
+    });
+    c += (Number(horas && horas[porte]) || 0) * vh;
+    out[porte] = Math.round(c * 100) / 100;
+  });
+  return out;
+}
+
+async function carregarValorHora() {
+  if (!_custosRef) return _valorHora;
+  try {
+    const v = (await _custosRef.child('maoDeObra').once('value')).val();
+    if (v && Number(v.valorHora) > 0) _valorHora = Number(v.valorHora);
+  } catch (e) { console.warn('custo da hora:', e); }
+  return _valorHora;
+}
+
+// Grava de novo o custo de todos os serviços. Roda quando muda o custo da hora
+// ou de um insumo: o relatório de lucro lê o custo GRAVADO no serviço, e sem
+// isto ele ficaria com o número antigo até alguém reabrir e salvar cada um.
+async function recalcularCustosServicos() {
+  if (!_servicesRef || !_stockRef || !_stockRecipesRef) return 0;
+  const [svSnap, stSnap, rcSnap] = await Promise.all([
+    _servicesRef.once('value'), _stockRef.once('value'), _stockRecipesRef.once('value'),
+  ]);
+  const servicos = svSnap.val() || {};
+  const insumos = stSnap.val() || {};
+  const receitas = rcSnap.val() || {};
+  let n = 0;
+  for (const [id, sv] of Object.entries(servicos)) {
+    const receita = receitas[id];
+    // Sem receita e sem horas não há de onde calcular: não zera o que existe.
+    if (!receita && !sv.horas) continue;
+    const horas = sv.horas || separarMaoDeObra(receita, insumos).horas;
+    const c = custoDoServico(receita, insumos, horas, _valorHora);
+    const moto = sv.veiculo === 'moto';
+    const pricing = {
+      pq: { cost: c.pq, sale: sv.pricing?.pq?.sale ?? sv.pq ?? 0 },
+      gr: { cost: moto ? c.pq : c.gr, sale: sv.pricing?.gr?.sale ?? sv.gr ?? 0 },
+    };
+    if (pricing.pq.cost === sv.pricing?.pq?.cost && pricing.gr.cost === sv.pricing?.gr?.cost) continue;
+    await _servicesRef.child(id).update({ pricing });
+    n++;
+  }
+  return n;
+}
 
 // BOOKING FLOW
 // ============================================================
 let booking = { services: [], carSize: 'pq', date: null, step: 1 };
 
 function openBooking(preService) {
+  if (preService && !svcPublico(SVCS[preService])) preService = null;
   const isMoto = preService && SVCS[preService]?.veiculo === 'moto';
   const bodyType = isMoto ? '' : 'hatch';
   const carSize = isMoto ? 'pq' : bodySize(bodyType);
@@ -711,13 +882,13 @@ function renderBookingStep() {
       </div>`}`;
 
     const cards = Object.entries(SVCS)
-      .filter(([,s]) => s.active !== false && (isMotoSel ? s.veiculo === 'moto' : s.veiculo !== 'moto'))
+      .filter(([,s]) => svcPublico(s) && (isMotoSel ? s.veiculo === 'moto' : s.veiculo !== 'moto'))
       .map(([id,s]) => `
       <div class="svc-pick-card ${booking.services.includes(id)?'selected':''}" onclick="selectService('${id}')">
         <div class="svc-pick-icon">${s.icon}</div>
         <div>
-          <div class="svc-pick-name">${s.name}</div>
-          <div class="svc-pick-meta">${s.daysExtra===0?'Entrega no mesmo dia':s.daysExtra===1?'Retirada no dia seguinte':'Retirada em 2 dias'}</div>
+          <div class="svc-pick-name">${esc(s.name)}</div>
+          <div class="svc-pick-meta">${prazoDeEntrega(s.daysExtra)}</div>
         </div>
         <div class="svc-pick-price">${fmtMoney(s[booking.carSize])}</div>
       </div>`).join('')
@@ -741,7 +912,7 @@ function renderBookingStep() {
           const allIn = (combo.serviceIds || []).every(s => booking.services.includes(s));
           return `<div style="border:1px solid var(--blue-mid);border-radius:10px;padding:.7rem .8rem;background:#fff;display:flex;flex-direction:column;gap:.35rem">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem">
-              <span style="font-family:Montserrat,sans-serif;font-weight:800;font-size:.86rem;color:var(--blue-dk)">${combo.emoji || '🎁'} ${combo.name}</span>
+              <span style="font-family:Montserrat,sans-serif;font-weight:800;font-size:.86rem;color:var(--blue-dk)">${combo.emoji || '🎁'} ${esc(combo.name)}</span>
               ${p.savings ? `<span style="background:var(--green);color:#fff;font-weight:800;font-size:.7rem;padding:.15rem .45rem;border-radius:999px;white-space:nowrap">− ${fmtMoney(p.savings)}</span>` : ''}
             </div>
             <div style="font-size:.74rem;color:var(--muted);line-height:1.3">${names}</div>
@@ -781,7 +952,7 @@ function renderBookingStep() {
         const missingNames = best.missing.map(id => SVCS[id]?.name || id).join(' e ');
         comboSuggestion = `<div class="combo-suggestion">
           <div class="combo-suggestion-text">
-            💡 <strong>${best.combo.emoji || '🎁'} ${best.combo.name}</strong> — adicione <strong>${missingNames}</strong>
+            💡 <strong>${best.combo.emoji || '🎁'} ${esc(best.combo.name)}</strong> — adicione <strong>${missingNames}</strong>
             e economize <strong style="color:var(--green)">${fmtMoney(best.p.savings)}</strong> com o combo
           </div>
           <button class="combo-suggestion-btn" onclick="applyComboSuggestion('${best.cid}')">Aplicar combo →</button>
@@ -817,7 +988,7 @@ function renderBookingStep() {
     const totalPrice = bkPrice(booking, booking.carSize);
     const maxDays3 = bkMaxDays(booking);
     const pickup = maxDays3 > 0 ? addDays(booking.date, maxDays3) : booking.date;
-    const svcsRows = bkSvcs(booking).map(sv=>`<div class="summary-row"><strong>${sv.icon} ${sv.name}</strong><span>${fmtMoney(sv[booking.carSize])}</span></div>`).join('');
+    const svcsRows = bkSvcs(booking).map(sv=>`<div class="summary-row"><strong>${sv.icon} ${esc(sv.name)}</strong><span>${fmtMoney(sv[booking.carSize])}</span></div>`).join('');
     body.innerHTML = `<div class="step-indicator">${progress}</div>
       <div class="booking-summary">
         <h4>Resumo do Agendamento</h4>
@@ -999,6 +1170,20 @@ function prevStep() {
   renderBookingStep();
 }
 
+// Espera uma gravação terminar, com prazo. Devolve true só se ela CONCLUIU.
+// O prazo existe porque, com o banco fora do ar, a gravação não falha: fica
+// pendente para sempre, tentando reconectar. Sem prazo o cliente ficaria
+// olhando um botão que não responde.
+function _gravouNoPrazo(promessa, ms = 8000) {
+  return new Promise((resolve) => {
+    const relogio = setTimeout(() => resolve(false), ms);
+    Promise.resolve(promessa).then(
+      () => { clearTimeout(relogio); resolve(true); },
+      () => { clearTimeout(relogio); resolve(false); }
+    );
+  });
+}
+
 async function submitBooking() {
   const name   = document.getElementById('fName').value.trim();
   const email  = document.getElementById('fEmail').value.trim();
@@ -1056,22 +1241,59 @@ async function submitBooking() {
     ...(_appliedCoupon   ? { couponCode: _appliedCoupon.code, couponDiscount }                                           : {}),
     ...(_appliedGiftCard ? { giftCardCode: _appliedGiftCard.code, giftCardUsed: _appliedGiftCard.amountToUse } : {}),
   };
-  if (_appliedCoupon)   { _markCouponUsed(_appliedCoupon.code); _appliedCoupon = null; }
-  if (_appliedGiftCard) { _useGiftCard(_appliedGiftCard.code, _appliedGiftCard.amountToUse); _appliedGiftCard = null; }
+  // Grava PRIMEIRO, e só segue se gravou. Antes a gravação era disparada sem
+  // esperar e a tela mostrava "solicitação recebida" de qualquer jeito: com o
+  // banco fora do ar (aconteceu de 10/11/2026 em diante) o cliente saía
+  // achando que tinha agendado, recebia o e-mail de confirmação, e o pedido
+  // não existia em lugar nenhum. Falhou? Diz a verdade e aponta o WhatsApp,
+  // sem gastar cupom nem gift card.
+  //
+  // O PREÇO É DO SERVIDOR (desde 18/11/2026). O `price` acima é só a
+  // estimativa da tela: o /api/admin-data recalcula pelo catálogo, confere o
+  // cupom e o gift card, baixa os dois na mesma transação e devolve o
+  // agendamento como ficou gravado. Daqui em diante vale o que voltou.
+  let gravado = null;
+  let recusa = null;
+  const envio = _bookingsRef
+    ? _bookingsRef.child(id).set(b).then((v) => { gravado = v; }, (e) => { recusa = e; throw e; })
+    : null;
+  const gravou = !!envio && await _gravouNoPrazo(envio);
+  if (!gravou) {
+    console.error('submitBooking: o agendamento não foi gravado', recusa && recusa.message);
+    // Recusa do servidor com motivo (cupom usado, serviço indisponível): mostra
+    // o motivo, para o cliente poder corrigir. Falha de rede: aponta o WhatsApp.
+    if (recusa && /cupom|gift|servi|tamanho/i.test(recusa.message || '')) {
+      alert('Não foi possível registrar o agendamento: ' + recusa.message + '\n\nNada foi cobrado.');
+    } else {
+      alert('Não conseguimos registrar seu agendamento agora. Nada foi cobrado.\n\n' +
+            'Por favor, fale com a gente pelo WhatsApp para agendar: ' + (CFG.whatsapp || '') + '.');
+    }
+    return;
+  }
+  if (gravado && typeof gravado === 'object' && typeof gravado.price === 'number') {
+    Object.assign(b, gravado);
+  }
+  // Cupom e gift card já foram baixados pelo servidor, junto com o pedido.
+  _appliedCoupon = null;
+  _appliedGiftCard = null;
 
   // Salvar booking (usa set individual para compatibilidade futura com regras por uid)
   _bookings.push(b);
   if (_bookingsRef) {
-    _bookingsRef.child(id).set(b).catch(e => console.error('Firebase booking:', e));
-    // Índice do cliente logado → permite ver "Meus agendamentos" sem leitura pública
-    if (clientUid && _bookingIndexRef) {
-      _bookingIndexRef.child(clientUid).child(id).set(true).catch(e => console.warn('Firebase bookingIndex:', e));
+    // Índice do cliente logado → permite ver "Meus agendamentos" sem leitura
+    // pública. Pelo servidor, que confere a posse antes de indexar: sem isso o
+    // cliente indexaria o código de outra pessoa e passaria a lê-lo pela
+    // leitura legítima dos próprios agendamentos.
+    if (clientUid && isClient()) {
+      chamarMe('indexar-agendamento', { id })
+        .catch(e => console.warn('indexar agendamento:', e.message));
     }
   }
 
   // Atualizar perfil do cliente com dados mais recentes
-  if (isClient() && _authUser && _clientProfilesRef) {
-    _clientProfilesRef.child(_authUser.uid).update({ name, phone, bairro, lastBookingAt: new Date().toISOString() }).catch(() => {});
+  if (isClient() && _authUser) {
+    chamarMe('salvar-perfil', { name, phone, bairro, lastBookingAt: new Date().toISOString() })
+      .catch(e => console.warn('salvar perfil:', e.message));
     _clientProfile = { ..._clientProfile, name, phone, bairro };
     _updateClientNavUI();
   }
@@ -1184,9 +1406,9 @@ function clientExtrasHtml(b, email, opts = {}) {
   const mail = String(email || b.email || '').replace(/"/g, '');
   return `<div class="client-extras">
     <a href="${googleCalendarUrl(b)}" target="_blank" rel="noopener noreferrer">📅 Google Agenda${pending ? ' (a confirmar)' : ''}</a>
-    <button type="button" onclick="downloadBookingIcs('${b.id}')">🗓️ Apple / Outlook</button>
-    ${opts.push === false ? '' : `<button type="button" data-id="${b.id}" data-email="${mail}" onclick="subscribeClientCalendar(this)">🔁 Agenda sempre atualizada</button>
-    <button type="button" data-id="${b.id}" data-email="${mail}" onclick="enableBookingPush(this)">🔔 Avisos no celular</button>`}
+    <button type="button" onclick="downloadBookingIcs('${escAttrJs(b.id)}')">🗓️ Apple / Outlook</button>
+    ${opts.push === false ? '' : `<button type="button" data-id="${esc(b.id)}" data-email="${esc(mail)}" onclick="subscribeClientCalendar(this)">🔁 Agenda sempre atualizada</button>
+    <button type="button" data-id="${esc(b.id)}" data-email="${esc(mail)}" onclick="enableBookingPush(this)">🔔 Avisos no celular</button>`}
     <div class="client-extras-msg"></div>
   </div>`;
 }
@@ -1225,7 +1447,7 @@ async function subscribeClientCalendar(btn) {
   btn.disabled = true; btn.textContent = '⏳ Gerando...';
   try {
     const headers = { 'Content-Type': 'application/json' };
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (user && isClient()) headers.Authorization = 'Bearer ' + await user.getIdToken();
     const resp = await fetch('/api/calendar-sync', {
       method: 'POST', headers,
@@ -1316,7 +1538,7 @@ function _renderStatusResult(b) {
           ✅ <strong>Orçamento aprovado!</strong><br/>
           Confira os dados acima e clique em confirmar para reservar seu agendamento.
         </div>
-        <button class="btn-primary" onclick="customerConfirm('${b.id}')" style="width:100%;justify-content:center;margin-top:.8rem">✓ Confirmar Agendamento</button>`;
+        <button class="btn-primary" onclick="customerConfirm('${escAttrJs(b.id)}')" style="width:100%;justify-content:center;margin-top:.8rem">✓ Confirmar Agendamento</button>`;
     }
   }
 
@@ -1326,7 +1548,7 @@ function _renderStatusResult(b) {
     if(b.rescheduleRequest) {
       rescheduleBtn = `<div style="background:var(--orange-lt);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:.8rem 1rem;margin-top:.8rem;font-size:.83rem;color:var(--orange)">⏳ <strong>Reagendamento solicitado</strong> para ${fmtDate(b.rescheduleRequest.date)} — aguardando análise do estabelecimento.</div>`;
     } else {
-      rescheduleBtn = `<button class="btn-ghost" onclick="openReschedule('${b.id}')" style="width:100%;justify-content:center;margin-top:.6rem">📅 Solicitar Reagendamento</button>`;
+      rescheduleBtn = `<button class="btn-ghost" onclick="openReschedule('${escAttrJs(b.id)}')" style="width:100%;justify-content:center;margin-top:.6rem">📅 Solicitar Reagendamento</button>`;
     }
   }
 
@@ -1341,14 +1563,14 @@ function _renderStatusResult(b) {
     cancelBtn = `
       <div style="border-top:1px solid var(--border);margin-top:1rem;padding-top:.8rem">
         <p style="font-size:.75rem;color:var(--muted);margin-bottom:.4rem">${_refundLabel}</p>
-        <button onclick="confirmClientCancel('${b.id}')" style="width:100%;justify-content:center;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;padding:.45rem;font-family:Montserrat,sans-serif;font-size:.75rem;font-weight:700;cursor:pointer;letter-spacing:.04em">🚫 Cancelar Agendamento</button>
+        <button onclick="confirmClientCancel('${escAttrJs(b.id)}')" style="width:100%;justify-content:center;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;padding:.45rem;font-family:Montserrat,sans-serif;font-size:.75rem;font-weight:700;cursor:pointer;letter-spacing:.04em">🚫 Cancelar Agendamento</button>
       </div>`;
   }
 
   res.innerHTML = `
     <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
       <div style="background:var(--off);padding:.8rem 1rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.4rem">
-        <span style="font-family:Montserrat,sans-serif;font-size:.78rem;font-weight:800;color:var(--blue);letter-spacing:.1em">${b.id}</span>
+        <span style="font-family:Montserrat,sans-serif;font-size:.78rem;font-weight:800;color:var(--blue);letter-spacing:.1em">${esc(b.id)}</span>
         <div style="display:flex;gap:.4rem;align-items:center">
           ${b.checkin ? `<span style="font-size:.65rem;background:rgba(34,197,94,.12);color:#22c55e;border-radius:20px;padding:.1rem .5rem;font-weight:700">📋 check-in</span>` : ''}
           <span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span>
@@ -1356,7 +1578,7 @@ function _renderStatusResult(b) {
       </div>
       <div style="padding:1rem">
         <div class="summary-row"><strong>Serviço(s)</strong><span>${bkLabel(b)}</span></div>
-        <div class="summary-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
+        <div class="summary-row"><strong>Veículo</strong><span>${esc(b.car)}${esc(b.plate?' — '+b.plate:'')}</span></div>
         ${b.startDate
           ? `<div class="summary-row"><strong>Entrega do veículo</strong><span>${fmtDate(b.startDate)} às ${CFG.dropoffTime}</span></div>`
           : `<div class="summary-row"><strong>Data solicitada</strong><span>${fmtDate(b.date)} às ${CFG.dropoffTime}</span></div>`
@@ -1371,10 +1593,10 @@ function _renderStatusResult(b) {
         </div>
         ${priceChanged ? `<div style="font-size:.75rem;color:var(--muted);text-align:right;margin-top:-4px">(estimativa inicial: ${fmtMoney(b.price)})</div>` : ''}
         ${(b.status==='approved'||b.status==='confirmed') && b.approvedLocation
-          ? `<div class="summary-row"><strong>Local de entrega</strong><span>${b.approvedLocation}</span></div>`
+          ? `<div class="summary-row"><strong>Local de entrega</strong><span>${esc(b.approvedLocation)}</span></div>`
           : ''}
         ${b.adminNotes
-          ? `<div style="margin-top:.8rem;background:var(--blue-lt);border-radius:6px;padding:.7rem;font-size:.8rem"><strong>Nota:</strong> ${b.adminNotes}</div>`
+          ? `<div style="margin-top:.8rem;background:var(--blue-lt);border-radius:6px;padding:.7rem;font-size:.8rem"><strong>Nota:</strong> ${esc(b.adminNotes)}</div>`
           : ''}
       </div>
     </div>
@@ -1384,13 +1606,24 @@ function _renderStatusResult(b) {
     ${cancelBtn}`;
 }
 
-function customerConfirm(id) {
+// Confirmação do PAGAMENTO pelo cliente. A mudança de status e o crédito dos
+// pontos foram para o servidor (functions/me.js). Antes rodavam aqui: o
+// navegador gravava `bookings/<id>.status` e somava
+// `clientProfiles/<uid>.points` por conta própria. Como ponto vira desconto,
+// era dinheiro editável no aparelho do cliente — e repetir a chamada creditava
+// de novo. No servidor a posse é conferida, o valor vem do agendamento, a regra
+// vem do `config`, e `pointsAwardedAt` garante crédito único.
+async function customerConfirm(id) {
   const bookings = getBookings();
   const b = bookings.find(x=>x.id===id);
   if(!b) return;
+  try {
+    await chamarMe('confirmar-pagamento', { id });
+  } catch (e) {
+    alert('Não foi possível confirmar: ' + e.message);
+    return;
+  }
   b.status = 'confirmed';
-  updateBooking(b);
-  _awardPoints(b);
   sendEmail('template_update', {
     to_email: b.email, to_name: b.name,
     booking_id: b.id,
@@ -1614,26 +1847,37 @@ function toggleClientAuthSection(checked) {
 
 async function _tryClientSignupOrLogin(email, pw, name, phone) {
   try {
-    const cred = await firebase.auth().createUserWithEmailAndPassword(email, pw);
+    const cred = await AUTH.createUserWithEmailAndPassword(email, pw);
     const user = cred.user;
     await user.updateProfile({ displayName: name });
-    await _clientProfilesRef.child(user.uid).set({
-      uid: user.uid, email, name, phone,
+    // uid e email não vão no corpo: o servidor os tira do token.
+    await chamarMe('salvar-perfil', {
+      name, phone,
       createdAt: new Date().toISOString(),
       linkedEmails: [email.toLowerCase()],
     });
     return user;
   } catch(e) {
     if (e.code === 'auth/email-already-in-use') {
-      const cred2 = await firebase.auth().signInWithEmailAndPassword(email, pw);
-      await _clientProfilesRef.child(cred2.user.uid).update({ lastLoginAt: new Date().toISOString() });
+      const cred2 = await AUTH.signInWithEmailAndPassword(email, pw);
+      await chamarMe('salvar-perfil', { lastLoginAt: new Date().toISOString() });
       return cred2.user;
+    }
+    // Diferente do Firebase, a conta nova do Cognito nasce pendente: o
+    // cadastro só vale depois do código que chega por e-mail.
+    if (e.code === 'auth/confirmation-required') {
+      openSignupConfirm(e.email || email, pw);
+      return null;
     }
     throw e;
   }
 }
 
 // --- Pontos de fidelidade ---
+// Só o ADMIN credita por aqui, e só no lançamento retroativo de agendamento
+// (saveAdminBooking). A escrita atravessa o /api/admin-data, que exige o grupo
+// `admin` no token. O crédito do CLIENTE, ao confirmar o pagamento, foi para o
+// /api/me — ver customerConfirm().
 function _awardPoints(b) {
   if (!b.clientUid || !_clientProfilesRef) return;
   const price = b.finalPrice || b.price || 0;
@@ -1741,7 +1985,7 @@ async function buyGiftCard() {
     if (!data.ok || !data.paymentUrl) throw new Error(data.error || 'Erro ao gerar link.');
     window.location.href = data.paymentUrl;
   } catch (err) {
-    if (msgEl) msgEl.innerHTML = `<span class="coupon-error">Erro: ${err.message}</span>`;
+    if (msgEl) msgEl.innerHTML = `<span class="coupon-error">Erro: ${esc(err.message)}</span>`;
     // Remove pending gift card on error
     if (_giftcardsRef) _giftcardsRef.child(code).remove().catch(() => {});
   }
@@ -1771,19 +2015,6 @@ async function applyGiftCardInBooking() {
   if (msgEl) msgEl.innerHTML = `<div class="coupon-applied">🎁 Gift Card aplicado! ${fmtMoney(amountToUse)} abatido${leftover > 0 ? ` · ${fmtMoney(leftover)} de saldo residual para próxima visita` : ''}.</div>`;
 }
 
-async function _useGiftCard(code, amount) {
-  if (!_giftcardsRef || !code || !amount) return;
-  const snap = await _giftcardsRef.child(code).once('value');
-  const gc   = snap.val();
-  if (!gc) return;
-  const newBalance = Math.max(0, (gc.balance || 0) - amount);
-  _giftcardsRef.child(code).update({
-    balance: newBalance,
-    status: newBalance <= 0 ? 'depleted' : 'active',
-    [`uses/${Date.now()}`]: { amount, usedAt: new Date().toISOString() }
-  }).catch(console.error);
-}
-
 async function renderAdminGiftCards() {
   const el = document.getElementById('adminContent');
   el.innerHTML = '<h2>🎁 Gift Cards</h2><p style="color:var(--muted)">Carregando...</p>';
@@ -1796,16 +2027,16 @@ async function renderAdminGiftCards() {
   const badgeHtml = s => `<span class="gc-badge ${s}">${{active:'✅ Ativo',pending:'⏳ Pendente',depleted:'✓ Esgotado'}[s]||s}</span>`;
 
   const rows = cards.map(gc => `<tr>
-    <td style="font-family:monospace;font-weight:700">${gc.code}</td>
+    <td style="font-family:monospace;font-weight:700">${esc(gc.code)}</td>
     <td>${fmtMoney(gc.amount)}</td>
     <td style="color:${gc.balance>0?'var(--green)':'var(--muted)'};font-weight:700">${fmtMoney(gc.balance||0)}</td>
     <td>${badgeHtml(gc.status||'pending')}</td>
-    <td>${gc.buyerName||'—'}<br><span style="font-size:.72rem;color:var(--muted)">${gc.buyerEmail||''}</span></td>
-    <td>${gc.recipientName||'—'}</td>
+    <td>${esc(gc.buyerName||'—')}<br><span style="font-size:.72rem;color:var(--muted)">${esc(gc.buyerEmail||'')}</span></td>
+    <td>${esc(gc.recipientName||'—')}</td>
     <td style="font-size:.75rem;color:var(--muted)">${gc.createdAt?new Date(gc.createdAt).toLocaleDateString('pt-BR'):'—'}</td>
     <td>
-      ${gc.status==='pending'?`<button class="btn-ghost" style="font-size:.72rem;padding:.25rem .7rem" onclick="activateGiftCardManually('${gc.code}')">Ativar</button>`:''}
-      <button class="btn-reject" style="font-size:.72rem;padding:.25rem .7rem;margin-left:.3rem" onclick="deleteGiftCard('${gc.code}')">🗑</button>
+      ${gc.status==='pending'?`<button class="btn-ghost" style="font-size:.72rem;padding:.25rem .7rem" onclick="activateGiftCardManually('${escAttrJs(gc.code)}')">Ativar</button>`:''}
+      <button class="btn-reject" style="font-size:.72rem;padding:.25rem .7rem;margin-left:.3rem" onclick="deleteGiftCard('${escAttrJs(gc.code)}')">🗑</button>
     </td>
   </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:2rem">Nenhum gift card ainda.</td></tr>';
 
@@ -1917,12 +2148,7 @@ async function applyCouponInBooking() {
     return;
   }
   _appliedCoupon = result;
-  if (msgEl) msgEl.innerHTML = `<div class="coupon-applied">✅ ${result.label} aplicado!</div>`;
-}
-
-async function _markCouponUsed(code) {
-  if (!_couponsRef || !code) return;
-  _couponsRef.child(code).update({ used: true, usedAt: new Date().toISOString() }).catch(() => {});
+  if (msgEl) msgEl.innerHTML = `<div class="coupon-applied">✅ ${esc(result.label)} aplicado!</div>`;
 }
 
 // ============================================================
@@ -2141,7 +2367,7 @@ function renderAdminReferrals() {
       </div>
       <div style="display:flex;gap:.5rem;margin-top:.7rem;flex-wrap:wrap">
         ${friendWa ? `<a class="btn-ghost" style="font-size:.74rem;padding:.35rem .8rem;text-decoration:none" href="https://wa.me/${friendWa}?text=${waMsg}" target="_blank" rel="noopener noreferrer">💬 WhatsApp p/ amigo</a>` : ''}
-        <button class="ba-admin-del" onclick="deleteReferral('${r.key}')" title="Remover indicação">🗑️</button>
+        <button class="ba-admin-del" onclick="deleteReferral('${escAttrJs(r.key)}')" title="Remover indicação">🗑️</button>
       </div>
     </div>`;
   }).join('');
@@ -2178,10 +2404,13 @@ function openClientAccount() {
   _clientOnboardingDismissed = false;
   // Always refresh profile + agendamentos from Firebase to avoid race condition on fresh login
   const _show = () => { renderClientAccount(); document.getElementById('clientAccountModal').style.display = 'flex'; };
-  _clientProfilesRef.child(_authUser.uid).once('value', snap => {
-    _clientProfile = snap.val() || { uid: _authUser.uid, email: _authUser.email };
-    _loadMyBookings(_authUser.uid, _show);
-  }).catch(() => { _loadMyBookings(_authUser.uid, _show); });
+  chamarMe('perfil')
+    .then(perfil => { _clientProfile = perfil || { uid: _authUser.uid, email: _authUser.email }; })
+    .catch(e => {
+      console.warn('meu perfil:', e.message);
+      _clientProfile = _clientProfile || { uid: _authUser.uid, email: _authUser.email };
+    })
+    .finally(() => _loadMyBookings(_authUser.uid, _show));
 }
 
 function _getMyBookings() {
@@ -2211,7 +2440,7 @@ function _computeClientSuggestion(myBookings) {
   const svcCount = {};
   done.forEach(b => (b.services||[b.service]).filter(Boolean).forEach(id => svcCount[id] = (svcCount[id]||0)+1));
   const topSvc = Object.entries(svcCount).sort((a,b)=>b[1]-a[1])[0]?.[0];
-  if (!topSvc || !SVCS[topSvc]) return null;
+  if (!topSvc || !svcPublico(SVCS[topSvc])) return null;
 
   return { svcId: topSvc, daysSince: Math.round(daysSinceLast) };
 }
@@ -2221,10 +2450,10 @@ function doClientLogin() {
   const pass  = document.getElementById('clPass')?.value || '';
   const errEl = document.getElementById('clLoginError');
   errEl.style.display = 'none';
-  firebase.auth().signInWithEmailAndPassword(email, pass)
+  AUTH.signInWithEmailAndPassword(email, pass)
     .then(cred => {
       if (cred.user.email === CFG.adminEmail) {
-        firebase.auth().signOut();
+        AUTH.signOut();
         errEl.textContent = 'Use a Área Restrita para acesso administrativo.';
         errEl.style.display = 'block';
         return;
@@ -2239,16 +2468,196 @@ function doClientLogin() {
 }
 
 function doClientLogout() {
-  firebase.auth().signOut();
+  AUTH.signOut();
   closeModal('clientAccountModal');
 }
 
 function doClientPasswordReset() {
   const email = (document.getElementById('clEmail')?.value || '').trim();
+  const errEl = document.getElementById('clLoginError');
   if (!email) { alert('Digite seu e-mail primeiro.'); return; }
-  firebase.auth().sendPasswordResetEmail(email)
-    .then(() => alert('E-mail de recuperação enviado para ' + email))
-    .catch(e => alert('Erro: ' + e.message));
+  // Mesma guarda do doClientLogin: a conta administrativa não se recupera pela
+  // tela do cliente. Sem isto, "Esqueci minha senha" daqui virava uma segunda
+  // porta para o painel — redefinia, logava e abria a gestão —, justamente o
+  // que a guarda do login existe para impedir. A Área Restrita é a única porta.
+  if (email.toLowerCase() === CFG.adminEmail.toLowerCase()) {
+    if (errEl) {
+      errEl.textContent = 'Use a Área Restrita para acesso administrativo.';
+      errEl.style.display = 'block';
+    }
+    return;
+  }
+  // O Cognito manda CÓDIGO, não link: a redefinição termina no modal.
+  openPasswordReset(email);
+}
+
+// ============================================================
+// CÓDIGO POR E-MAIL — redefinir senha e confirmar cadastro
+//
+// Dois fluxos que o Firebase não exigia e o Cognito exige:
+//   reset   -> código + senha nova (ConfirmForgotPassword)
+//   confirm -> só o código, para ativar conta nova (ConfirmSignUp)
+// Compartilham o mesmo modal porque a diferença é um par de campos.
+// ============================================================
+let _pwMode = 'reset';
+let _pwDesafio = null;   // sessão do NEW_PASSWORD_REQUIRED, quando houver
+let _pwSenhaCadastro = null;
+let _pwOrigem = 'cliente';   // 'admin' só quando a redefinição parte da Área Restrita // senha já escolhida no cadastro (modo confirm)
+
+function _prMsg(idMostrar, texto) {
+  ['prError', 'prOk'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.display = 'none'; el.textContent = ''; }
+  });
+  if (!idMostrar) return;
+  const el = document.getElementById(idMostrar);
+  if (el) { el.textContent = texto; el.style.display = 'block'; }
+}
+
+/**
+ * Abre o fluxo de código.
+ * @param {string|null} email  preenche o campo; null deixa em branco
+ * @param {Error|null} desafio erro de NEW_PASSWORD_REQUIRED, quando vier do login
+ */
+function openPasswordReset(email, desafio, origem) {
+  _pwMode = 'reset';
+  // De onde a redefinição partiu. Só 'admin' (Área Restrita / tela cheia do app)
+  // pode terminar no painel; qualquer outro ponto termina na conta do cliente.
+  _pwOrigem = origem === 'admin' ? 'admin' : 'cliente';
+  _pwDesafio = desafio || null;
+  _pwSenhaCadastro = null;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('prEmail', email || '');
+  set('prCode', '');
+  set('prPass', '');
+  set('prPass2', '');
+  const wrap = document.getElementById('prPassWrap');
+  if (wrap) wrap.style.display = 'block';
+  const t = document.getElementById('prTitle');
+  const sub = document.getElementById('prSub');
+  const btn = document.getElementById('prSubmit');
+  if (t) t.textContent = '🔑 Definir nova senha';
+  if (btn) btn.textContent = 'Salvar nova senha';
+  _prMsg(null);
+  closeModal('clientLoginModal');
+  const modal = document.getElementById('pwResetModal');
+  if (modal) modal.style.display = 'flex';
+
+  if (_pwDesafio) {
+    // Conta criada pelo administrador: não há código, é só definir a senha.
+    const codeRow = document.getElementById('prCode');
+    if (codeRow) codeRow.closest('.form-row').style.display = 'none';
+    if (sub) sub.textContent = 'Escolha a senha que você vai usar de agora em diante';
+    return;
+  }
+  const codeRow = document.getElementById('prCode');
+  if (codeRow) codeRow.closest('.form-row').style.display = 'block';
+  if (sub) sub.textContent = 'Enviando um código para o seu e-mail…';
+  // Com e-mail em mãos o código já sai; o rótulo do link só vira "Reenviar"
+  // depois que houve um envio — "reenviar" antes do primeiro envio faz a pessoa
+  // procurar na caixa de entrada um e-mail que nunca foi mandado.
+  _prRotuloEnvio(false);
+  if (email) doPasswordResetRequest();
+  else if (sub) sub.textContent = 'Digite seu e-mail e toque em "Enviar código"';
+}
+
+/** Abre no modo de confirmar cadastro (só código). */
+function openSignupConfirm(email, senha) {
+  openPasswordReset(email);
+  _pwMode = 'confirm';
+  _pwSenhaCadastro = senha || null;
+  const wrap = document.getElementById('prPassWrap');
+  if (wrap) wrap.style.display = 'none';
+  const t = document.getElementById('prTitle');
+  const sub = document.getElementById('prSub');
+  const btn = document.getElementById('prSubmit');
+  if (t) t.textContent = '✉️ Confirmar seu e-mail';
+  if (sub) sub.textContent = 'Enviamos um código para ' + email;
+  if (btn) btn.textContent = 'Confirmar conta';
+}
+
+// Alterna o rótulo do link de envio do código conforme já tenha havido envio.
+function _prRotuloEnvio(jaEnviou) {
+  const a = document.getElementById('prResend');
+  if (a) a.textContent = jaEnviou ? 'Reenviar código' : 'Enviar código';
+}
+
+function doPasswordResetRequest() {
+  const email = (document.getElementById('prEmail')?.value || '').trim();
+  if (!email) { _prMsg('prError', 'Digite seu e-mail.'); return; }
+  const fn = _pwMode === 'confirm'
+    ? AUTH.reenviarCodigo(email)
+    : AUTH.sendPasswordResetEmail(email);
+  _prMsg('prOk', 'Enviando…');
+  fn.then(() => {
+    _prMsg('prOk', 'Código enviado para ' + email + '. Confira a caixa de entrada e o spam.');
+    _prRotuloEnvio(true);
+    const sub = document.getElementById('prSub');
+    if (sub) sub.textContent = 'Código enviado para ' + email;
+  }).catch(e => _prMsg('prError', e.message || 'Não foi possível enviar o código.'));
+}
+
+async function doPasswordResetConfirm() {
+  const email = (document.getElementById('prEmail')?.value || '').trim();
+  const code  = (document.getElementById('prCode')?.value || '').trim();
+  const pw    = document.getElementById('prPass')?.value || '';
+  const pw2   = document.getElementById('prPass2')?.value || '';
+  const btn   = document.getElementById('prSubmit');
+
+  if (!email) { _prMsg('prError', 'Digite seu e-mail.'); return; }
+  if (_pwMode === 'confirm') {
+    if (!code) { _prMsg('prError', 'Digite o código que chegou por e-mail.'); return; }
+  } else {
+    if (!_pwDesafio && !code) { _prMsg('prError', 'Digite o código que chegou por e-mail.'); return; }
+    if (pw.length < 10) { _prMsg('prError', 'A senha precisa ter ao menos 10 caracteres.'); return; }
+    if (!/[a-z]/.test(pw) || !/[A-Z]/.test(pw) || !/[0-9]/.test(pw)) {
+      _prMsg('prError', 'A senha precisa ter letra maiúscula, minúscula e número.'); return;
+    }
+    if (pw !== pw2) { _prMsg('prError', 'As senhas não coincidem.'); return; }
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+  try {
+    if (_pwMode === 'confirm') {
+      await AUTH.confirmarCadastro(email, code, _pwSenhaCadastro);
+    } else if (_pwDesafio) {
+      await AUTH.definirSenhaInicial(email, pw, _pwDesafio.sessaoDesafio);
+    } else {
+      await AUTH.confirmarNovaSenha(email, code, pw);
+    }
+    // A senha já foi trocada e a sessão já existe. Se a conta é a do admin mas a
+    // redefinição NÃO partiu da Área Restrita, encerra a sessão aqui: abrir o
+    // painel a partir da tela do cliente seria um segundo caminho de entrada na
+    // gestão. Defesa em profundidade — a guarda do doClientPasswordReset já
+    // barra na entrada, e esta cobre qualquer outro ponto que venha a chamar
+    // este fluxo com o e-mail administrativo.
+    if (isAdmin() && _pwOrigem !== 'admin') {
+      await AUTH.signOut();
+      _prMsg('prOk', 'Senha atualizada. Para entrar no painel, use o link "Área Restrita" no rodapé do site.');
+      _pwDesafio = null;
+      _pwSenhaCadastro = null;
+      return;
+    }
+    closeModal('pwResetModal');
+    _pwDesafio = null;
+    _pwSenhaCadastro = null;
+    // Já logada: admin vai para o painel, cliente para a conta.
+    if (isAdmin()) {
+      setAdminDevice(true);
+      closeAdminGate();
+      closeModal('adminLoginModal');
+      openAdminPanel();
+    } else {
+      openClientAccount();
+    }
+  } catch (e) {
+    _prMsg('prError', e.message || 'Não foi possível concluir.');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = _pwMode === 'confirm' ? 'Confirmar conta' : 'Salvar nova senha';
+    }
+  }
 }
 
 function renderClientAccount() {
@@ -2296,7 +2705,7 @@ function renderClientAccount() {
     const canAct = actions && ['approved','confirmed'].includes(b.status) && !b.checkin;
     return `<div class="client-booking-card">
       <div class="client-booking-card-hdr">
-        <span class="client-booking-card-id">${b.id}</span>
+        <span class="client-booking-card-id">${esc(b.id)}</span>
         <span class="status-badge ${b.status}">${statusMap[b.status] || b.status}</span>
       </div>
       <div class="client-booking-card-svc">${bkLabel(b)}</div>
@@ -2306,8 +2715,8 @@ function renderClientAccount() {
         · ${b.carSize === 'gr' ? '🚙 Grande' : '🚗 Pequeno'}
       </div>
       ${canAct ? `<div class="client-booking-card-actions">
-        <button class="btn-ghost" onclick="openReschedule('${b.id}');closeModal('clientAccountModal')">📅 Reagendar</button>
-        <button class="btn-reject" onclick="confirmClientCancel('${b.id}');closeModal('clientAccountModal')">🚫 Cancelar</button>
+        <button class="btn-ghost" onclick="openReschedule('${escAttrJs(b.id)}');closeModal('clientAccountModal')">📅 Reagendar</button>
+        <button class="btn-reject" onclick="confirmClientCancel('${escAttrJs(b.id)}');closeModal('clientAccountModal')">🚫 Cancelar</button>
       </div>` : ''}
       ${actions ? clientExtrasHtml(b, b.email, { push: false }) : ''}
       ${b.checkin ? _buildCheckinSummaryHtml(b.checkin) : ''}
@@ -2339,7 +2748,7 @@ function renderClientAccount() {
     ${upcoming.length ? upcoming.map(b => bCard(b, true)).join('') : '<p class="client-empty">Nenhum agendamento futuro.</p>'}
     ${suggestion ? `<div class="client-booking-card" style="border-color:var(--accent);margin-top:.8rem">
       <div style="font-weight:700;margin-bottom:.3rem">💡 Sugestão de Agendamento</div>
-      <div style="font-size:.83rem;color:var(--muted);margin-bottom:.6rem">Já faz ${suggestion.daysSince} dias desde seu último ${SVCS[suggestion.svcId].icon} ${SVCS[suggestion.svcId].name}. Que tal agendar?</div>
+      <div style="font-size:.83rem;color:var(--muted);margin-bottom:.6rem">Já faz ${suggestion.daysSince} dias desde seu último ${SVCS[suggestion.svcId].icon} ${esc(SVCS[suggestion.svcId].name)}. Que tal agendar?</div>
       <button class="btn-primary" style="font-size:.8rem;padding:.5rem 1rem" onclick="closeModal('clientAccountModal');openBooking('${suggestion.svcId}')">📅 Agendar agora</button>
     </div>` : ''}
     ${myBookings.some(b => b.status === 'completed') ? `<div class="client-booking-card" style="border-color:var(--accent);margin-top:.8rem;background:linear-gradient(135deg,rgba(72,201,245,.08),rgba(16,185,129,.06))">
@@ -2508,9 +2917,8 @@ async function saveClientOnboarding(isEditMode) {
     renderClientAccount();
   };
   // Fail-open: se o Firebase falhar, nunca trava a tela — mantém os dados anteriores e avisa.
-  if (!_clientProfilesRef) { apply(); return; }
   try {
-    await _clientProfilesRef.child(_authUser.uid).update(payload);
+    await chamarMe('salvar-perfil', payload);
     apply();
   } catch (e) {
     alert('Erro ao salvar: ' + e.message + '\n\nTente novamente — seus dados anteriores foram mantidos.');
@@ -2521,21 +2929,33 @@ function doAdminLogin() {
   const pw    = document.getElementById('adminPass').value;
   const errEl = document.getElementById('loginError');
   errEl.style.display = 'none';
-  firebase.auth().signInWithEmailAndPassword(CFG.adminEmail, pw)
+  AUTH.signInWithEmailAndPassword(CFG.adminEmail, pw)
     .then(() => {
       setAdminDevice(true);   // a partir daqui, o app deste aparelho abre direto na senha
       closeAdminGate();
       closeModal('adminLoginModal');
       openAdminPanel();
     })
-    .catch(() => {
+    .catch(e => {
+      const campo = document.getElementById('adminPass');
+      // Senha redefinida pelo administrador do Cognito, ou conta recém-criada:
+      // não é senha errada, é senha a definir. Mandar para o fluxo de código
+      // em vez de dizer "senha incorreta", que faria a pessoa tentar de novo
+      // uma senha que não existe mais.
+      if (e && (e.code === 'auth/password-reset-required' || e.code === 'auth/new-password-required')) {
+        if (campo) campo.value = '';
+        openPasswordReset(CFG.adminEmail, e.code === 'auth/new-password-required' ? e : null, 'admin');
+        return;
+      }
+      errEl.textContent = (e && e.code === 'auth/too-many-requests')
+        ? 'Muitas tentativas. Aguarde alguns minutos.'
+        : 'Senha incorreta. Tente novamente.';
       errEl.style.display = 'block';
-      document.getElementById('adminPass').value = '';
-      document.getElementById('adminPass').focus();
+      if (campo) { campo.value = ''; campo.focus(); }
     });
 }
 function doAdminLogout() {
-  firebase.auth().signOut();
+  AUTH.signOut();
   document.getElementById('adminPanel').style.display = 'none';
   // No app, sair volta para a tela de senha — não para o site.
   if (isStandaloneApp() && appOpensOnAdminGate()) openAdminGate(false);
@@ -2642,7 +3062,7 @@ function abBuildServiceList(vType) {
     lbl.style.cssText = 'display:flex;align-items:flex-start;gap:.45rem;cursor:pointer;font-size:.78rem;padding:.3rem .35rem;border-radius:6px;line-height:1.3;transition:background .15s';
     lbl.onmouseenter = () => lbl.style.background = 'rgba(72,201,245,.07)';
     lbl.onmouseleave = () => lbl.style.background = '';
-    lbl.innerHTML = `<input type="checkbox" value="${id}" onchange="abUpdatePrice()" style="margin-top:2px;accent-color:var(--accent);width:14px;height:14px;flex-shrink:0"/> <span>${s.icon} ${s.name} <span style="color:var(--muted);font-size:.7rem">R$${s.pq}</span></span>`;
+    lbl.innerHTML = `<input type="checkbox" value="${id}" onchange="abUpdatePrice()" style="margin-top:2px;accent-color:var(--accent);width:14px;height:14px;flex-shrink:0"/> <span>${s.icon} ${esc(s.name)}${s.interno ? ' <span style="font-size:.62rem;color:#a0a0ff">🔒 Interno</span>' : ''} <span style="color:var(--muted);font-size:.7rem">R$${s.pq}</span></span>`;
     list.appendChild(lbl);
   };
   if (isMoto) {
@@ -3583,16 +4003,16 @@ function renderBookingsList(filter) {
     return `<div class="booking-item">
       <div class="booking-item-info">
         <div style="display:flex;align-items:center;gap:.6rem">
-          <div class="booking-item-id">${b.id}</div>
+          <div class="booking-item-id">${esc(b.id)}</div>
           <span style="font-size:.7rem;font-weight:700;color:${statusColor[b.status]}">${statusMap[b.status]}</span>
           ${b.retroativo ? `<span style="font-size:.63rem;font-weight:700;color:#6b7280;background:rgba(107,114,128,.12);border:1px solid rgba(107,114,128,.25);border-radius:4px;padding:.1rem .4rem">🕓 Retroativo</span>` : ''}
         </div>
-        <div class="booking-item-name">${b.name} — ${b.car}</div>
+        <div class="booking-item-name">${esc(b.name)} — ${esc(b.car)}</div>
         <div class="booking-item-detail">${bkLabel(b)} · 📅 ${b.status==='pending'?`<span style="color:var(--orange);font-weight:700">Solicitado: ${fmtDateShort(b.date)}</span>`:`Confirmado: ${fmtDateShort(b.startDate||b.date)}`} · ${fmtMoney(b.finalPrice||b.price)}</div>
       </div>
       <div class="booking-item-actions">
-        <button class="btn-view" onclick="viewBooking('${b.id}')">Ver</button>
-        ${b.status==='pending'?`<button class="btn-approve" onclick="openApprove('${b.id}')">Aprovar</button><button class="btn-reject" onclick="rejectBooking('${b.id}')">Rejeitar</button>`:''}
+        <button class="btn-view" onclick="viewBooking('${escAttrJs(b.id)}')">Ver</button>
+        ${b.status==='pending'?`<button class="btn-approve" onclick="openApprove('${escAttrJs(b.id)}')">Aprovar</button><button class="btn-reject" onclick="rejectBooking('${escAttrJs(b.id)}')">Rejeitar</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -3608,7 +4028,7 @@ function viewBooking(id) {
 
   document.getElementById('detailBody').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.6rem;margin-bottom:1.4rem">
-      <div class="booking-id-badge" style="font-size:.95rem;padding:.5rem 1.2rem">${b.id}</div>
+      <div class="booking-id-badge" style="font-size:.95rem;padding:.5rem 1.2rem">${esc(b.id)}</div>
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
         <span class="status-badge ${statusClass[b.status]}">${statusMap[b.status]}</span>
         ${b.retroativo ? `<span style="font-size:.7rem;font-weight:700;color:#6b7280;background:rgba(107,114,128,.12);border:1px solid rgba(107,114,128,.25);border-radius:5px;padding:.2rem .6rem">🕓 Retroativo</span>` : ''}
@@ -3617,11 +4037,11 @@ function viewBooking(id) {
 
     <div style="background:var(--off);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
       <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">👤 Dados do Cliente</div>
-      <div class="summary-row"><strong>Nome</strong><span>${b.name}</span></div>
-      <div class="summary-row"><strong>E-mail</strong><span>${b.email}</span></div>
-      <div class="summary-row"><strong>Telefone</strong><span>${b.phone}</span></div>
+      <div class="summary-row"><strong>Nome</strong><span>${esc(b.name)}</span></div>
+      <div class="summary-row"><strong>E-mail</strong><span>${esc(b.email)}</span></div>
+      <div class="summary-row"><strong>Telefone</strong><span>${esc(b.phone)}</span></div>
       ${b.comoConheceu ? `<div class="summary-row"><strong>📣 Como nos conheceu</strong><span>${esc(b.comoConheceu)}${b.comoConheceuDetalhe?' — '+esc(b.comoConheceuDetalhe):''}</span></div>` : ''}
-      <button onclick="openClientWa('${b.id}')" style="display:inline-flex;align-items:center;gap:.5rem;margin-top:.8rem;background:#25D366;color:#fff;padding:.45rem 1rem;border-radius:4px;font-family:Montserrat,sans-serif;font-size:.72rem;font-weight:700;border:none;cursor:pointer;letter-spacing:.04em;transition:opacity .2s" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+      <button onclick="openClientWa('${escAttrJs(b.id)}')" style="display:inline-flex;align-items:center;gap:.5rem;margin-top:.8rem;background:#25D366;color:#fff;padding:.45rem 1rem;border-radius:4px;font-family:Montserrat,sans-serif;font-size:.72rem;font-weight:700;border:none;cursor:pointer;letter-spacing:.04em;transition:opacity .2s" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
         <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
         Contatar no WhatsApp
       </button>
@@ -3629,7 +4049,7 @@ function viewBooking(id) {
 
     <div style="background:var(--off);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
       <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">🚗 Veículo & Serviço</div>
-      <div class="summary-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
+      <div class="summary-row"><strong>Veículo</strong><span>${esc(b.car)}${esc(b.plate?' — '+b.plate:'')}</span></div>
       <div class="summary-row"><strong>Veículo</strong><span>${veiculoResumo(b)}</span></div>
       <div class="summary-row"><strong>Serviço(s)</strong><span>${bkLabel(b)}</span></div>
       <div class="summary-row"><strong>📅 Data solicitada</strong><span style="font-weight:700;color:var(--orange)">${fmtDate(b.date)}</span></div>
@@ -3638,11 +4058,11 @@ function viewBooking(id) {
       ${hasFinalPrice ? `<div class="summary-row"><strong>Valor definido (adm)</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.finalPrice)}</span></div>` : ''}
       ${b.priceWithFee ? `<div class="summary-row"><strong>Valor cobrado (c/ taxa)</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.priceWithFee)}</span></div>` : ''}
       ${b.paidAmount ? `<div class="summary-row"><strong>💳 Valor pago (InfinitePay)</strong><span style="color:var(--green);font-weight:800;font-size:1.05em">${fmtMoney(b.paidAmount)}</span></div>` : ''}
-      ${b.giftCardCode ? `<div class="summary-row"><strong>🎁 Gift Card usado</strong><span style="color:var(--accent)">${b.giftCardCode} · ${fmtMoney(b.giftCardUsed||0)} abatido</span></div>` : ''}
+      ${b.giftCardCode ? `<div class="summary-row"><strong>🎁 Gift Card usado</strong><span style="color:var(--accent)">${esc(b.giftCardCode)} · ${fmtMoney(b.giftCardUsed||0)} abatido</span></div>` : ''}
       ${b.paymentUrl ? `<div class="summary-row"><strong>Link de pagamento</strong><span><a href="${b.paymentUrl}" target="_blank" rel="noopener" style="color:var(--blue);font-size:.8rem">Abrir link ↗</a></span></div>` : ''}
       ${b.paymentConfirmedAt ? `<div class="summary-row"><strong>Pagamento confirmado</strong><span style="color:var(--green);font-weight:700">✅ ${new Date(b.paymentConfirmedAt).toLocaleString('pt-BR')}</span></div>` : ''}
       ${b.paymentMethod ? `<div class="summary-row"><strong>Método</strong><span>${b.paymentMethod}</span></div>` : ''}
-      ${b.obs ? `<div class="summary-row"><strong>Obs. cliente</strong><span style="font-style:italic">${b.obs}</span></div>` : ''}
+      ${b.obs ? `<div class="summary-row"><strong>Obs. cliente</strong><span style="font-style:italic">${esc(b.obs)}</span></div>` : ''}
       ${b.retroativo ? `<div class="summary-row"><strong>Tipo</strong><span style="color:var(--muted)">🕓 Registro retroativo</span></div>` : ''}
       ${b.retroativo ? `<div class="summary-row"><strong>Pagamento</strong><span style="color:var(--muted)">💵 Pago fora do sistema</span></div>` : ''}
       ${b.retroativo && b.feedbackSolicitado ? `<div class="summary-row"><strong>Pesquisa enviada</strong><span style="color:var(--green)">✅ ${b.feedbackEnviadoEm ? new Date(b.feedbackEnviadoEm).toLocaleString('pt-BR') : 'Sim'}</span></div>` : ''}
@@ -3655,10 +4075,10 @@ function viewBooking(id) {
       <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--blue-dk);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">📅 Datas Confirmadas</div>
       ${b.startDate ? `<div class="summary-row"><strong>Entrega do veículo</strong><span>${fmtDate(b.startDate)} às ${CFG.dropoffTime}</span></div>` : ''}
       ${b.endDate ? `<div class="summary-row"><strong>Previsão de retirada</strong><span>${fmtDate(b.endDate)} às ${CFG.pickupTime}</span></div>` : ''}
-      ${b.approvedLocation ? `<div class="summary-row"><strong>Local</strong><span>${b.approvedLocation}</span></div>` : ''}
+      ${b.approvedLocation ? `<div class="summary-row"><strong>Local</strong><span>${esc(b.approvedLocation)}</span></div>` : ''}
     </div>` : ''}
 
-    ${b.adminNotes ? `<div style="background:var(--off);border-radius:8px;padding:.8rem;font-size:.82rem;margin-bottom:1rem"><strong>📝 Notas do admin:</strong> ${b.adminNotes}</div>` : ''}
+    ${b.adminNotes ? `<div style="background:var(--off);border-radius:8px;padding:.8rem;font-size:.82rem;margin-bottom:1rem"><strong>📝 Notas do admin:</strong> ${esc(b.adminNotes)}</div>` : ''}
     ${b.cancelledBy === 'client' ? `
     <div style="background:var(--red-lt);border:1px solid #f5c6c3;border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.82rem;color:var(--red)">
       🚫 <strong>Cancelado pelo cliente</strong> em ${new Date(b.cancelledAt).toLocaleString('pt-BR')}<br/>
@@ -3669,11 +4089,11 @@ function viewBooking(id) {
     <div style="background:var(--orange-lt);border:2px solid var(--orange);border-radius:10px;padding:1rem;margin-bottom:1.2rem">
       <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--orange);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">📅 Solicitação de Reagendamento</div>
       <div class="summary-row"><strong>Nova data pedida</strong><span style="font-weight:800;color:var(--orange)">${fmtDate(b.rescheduleRequest.date)}</span></div>
-      ${b.rescheduleRequest.note ? `<div class="summary-row"><strong>Motivo</strong><span>${b.rescheduleRequest.note}</span></div>` : ''}
+      ${b.rescheduleRequest.note ? `<div class="summary-row"><strong>Motivo</strong><span>${esc(b.rescheduleRequest.note)}</span></div>` : ''}
       <div class="summary-row"><strong>Solicitado em</strong><span>${new Date(b.rescheduleRequest.requestedAt).toLocaleString('pt-BR')}</span></div>
       <div style="display:flex;gap:.6rem;margin-top:.8rem">
-        <button class="btn-reject" onclick="rejectReschedule('${b.id}')">Manter data atual</button>
-        <button class="btn-approve" onclick="approveReschedule('${b.id}')">✓ Aprovar novo dia</button>
+        <button class="btn-reject" onclick="rejectReschedule('${escAttrJs(b.id)}')">Manter data atual</button>
+        <button class="btn-approve" onclick="approveReschedule('${escAttrJs(b.id)}')">✓ Aprovar novo dia</button>
       </div>
     </div>` : ''}
 
@@ -3690,18 +4110,23 @@ function viewBooking(id) {
   const footer = document.getElementById('detailFooter');
   const _canEdit   = b.status==='approved'||b.status==='confirmed';
   const _checkedIn = _canEdit && !!b.checkin;
-  const _delBtn  = `<button class="btn-reject" style="margin-right:auto" onclick="deleteBooking('${b.id}')">🗑️ Excluir</button>`;
-  const _ciBtn   = `<button class="btn-ghost" onclick="openCheckin('${b.id}')">📋 Check-in</button>`;
-  const _doneBtn = `<button class="btn-approve" onclick="markCompleted('${b.id}')">🏁 Entregar & Concluir</button>`;
+  const _delBtn  = `<button class="btn-reject" style="margin-right:auto" onclick="deleteBooking('${escAttrJs(b.id)}')">🗑️ Excluir</button>`;
+  const _ciBtn   = `<button class="btn-ghost" onclick="openCheckin('${escAttrJs(b.id)}')">📋 Check-in</button>`;
+  const _doneBtn = `<button class="btn-approve" onclick="markCompleted('${escAttrJs(b.id)}')">🏁 Entregar & Concluir</button>`;
+  // Pagamento recebido direto (dinheiro, Pix fora do site): é o que libera os
+  // pontos do cliente. Some depois de confirmado — pelo site ou por aqui.
+  const _paidBtn = (!b.paymentConfirmedAt && (_canEdit || b.status === 'completed'))
+    ? `<button class="btn-ghost" onclick="confirmarRecebimentoDireto('${escAttrJs(b.id)}')">💵 Pagamento recebido</button>`
+    : '';
   footer.innerHTML = b.status==='pending'
-    ? `${_delBtn}<button class="btn-reject" onclick="rejectBooking('${b.id}');closeModal('detailModal')">Rejeitar</button>
-       <button class="btn-approve" onclick="closeModal('detailModal');openApprove('${b.id}')">Aprovar & Definir Orçamento</button>`
+    ? `${_delBtn}<button class="btn-reject" onclick="rejectBooking('${escAttrJs(b.id)}');closeModal('detailModal')">Rejeitar</button>
+       <button class="btn-approve" onclick="closeModal('detailModal');openApprove('${escAttrJs(b.id)}')">Aprovar & Definir Orçamento</button>`
     : _checkedIn
-    ? `${_delBtn}${_doneBtn}<button class="btn-edit-date" onclick="openEditDate('${b.id}')">📅 Reagendar Entrega</button>`
+    ? `${_delBtn}${_paidBtn}${_doneBtn}<button class="btn-edit-date" onclick="openEditDate('${escAttrJs(b.id)}')">📅 Reagendar Entrega</button>`
     : _canEdit
-    ? `${_delBtn}${_ciBtn}${_doneBtn}<button class="btn-cancel" onclick="cancelBooking('${b.id}')">🚫 Cancelar</button>
-       <button class="btn-edit-date" onclick="openEditDate('${b.id}')">📅 Alterar Data</button>`
-    : `${_delBtn}<button class="btn-primary" onclick="closeModal('detailModal')">Fechar</button>`;
+    ? `${_delBtn}${_ciBtn}${_paidBtn}${_doneBtn}<button class="btn-cancel" onclick="cancelBooking('${escAttrJs(b.id)}')">🚫 Cancelar</button>
+       <button class="btn-edit-date" onclick="openEditDate('${escAttrJs(b.id)}')">📅 Alterar Data</button>`
+    : `${_delBtn}${_paidBtn}<button class="btn-primary" onclick="closeModal('detailModal')">Fechar</button>`;
   document.getElementById('detailModal').style.display = 'flex';
 }
 
@@ -3721,7 +4146,7 @@ function _buildPriceCorrectionHtml(b) {
         ${corrections.slice().reverse().map(c => `
           <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.6rem .8rem;font-size:.78rem">
             <div><strong>${fmtMoney(c.oldPrice)} → ${fmtMoney(c.newPrice)}</strong> · ${new Date(c.correctedAt).toLocaleString('pt-BR')}</div>
-            <div style="color:var(--muted);margin-top:.2rem">${c.reason}</div>
+            <div style="color:var(--muted);margin-top:.2rem">${esc(c.reason)}</div>
             <div style="color:var(--muted);font-size:.72rem;margin-top:.2rem">por ${c.correctedBy}</div>
           </div>`).join('')}
       </div>
@@ -3731,9 +4156,165 @@ function _buildPriceCorrectionHtml(b) {
     <div style="font-family:Montserrat,sans-serif;font-size:.68rem;font-weight:800;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.8rem">💵 Correção de Valor</div>
     ${paidWarning}
     <div class="summary-row"><strong>Valor final atual</strong><span style="color:var(--blue);font-weight:800">${fmtMoney(b.finalPrice || b.price)}</span></div>
-    <button class="btn-edit-date" style="margin-top:.6rem" onclick="openPriceCorrection('${b.id}')">✏️ Corrigir valor</button>
+    <div class="summary-row"><strong>Serviço(s)</strong><span>${bkLabel(b)}</span></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem">
+      <button class="btn-edit-date" onclick="openPriceCorrection('${escAttrJs(b.id)}')">✏️ Corrigir valor</button>
+      <button class="btn-edit-date" onclick="openServiceCorrection('${escAttrJs(b.id)}')">🔁 Trocar serviço</button>
+    </div>
     ${historyHtml}
+    ${_buildServiceCorrectionHistory(b)}
   </div>`;
+}
+
+// ============================================================
+// TROCA DE SERVIÇO (agendamentos concluídos)
+// ============================================================
+// Para a análise de lucro: o custo de um agendamento sai dos serviços gravados
+// nele (functions/lib/core/financeiro.js). Um serviço de revendedor registrado
+// como lavagem comum dava o custo da lavagem comum. Trocar aqui corrige o custo
+// do relatório. O estoque NÃO é mexido: a baixa já feita fica como estava,
+// para não bagunçar um saldo que já pode ter sido conferido na prateleira.
+
+// Regra pura (sem tela, sem banco): devolve o agendamento corrigido ou { erro }.
+// opts: { novoValor (opcional), motivo, quem, agora }
+function aplicarTrocaDeServico(b, novos, opts) {
+  const o = opts || {};
+  if (!b || b.status !== 'completed') return { erro: 'Só agendamento concluído pode trocar de serviço.' };
+  const lista = [...new Set((novos || []).filter(Boolean))];
+  if (!lista.length) return { erro: 'Escolha pelo menos um serviço.' };
+  const antigos = (b.services || [b.service]).filter(Boolean);
+  const mesmos = antigos.length === lista.length && antigos.every(id => lista.includes(id));
+  const atual = b.finalPrice || b.price || 0;
+  const valor = o.novoValor == null ? null : Number(o.novoValor);
+  if (valor != null && !(valor > 0)) return { erro: 'Informe um valor válido, maior que zero.' };
+  const mudaValor = valor != null && Math.abs(valor - atual) >= 0.01;
+  if (mesmos && !mudaValor) return { erro: 'Nada mudou: os serviços são os mesmos.' };
+  const motivo = String(o.motivo || '').trim();
+  if (motivo.length < 10) return { erro: 'Descreva o motivo da troca (mínimo 10 caracteres).' };
+
+  const quem = o.quem || 'admin';
+  const agora = o.agora || new Date().toISOString();
+  const nb = { ...b };
+  if (!mesmos) {
+    nb.services = lista;
+    nb.service = lista[0];
+    nb.serviceCorrections = [...(b.serviceCorrections || []),
+      { oldServices: antigos, newServices: lista, reason: motivo, correctedBy: quem, correctedAt: agora }];
+    nb.lastServiceCorrectionAt = agora;
+  }
+  if (mudaValor) {
+    nb.finalPrice = valor;
+    nb.priceCorrections = [...(b.priceCorrections || []),
+      { oldPrice: atual, newPrice: valor, reason: motivo, correctedBy: quem, correctedAt: agora }];
+    nb.lastPriceCorrectionAt = agora;
+  }
+  return { booking: nb, mudaValor, antigoValor: atual };
+}
+
+function _buildServiceCorrectionHistory(b) {
+  const list = b.serviceCorrections || [];
+  if (!list.length) return '';
+  const nomes = ids => (ids || []).map(id => SVCS[id] ? SVCS[id].icon + ' ' + esc(SVCS[id].name) : esc(id)).join(' + ');
+  return `
+    <details style="margin-top:.8rem">
+      <summary style="cursor:pointer;font-size:.78rem;font-weight:700;color:var(--muted)">🔁 Histórico de troca de serviço (${list.length})</summary>
+      <div style="margin-top:.6rem;display:flex;flex-direction:column;gap:.5rem">
+        ${list.slice().reverse().map(c => `
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.6rem .8rem;font-size:.78rem">
+            <div><strong>${nomes(c.oldServices)} → ${nomes(c.newServices)}</strong> · ${new Date(c.correctedAt).toLocaleString('pt-BR')}</div>
+            <div style="color:var(--muted);margin-top:.2rem">${esc(c.reason)}</div>
+            <div style="color:var(--muted);font-size:.72rem;margin-top:.2rem">por ${esc(c.correctedBy)}</div>
+          </div>`).join('')}
+      </div>
+    </details>`;
+}
+
+function _scPorte(b) { return b.carSize === 'gr' ? 'gr' : 'pq'; }
+
+function openServiceCorrection(id) {
+  const b = getBookings().find(x => x.id === id);
+  if (!b) return;
+  const atuais = (b.services || [b.service]).filter(Boolean);
+  const porte = _scPorte(b);
+  // Ativos + os que já estão no agendamento (mesmo que desativados depois).
+  const opcoes = Object.entries(SVCS).filter(([sid, s]) => s.active !== false || atuais.includes(sid));
+  const checks = opcoes.map(([sid, s]) => `
+    <label style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.82rem;cursor:pointer">
+      <input type="checkbox" value="${sid}" ${atuais.includes(sid) ? 'checked' : ''} onchange="_scAtualiza('${escAttrJs(id)}')"/>
+      ${s.icon} ${esc(s.name)}${s.interno ? ' <span style="font-size:.66rem;color:#a0a0ff">🔒 Interno</span>' : ''}
+      <span style="color:var(--muted);font-size:.72rem">${fmtMoney(s[porte] || 0)}</span>
+    </label>`).join('');
+  document.getElementById('detailBody').innerHTML = `
+    <div class="confirm-card">
+      <h4>🔁 Trocar Serviço</h4>
+      <div class="confirm-row"><strong>Cliente</strong><span>${esc(b.name)}</span></div>
+      <div class="confirm-row"><strong>Serviço(s) atual(is)</strong><span>${bkLabel(b)}</span></div>
+      <div class="confirm-row"><strong>Valor atual</strong><span>${fmtMoney(b.finalPrice || b.price || 0)}</span></div>
+      <div class="confirm-row"><strong>Porte</strong><span>${porte === 'gr' ? '🚙 Grande' : '🚗 Pequeno'}</span></div>
+    </div>
+    <div class="form-group" style="margin-top:1rem">
+      <label>Serviço(s) que foram feitos de verdade</label>
+      <div id="scServicos">${checks}</div>
+    </div>
+    <label style="display:flex;align-items:center;gap:.5rem;margin-top:.8rem;font-size:.82rem;cursor:pointer">
+      <input type="checkbox" id="scAtualizaValor" onchange="_scAtualiza('${escAttrJs(id)}')"/>
+      <span>Atualizar o valor para o preço de tabela: <strong id="scTabela"></strong></span>
+    </label>
+    ${b.paidAmount ? `<div style="background:#FEF5E7;border:1px solid #F39C12;border-radius:8px;padding:.7rem 1rem;font-size:.78rem;color:#7a5500;line-height:1.5;margin-top:.8rem">⚠️ Este agendamento tem pagamento registrado via InfinitePay (${fmtMoney(b.paidAmount)}). No relatório, a receita continua sendo o valor pago.</div>` : ''}
+    <div class="form-group" style="margin-top:.8rem">
+      <label>Motivo da troca</label>
+      <textarea id="scMotivo" rows="2" placeholder="Ex: Serviço de revendedor registrado como lavagem comum"></textarea>
+    </div>
+    <p style="font-size:.74rem;color:var(--muted);margin-top:.6rem">O custo do relatório de lucro passa a ser o do serviço novo. O estoque não muda: a baixa já feita continua como estava.</p>`;
+  document.getElementById('detailFooter').innerHTML = `
+    <button class="btn-ghost" onclick="viewBooking('${escAttrJs(id)}')">← Voltar</button>
+    <button class="btn-approve" style="padding:.6rem 1.4rem" onclick="saveServiceCorrection('${escAttrJs(id)}')">💾 Salvar Troca</button>`;
+  _scAtualiza(id);
+}
+
+function _scEscolhidos() {
+  return [...document.querySelectorAll('#scServicos input[type=checkbox]:checked')].map(cb => cb.value);
+}
+
+function _scAtualiza(id) {
+  const b = getBookings().find(x => x.id === id);
+  const el = document.getElementById('scTabela');
+  if (!b || !el) return;
+  const porte = _scPorte(b);
+  const total = _scEscolhidos().reduce((s, sid) => s + (SVCS[sid]?.[porte] || 0), 0);
+  el.textContent = fmtMoney(total);
+}
+
+function saveServiceCorrection(id) {
+  const b = getBookings().find(x => x.id === id);
+  if (!b) return;
+  const novos = _scEscolhidos();
+  const porte = _scPorte(b);
+  const tabela = novos.reduce((s, sid) => s + (SVCS[sid]?.[porte] || 0), 0);
+  const usarTabela = document.getElementById('scAtualizaValor')?.checked;
+  const r = aplicarTrocaDeServico(b, novos, {
+    novoValor: usarTabela ? tabela : null,
+    motivo: document.getElementById('scMotivo')?.value,
+    quem: _authUser?.email || 'admin',
+  });
+  if (r.erro) { alert(r.erro); return; }
+  const nomes = novos.map(sid => SVCS[sid]?.name || sid).join(' + ');
+  if (!confirm(`Confirmar troca?\n\nServiço(s): ${nomes}` +
+      (r.mudaValor ? `\nValor: ${fmtMoney(r.antigoValor)} → ${fmtMoney(r.booking.finalPrice)}` : ''))) return;
+  updateBooking(r.booking);
+  if (r.mudaValor) {
+    fetch('/api/notify-booking', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'price-correction', id: b.id, name: b.name, phone: b.phone,
+        oldPrice: fmtMoney(r.antigoValor), newPrice: fmtMoney(r.booking.finalPrice),
+        reason: (document.getElementById('scMotivo')?.value || '').trim()
+      })
+    }).catch(() => {});
+  }
+  renderAdminBookings();
+  viewBooking(id);
 }
 
 function openPriceCorrection(id) {
@@ -3743,7 +4324,7 @@ function openPriceCorrection(id) {
   document.getElementById('detailBody').innerHTML = `
     <div class="confirm-card">
       <h4>✏️ Corrigir Valor Final</h4>
-      <div class="confirm-row"><strong>Cliente</strong><span>${b.name}</span></div>
+      <div class="confirm-row"><strong>Cliente</strong><span>${esc(b.name)}</span></div>
       <div class="confirm-row"><strong>Valor atual</strong><span>${fmtMoney(current)}</span></div>
     </div>
     ${b.paidAmount ? `<div style="background:#FEF5E7;border:1px solid #F39C12;border-radius:8px;padding:.7rem 1rem;font-size:.78rem;color:#7a5500;line-height:1.5;margin-top:1rem">⚠️ Este agendamento tem um pagamento real registrado via InfinitePay (${fmtMoney(b.paidAmount)}). A correção altera apenas o valor de venda para fins de relatório — <strong>não gera estorno nem cobrança adicional</strong>.</div>` : ''}
@@ -3868,9 +4449,9 @@ function openApprove(id) {
   document.getElementById('detailBody').innerHTML = `
     <div class="confirm-card">
       <h4>Definir Orçamento & Datas</h4>
-      <div class="confirm-row"><strong>Cliente</strong><span>${b.name}</span></div>
-      <div class="confirm-row"><strong>WhatsApp</strong><span>${b.phone}</span></div>
-      <div class="confirm-row"><strong>Veículo</strong><span>${b.car}${b.plate?' — '+b.plate:''}</span></div>
+      <div class="confirm-row"><strong>Cliente</strong><span>${esc(b.name)}</span></div>
+      <div class="confirm-row"><strong>WhatsApp</strong><span>${esc(b.phone)}</span></div>
+      <div class="confirm-row"><strong>Veículo</strong><span>${esc(b.car)}${esc(b.plate?' — '+b.plate:'')}</span></div>
       <div class="confirm-row"><strong>Serviço(s)</strong><span>${bkLabel(b)} · ${veiculoResumo(b)}</span></div>
       <div class="confirm-price" style="font-size:1.1rem;opacity:.7">Estimativa: ${fmtMoney(b.price)}</div>
     </div>
@@ -4119,6 +4700,35 @@ function cancelBooking(id) {
   try { iaDispatchAgenda(cancelledDate, b.service || b.services?.[0], b.carSize); } catch {}
 }
 
+// Pagamento recebido direto pela empresa. Quem registra e credita os pontos é
+// o servidor (/api/admin-data, op `confirmar-recebimento`, e lib/core/pontos.js):
+// a tela só pergunta a forma e mostra o resultado.
+const _METODOS_RECEBIMENTO = { '1': 'dinheiro', '2': 'pix', '3': 'cartao-maquininha', '4': 'outro' };
+async function confirmarRecebimentoDireto(id) {
+  const b = getBookings().find(x => x.id === id);
+  if (!b) return;
+  const escolha = prompt(
+    `Pagamento recebido de "${b.name}" (${fmtMoney(b.finalPrice || b.price)}).\n\n` +
+    'Como foi pago?\n1 = Dinheiro\n2 = Pix direto\n3 = Cartão na maquininha\n4 = Outro');
+  if (escolha === null) return;
+  const metodo = _METODOS_RECEBIMENTO[String(escolha).trim()];
+  if (!metodo) { alert('Opção inválida. Digite 1, 2, 3 ou 4.'); return; }
+  try {
+    const r = await DB.confirmarRecebimento(id, metodo);
+    b.paymentConfirmedAt = r && r.paymentConfirmedAt;
+    b.paymentMethod = metodo;
+    if (b.status !== 'completed') b.status = 'confirmed';
+    const p = (r && r.pontos) || {};
+    alert(p.creditado > 0
+      ? `✅ Pagamento registrado. ${p.creditado} pontos creditados ao cliente.`
+      : `✅ Pagamento registrado. Sem pontos: ${p.motivo || 'nada a creditar'}.`);
+    closeModal('detailModal');
+    renderAdminBookings();
+  } catch (e) {
+    alert('Não foi possível registrar o pagamento: ' + e.message);
+  }
+}
+
 async function markCompleted(id) {
   const b = getBookings().find(x => x.id === id);
   if (!b) return;
@@ -4164,8 +4774,8 @@ function openEditDate(id) {
     <div class="confirm-card">
       <h4>${postCheckin ? '📅 Reagendar Entrega do Veículo' : 'Alterar Data do Agendamento'}</h4>
       ${postCheckin ? `<div style="background:rgba(246,166,35,.08);border:1px solid var(--warn,#f6a623);border-radius:8px;padding:.6rem 1rem;margin-bottom:.8rem;font-size:.8rem;color:var(--warn,#f6a623)">⚠️ O veículo já está em serviço. Apenas a data de conclusão/retirada pode ser alterada. O cliente será avisado por e-mail automaticamente.</div>` : ''}
-      <div class="confirm-row"><strong>Cliente</strong><span>${b.name}</span></div>
-      <div class="confirm-row"><strong>Veículo</strong><span>${b.car}</span></div>
+      <div class="confirm-row"><strong>Cliente</strong><span>${esc(b.name)}</span></div>
+      <div class="confirm-row"><strong>Veículo</strong><span>${esc(b.car)}</span></div>
       <div class="confirm-row"><strong>Serviço</strong><span>${bkLabel(b)}</span></div>
     </div>
     <div class="form-row" style="margin-top:1.2rem">
@@ -4381,8 +4991,8 @@ function renderAdminClients(filter) {
     return `<div class="client-row" onclick="openClientProfile('${encodeURIComponent(c.key)}')">
       <div class="client-row-avatar">${initials}</div>
       <div class="client-row-info">
-        <div class="client-row-name">${c.name} ${vipBadge}${oppBadge}</div>
-        <div class="client-row-sub">${c.email} · ${c.phone||'—'}${bairroInfo}</div>
+        <div class="client-row-name">${esc(c.name)} ${vipBadge}${oppBadge}</div>
+        <div class="client-row-sub">${esc(c.email)} · ${esc(c.phone||'—')}${bairroInfo}</div>
         ${carInfo ? `<div class="client-row-sub" style="margin-top:1px">🚗 ${carInfo}</div>` : ''}
         ${oppInfo}
       </div>
@@ -4440,11 +5050,11 @@ function renderAdminClients(filter) {
         </div>
         ${inactive.map(c => `
         <div class="reactivation-row">
-          <span>${c.name} <span style="color:var(--muted);font-size:.72rem">${c.email}</span></span>
+          <span>${esc(c.name)} <span style="color:var(--muted);font-size:.72rem">${esc(c.email)}</span></span>
           <span class="inactive-days">${Math.floor((new Date()-new Date(c.lastVisit))/86400000)}d</span>
           <div style="display:flex;gap:.4rem">
             <button class="btn-ghost" style="font-size:.7rem;padding:.25rem .6rem" onclick="adminSendReactivation('${encodeURIComponent(c.phone)}','${encodeURIComponent(c.name)}')">💬 WhatsApp</button>
-            ${c.uid ? `<button class="btn-ghost" style="font-size:.7rem;padding:.25rem .6rem" onclick="adminGenerateBirthdayCoupon('${c.uid}','${c.name}','${c.email}')">🎫 Cupom</button>` : ''}
+            ${c.uid ? `<button class="btn-ghost" style="font-size:.7rem;padding:.25rem .6rem" onclick="adminGenerateBirthdayCoupon('${escAttrJs(c.uid)}','${escAttrJs(c.name)}','${escAttrJs(c.email)}')">🎫 Cupom</button>` : ''}
           </div>
         </div>`).join('')}
       </div>
@@ -4570,17 +5180,17 @@ function openCheckin(id) {
   document.getElementById('ciGrid').innerHTML = CHECKIN_ITEMS.map(item => {
     const st = (ex.items || {})[item.key] || {};
     const isAv = st.ok === false;
-    return `<div class="checkin-item${isAv ? ' avaria' : ''}" id="ci-${item.key}">
-      <div class="ci-item-hdr" onclick="_ciToggle('${item.key}')">
-        <span class="ci-label">${item.label}</span>
+    return `<div class="checkin-item${isAv ? ' avaria' : ''}" id="ci-${esc(item.key)}">
+      <div class="ci-item-hdr" onclick="_ciToggle('${escAttrJs(item.key)}')">
+        <span class="ci-label">${esc(item.label)}</span>
         <span class="ci-badge ${isAv ? 'avaria' : 'ok'}">${isAv ? 'Avaria' : 'OK'}</span>
       </div>
-      <div class="ci-detail" id="ci-det-${item.key}" style="display:${isAv ? 'block' : 'none'}">
-        <input class="ci-note" id="ci-note-${item.key}" placeholder="Descreva a avaria..." value="${(st.note||'').replace(/"/g,'&quot;')}"/>
+      <div class="ci-detail" id="ci-det-${esc(item.key)}" style="display:${isAv ? 'block' : 'none'}">
+        <input class="ci-note" id="ci-note-${esc(item.key)}" placeholder="Descreva a avaria..." value="${esc(st.note||'')}"/>
         <div class="ci-photo-row">
-          ${st.photoUrl ? `<img class="checkin-photo-thumb" src="${st.photoUrl}" alt="Foto do check-in" loading="lazy" onclick="window.open('${st.photoUrl}','_blank')"/>` : ''}
-          <label class="ci-photo-btn">📷 Foto<input type="file" accept="image/*" style="display:none" onchange="_ciUploadPhoto('${item.key}',this)"/></label>
-          <span class="ci-photo-status" id="ci-ps-${item.key}">${st.photoUrl ? '✅' : ''}</span>
+          ${st.photoUrl ? `<img class="checkin-photo-thumb" src="${esc(st.photoUrl)}" alt="Foto do check-in" loading="lazy" onclick="window.open('${escAttrJs(st.photoUrl)}','_blank')"/>` : ''}
+          <label class="ci-photo-btn">📷 Foto<input type="file" accept="image/*" style="display:none" onchange="_ciUploadPhoto('${escAttrJs(item.key)}',this)"/></label>
+          <span class="ci-photo-status" id="ci-ps-${esc(item.key)}">${esc(st.photoUrl ? '✅' : '')}</span>
         </div>
       </div>
     </div>`;
@@ -4693,12 +5303,12 @@ function _buildCheckinSummaryHtml(checkin) {
     ? avarias.map(i => {
         const st = checkin.items[i.key];
         return `<div class="ci-sum-avaria-item">
-          <div class="ci-sum-row ci-sum-avaria">⚠️ <strong>${i.label}</strong>${st.note ? ' — ' + st.note : ''}</div>
+          <div class="ci-sum-row ci-sum-avaria">⚠️ <strong>${esc(i.label)}</strong>${esc(st.note ? ' — ' + st.note : '')}</div>
           ${st.photoUrl
             ? `<div class="ci-sum-photo-wrap">
-                <img class="ci-sum-photo" src="${st.photoUrl}" alt="${i.label}"
+                <img class="ci-sum-photo" src="${esc(st.photoUrl)}" alt="${esc(i.label)}"
                   onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"/>
-                <a class="ci-sum-photo-link" href="${st.photoUrl}" target="_blank" style="display:none">📷 Ver foto registrada</a>
+                <a class="ci-sum-photo-link" href="${esc(st.photoUrl)}" target="_blank" style="display:none">📷 Ver foto registrada</a>
                </div>`
             : ''}
         </div>`;
@@ -4710,7 +5320,7 @@ function _buildCheckinSummaryHtml(checkin) {
     ${checkin.km   ? `<div class="ci-sum-row">🔢 Km na entrada: <strong>${checkin.km}</strong></div>` : ''}
     ${checkin.fuel ? `<div class="ci-sum-row">⛽ Combustível: <strong>${checkin.fuel}</strong></div>`  : ''}
     ${avHtml}
-    ${checkin.obs  ? `<div class="ci-sum-row">📝 ${checkin.obs}</div>` : ''}
+    ${checkin.obs  ? `<div class="ci-sum-row">📝 ${esc(checkin.obs)}</div>` : ''}
   </div>`;
 }
 
@@ -4877,16 +5487,16 @@ async function renderAdminWaitlist() {
     <div class="wl-entry">
       <div class="wl-entry-info">
         <div class="wl-entry-date">📅 ${fmtDateShort(e.date)}</div>
-        <div class="wl-entry-name">${e.name}</div>
-        <div class="wl-entry-sub">${e.phone}${e.email ? ' · ' + e.email : ''}</div>
+        <div class="wl-entry-name">${esc(e.name)}</div>
+        <div class="wl-entry-sub">${esc(e.phone)}${esc(e.email ? ' · ' + e.email : '')}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-wrap:wrap">
         <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem"
-          onclick="window.open('https://wa.me/${''}'+buildWaPhone('${e.phone}')+'?text='+encodeURIComponent('Olá *${e.name}*! Abrimos uma vaga para ${fmtDateShort(e.date)} na SP Car Clean. Acesse https://www.spcarclean.com.br para agendar 🚗'),'_blank')">
+          onclick="window.open('https://wa.me/${''}'+buildWaPhone('${escAttrJs(e.phone)}')+'?text='+encodeURIComponent('Olá *${escAttrJs(e.name)}*! Abrimos uma vaga para ${fmtDateShort(e.date)} na SP Car Clean. Acesse https://www.spcarclean.com.br para agendar 🚗'),'_blank')">
           💬 WhatsApp
         </button>
         <button class="ba-admin-del" style="font-size:.72rem;padding:.3rem .7rem"
-          onclick="removeWaitlistEntry('${e.id}')">🗑️ Remover</button>
+          onclick="removeWaitlistEntry('${escAttrJs(e.id)}')">🗑️ Remover</button>
       </div>
     </div>`).join('')
   : '<p style="color:var(--muted);font-size:.85rem;padding:1.5rem 0">Nenhuma entrada na lista de espera.</p>';
@@ -4953,8 +5563,8 @@ function openClientProfile(encodedKey) {
     return `<div class="vehicle-card" style="width:100%">
       <div style="display:flex;align-items:flex-start;gap:.6rem;flex-wrap:wrap">
         <div style="flex:1;min-width:140px">
-          <div class="vehicle-card-label" id="vfDisplay-car-${vKeyAttr}">🚗 ${v.car || 'Veículo'} <button type="button" class="btn-ghost" style="font-size:.62rem;padding:.05rem .3rem" onclick="editVehicleField('${encKey}','${vKeyAttr}','car','${encodeURIComponent(v.car||'')}')" title="Editar veículo">✏️</button></div>
-          <div class="vehicle-card-plate" id="vfDisplay-plate-${vKeyAttr}">${v.plate || '—'} <button type="button" class="btn-ghost" style="font-size:.62rem;padding:.05rem .3rem" onclick="editVehicleField('${encKey}','${vKeyAttr}','plate','${encodeURIComponent(v.plate||'')}')" title="Editar placa">✏️</button></div>
+          <div class="vehicle-card-label" id="vfDisplay-car-${vKeyAttr}">🚗 ${esc(v.car || 'Veículo')} <button type="button" class="btn-ghost" style="font-size:.62rem;padding:.05rem .3rem" onclick="editVehicleField('${encKey}','${vKeyAttr}','car','${encodeURIComponent(v.car||'')}')" title="Editar veículo">✏️</button></div>
+          <div class="vehicle-card-plate" id="vfDisplay-plate-${vKeyAttr}">${esc(v.plate || '—')} <button type="button" class="btn-ghost" style="font-size:.62rem;padding:.05rem .3rem" onclick="editVehicleField('${encKey}','${vKeyAttr}','plate','${encodeURIComponent(v.plate||'')}')" title="Editar placa">✏️</button></div>
           ${(() => {
             const isMoto = v.vehicleType === 'moto';
             const carroceria = bodyLabel(v.bodyType);
@@ -5005,7 +5615,7 @@ function openClientProfile(encodedKey) {
     return `<tr>
       <td style="white-space:nowrap">${dateStr ? fmtDateShort(dateStr) : '—'}</td>
       <td>${svc}</td>
-      <td style="color:var(--muted);white-space:nowrap">${b.car||'—'}${b.plate?' ('+b.plate+')':''}</td>
+      <td style="color:var(--muted);white-space:nowrap">${esc(b.car||'—')}${esc(b.plate?' ('+b.plate+')':'')}</td>
       <td style="font-weight:700;color:var(--blue);white-space:nowrap">${valorHtml}</td>
       <td>${statusLabel[b.status]||b.status}</td>
     </tr>`;
@@ -5016,27 +5626,27 @@ function openClientProfile(encodedKey) {
     <div class="client-profile-header">
       <div class="client-profile-avatar">${initials}</div>
       <div>
-        <div class="client-profile-name">${c.name} ${vipBadge}${c.merged ? ` <span class="vip-badge" style="background:var(--blue-lt);color:var(--blue)" title="E-mails vinculados: ${esc((c.linkedEmails||[]).join(', '))}">🔗 Cadastro mesclado</span>` : ''}</div>
-        <div class="client-profile-contact">📧 ${c.email} &nbsp;·&nbsp; 📞 ${c.phone||'—'}</div>
+        <div class="client-profile-name">${esc(c.name)} ${vipBadge}${c.merged ? ` <span class="vip-badge" style="background:var(--blue-lt);color:var(--blue)" title="E-mails vinculados: ${esc((c.linkedEmails||[]).join(', '))}">🔗 Cadastro mesclado</span>` : ''}</div>
+        <div class="client-profile-contact">📧 ${esc(c.email)} &nbsp;·&nbsp; 📞 ${esc(c.phone||'—')}</div>
       </div>
     </div>
     <div class="profile-cols">
       <div>
         <div class="profile-section">
           <h3>Identificação</h3>
-          <div class="profile-field"><strong>Nome</strong><span>${c.name}</span></div>
-          <div class="profile-field"><strong>Telefone</strong><span id="cfDisplay-phone">${c.phone||'—'} <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.05rem .35rem;margin-left:.3rem" onclick="editClientField('${encKey}','phone','${encodeURIComponent(c.phone||'')}')" title="Editar telefone">✏️</button></span></div>
-          <div class="profile-field"><strong>E-mail</strong><span id="cfDisplay-email">${c.email} <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.05rem .35rem;margin-left:.3rem" onclick="editClientField('${encKey}','email','${encodeURIComponent(c.email)}')" title="Editar e-mail">✏️</button></span></div>
-          ${c.bairro?`<div class="profile-field"><strong>Bairro</strong><span>📍 ${c.bairro}${c.cep?' · '+c.cep:''}</span></div>`:''}
+          <div class="profile-field"><strong>Nome</strong><span>${esc(c.name)}</span></div>
+          <div class="profile-field"><strong>Telefone</strong><span id="cfDisplay-phone">${esc(c.phone||'—')} <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.05rem .35rem;margin-left:.3rem" onclick="editClientField('${encKey}','phone','${encodeURIComponent(c.phone||'')}')" title="Editar telefone">✏️</button></span></div>
+          <div class="profile-field"><strong>E-mail</strong><span id="cfDisplay-email">${esc(c.email)} <button type="button" class="btn-ghost" style="font-size:.65rem;padding:.05rem .35rem;margin-left:.3rem" onclick="editClientField('${encKey}','email','${encodeURIComponent(c.email)}')" title="Editar e-mail">✏️</button></span></div>
+          ${c.bairro?`<div class="profile-field"><strong>Bairro</strong><span>📍 ${esc(c.bairro)}${esc(c.cep?' · '+c.cep:'')}</span></div>`:''}
           <div class="profile-field"><strong>Classificação</strong><span>${c.isOpportunity?'<span class="opp-badge" style="margin-left:0">🌱 Oportunidade</span>':c.vip?'<span class="vip-badge">★ VIP</span>':c.completedCount>=1?'<span style="color:var(--green);font-size:.8rem">Recorrente</span>':'<span style="color:var(--muted);font-size:.8rem">Novo</span>'}</span></div>
           ${c.isOpportunity?`<div class="profile-field"><strong>Origem</strong><span style="color:var(--accent);font-size:.8rem">🤝 Indicado${c.referredBy?' por '+esc(c.referredBy):''}${c.referralCreatedAt?' · '+fmtDateShort(c.referralCreatedAt.slice(0,10)):''}</span></div>`:''}
           ${c.birthDate?`<div class="profile-field"><strong>Aniversário</strong><span>🎂 ${c.birthDate.slice(5).replace('-','/')}</span></div>`:''}
           ${c.points?`<div class="profile-field"><strong>Pontos</strong><span>⭐ ${c.points} pts</span></div>`:''}
           ${c.merged?`<div class="profile-field"><strong>E-mails vinculados</strong><span style="font-size:.8rem">${esc((c.linkedEmails||[]).join(', '))} <button class="btn-ghost" style="font-size:.68rem;padding:.15rem .5rem;margin-left:.4rem" onclick="undoMergeClient('${encKey}')">↩ Desfazer mesclagem</button></span></div>`:''}
           ${c.uid?`<div style="display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap">
-            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminGenerateBirthdayCoupon('${c.uid}','${c.name}','${c.email}','${encodeURIComponent(c.phone||'')}')">🎁 Cupom Aniversário</button>
+            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminGenerateBirthdayCoupon('${escAttrJs(c.uid)}','${escAttrJs(c.name)}','${escAttrJs(c.email)}','${encodeURIComponent(c.phone||'')}')">🎁 Cupom Aniversário</button>
             <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="adminSendReactivation('${encodeURIComponent(c.phone)}','${encodeURIComponent(c.name)}')">💬 WhatsApp Reativação</button>
-            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="let d=prompt('Adicionar pontos (use negativo para remover):');if(d)_adminAdjustPoints('${c.uid}',parseInt(d),prompt('Motivo:'))">⭐ Ajustar Pontos</button>
+            <button class="btn-ghost" style="font-size:.72rem;padding:.3rem .7rem" onclick="let d=prompt('Adicionar pontos (use negativo para remover):');if(d)_adminAdjustPoints('${escAttrJs(c.uid)}',parseInt(d),prompt('Motivo:'))">⭐ Ajustar Pontos</button>
           </div>`:''}
         </div>
         <div class="profile-section">
@@ -5534,7 +6144,7 @@ function buildComboList(entries) {
     const isInternal = combo.internal === true;
     const tags = (combo.serviceIds || []).map(sid => {
       const s = SVCS[sid];
-      return s ? `<span class="combo-svc-tag">${s.icon} ${s.name}</span>` : '';
+      return s ? `<span class="combo-svc-tag">${s.icon} ${esc(s.name)}</span>` : '';
     }).join('');
 
     const costPq = isInternal ? (combo.serviceIds || []).reduce((s, sid) => s + (SVCS[sid]?._cost_pq || 0), 0) : 0;
@@ -5573,7 +6183,7 @@ function buildComboList(entries) {
       <div class="svc-admin-header">
         <span class="svc-admin-icon">${combo.emoji || '🎁'}</span>
         <div class="svc-admin-meta">
-          <div class="svc-admin-name">${combo.name}
+          <div class="svc-admin-name">${esc(combo.name)}
             <span style="font-size:.68rem;font-weight:600;padding:.1rem .45rem;border-radius:20px;margin-left:.4rem;vertical-align:middle;${isInternal ? 'background:rgba(150,150,255,.15);color:#a0a0ff' : 'background:rgba(72,201,245,.12);color:var(--accent)'}">
               ${isInternal ? '🔒 Interno' : '🌐 Público'}
             </span>
@@ -5607,7 +6217,7 @@ function openComboForm(id) {
   const svcChecks = Object.entries(SVCS).map(([sid, s]) =>
     `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.82rem;cursor:pointer">
       <input type="checkbox" value="${sid}" ${selectedIds.includes(sid) ? 'checked' : ''} onchange="updateComboFinalPricePreview()"/>
-      ${s.icon} ${s.name} <span style="color:var(--muted);font-size:.72rem">(pq: ${fmtMoney(s.pq)} / gr: ${fmtMoney(s.gr)})</span>
+      ${s.icon} ${esc(s.name)}${s.interno ? ' <span style="font-size:.66rem;color:#a0a0ff">🔒 Interno</span>' : ''} <span style="color:var(--muted);font-size:.72rem">(pq: ${fmtMoney(s.pq)} / gr: ${fmtMoney(s.gr)})</span>
     </label>`
   ).join('');
   const isInternal = combo?.internal === true;
@@ -5618,7 +6228,7 @@ function openComboForm(id) {
     <div class="svc-form-panel">
       <h4>${id ? 'Editar Combo' : 'Novo Combo'}</h4>
       <div class="form-row">
-        <div class="form-group" style="flex:3"><label>Nome do combo</label><input id="cfName" value="${combo?.name || ''}"/></div>
+        <div class="form-group" style="flex:3"><label>Nome do combo</label><input id="cfName" value="${esc(combo?.name || '')}"/></div>
         <div class="form-group" style="flex:1"><label>Emoji</label><input id="cfEmoji" value="${combo?.emoji || '🎁'}" maxlength="4"/></div>
         <div class="form-group" style="flex:1" id="cfDiscGroup"><label>Desconto %</label><input id="cfDisc" type="number" value="${combo?.discountPercent || 0}" min="0" max="50"/></div>
       </div>
@@ -5820,8 +6430,8 @@ function buildServiceList(svcs) {
       <div class="svc-admin-header">
         <span class="svc-admin-icon">${s.icon || '🔧'}</span>
         <div class="svc-admin-meta">
-          <div class="svc-admin-name">${s.name} <span style="font-size:.62rem;font-weight:600;color:var(--muted);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:.05rem .35rem;margin-left:.3rem">${vBadge}</span></div>
-          <div class="svc-admin-sub">${s.cat || ''}${s.daysExtra ? ' · ' + s.daysExtra + ' dia(s) extra' : ' · mesmo dia'}</div>
+          <div class="svc-admin-name">${esc(s.name)} <span style="font-size:.62rem;font-weight:600;color:var(--muted);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:.05rem .35rem;margin-left:.3rem">${vBadge}</span>${s.interno ? '<span style="font-size:.62rem;font-weight:600;padding:.05rem .4rem;border-radius:6px;margin-left:.3rem;background:rgba(150,150,255,.15);color:#a0a0ff">🔒 Interno</span>' : ''}</div>
+          <div class="svc-admin-sub">${s.cat || ''} · ${prazoDeEntrega(s.daysExtra)}</div>
         </div>
         <button class="btn-toggle-svc${isActive ? '' : ' off'}" onclick="toggleService('${id}')">
           ${isActive ? '✅ Ativo' : '⛔ Inativo'}
@@ -5847,16 +6457,229 @@ function buildServiceList(svcs) {
   }).join('');
 }
 
+// ── Insumos consumidos pelo serviço, e o custo que sai deles ───────────────
+//
+// O custo do serviço era digitado à mão (`pricing.pq.cost`), enquanto a tela de
+// Estoque calculava o mesmo número a partir das receitas — dois números para a
+// mesma coisa, e a margem exibida nos cards saía do digitado. Pior: a receita
+// só existia para os 9 serviços que já vinham prontos, e não havia nenhuma tela
+// para criar outra. Serviço novo nascia sem uso cadastrado e sem como cadastrar.
+//
+// Agora o uso é cadastrado junto com o serviço, e o custo vem dele:
+//   custo = Σ (quantidade consumida × custo por unidade do insumo)
+// que é exatamente a conta da tela de Estoque, agora com uma origem só.
+let _sfInsumos = {};            // catálogo id → insumo, carregado ao abrir
+let _sfRecIdx = 0;              // contador de linhas (ids únicos no DOM)
+let _sfCustoAnterior = null;    // o que estava salvo, para avisar se mudar
+// Carga assíncrona que chega atrasada não pode escrever num formulário que já é
+// outro. Abrir o serviço A e, antes de a resposta chegar, abrir o B fazia a
+// receita de A aparecer no B. Cada preenchimento vira o válido; o que chegar
+// depois citando um preenchimento anterior é descartado.
+let _sfPreenchimento = 0;
+let _sfMigrouHoras = null;      // horas que vieram da receita antiga (aviso)
+let _sfServicoAberto = null;    // o serviço como estava salvo
+
+function _sfOpcoesInsumo(sel) {
+  // Itens em horas são mão de obra, que agora tem campo próprio.
+  const itens = Object.entries(_sfInsumos).filter(([, p]) => p.unit !== 'h')
+    .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''));
+  return '<option value="">— escolha o insumo —</option>' + itens.map(([id, p]) =>
+    `<option value="${id}"${id === sel ? ' selected' : ''}>${esc(p.name || id)} (${esc(p.unit || '')})</option>`
+  ).join('');
+}
+
+function addRecipeRow(pid, pq, gr) {
+  const lista = document.getElementById('sfRecipeList');
+  if (!lista) return;
+  const i = _sfRecIdx++;
+  const div = document.createElement('div');
+  div.id = 'recRow' + i;
+  div.style.cssText = 'display:flex;gap:.5rem;align-items:center;margin-bottom:.45rem;flex-wrap:wrap';
+  div.innerHTML = `
+    <select id="sfRecProd${i}" class="form-control" style="flex:2;min-width:150px;font-size:.78rem;padding:.35rem .6rem"
+      onchange="_sfRecalcCusto()">${_sfOpcoesInsumo(pid || '')}</select>
+    <input id="sfRecPq${i}" type="number" min="0" step="0.01" value="${pq ?? ''}" placeholder="Qtd 🚗"
+      style="flex:1;min-width:76px;font-size:.78rem;padding:.35rem .6rem" oninput="_sfRecalcCusto()"/>
+    <input id="sfRecGr${i}" type="number" min="0" step="0.01" value="${gr ?? ''}" placeholder="Qtd 🚙"
+      class="sf-rec-gr" style="flex:1;min-width:76px;font-size:.78rem;padding:.35rem .6rem" oninput="_sfRecalcCusto()"/>
+    <span id="sfRecUn${i}" style="font-size:.74rem;color:var(--muted);min-width:22px"></span>
+    <button class="ba-admin-del" onclick="removeRecipeRow(${i})" style="padding:.35rem .6rem">🗑️</button>`;
+  lista.appendChild(div);
+  _sfToggleVeiculo();
+  _sfRecalcCusto();
+}
+
+function removeRecipeRow(i) {
+  document.getElementById('recRow' + i)?.remove();
+  _sfRecalcCusto();
+}
+
+// Linhas da tela → receita. Linha sem insumo escolhido, ou que não consome
+// nada nos dois portes, não vira registro: receita com zero é ruído.
+function _getRecipeRows() {
+  const out = {};
+  document.querySelectorAll('[id^="recRow"]').forEach(div => {
+    const i = div.id.replace('recRow', '');
+    const pid = document.getElementById('sfRecProd' + i)?.value;
+    if (!pid) return;
+    const pq = parseFloat(document.getElementById('sfRecPq' + i)?.value) || 0;
+    const gr = parseFloat(document.getElementById('sfRecGr' + i)?.value) || 0;
+    if (pq <= 0 && gr <= 0) return;
+    // Mesmo insumo em duas linhas soma, em vez de uma apagar a outra.
+    out[pid] = { pq: (out[pid]?.pq || 0) + pq, gr: (out[pid]?.gr || 0) + gr };
+  });
+  return out;
+}
+
+// O custo do serviço é SEMPRE a soma dos insumos. Não há opção de digitá-lo:
+// enquanto havia, o número exibido na margem podia discordar do que os insumos
+// custam de verdade, e era o digitado que ganhava.
+function _sfRecalcCusto() {
+  const elPq = document.getElementById('sfCostPq');
+  const elGr = document.getElementById('sfCostGr');
+  const elNota = document.getElementById('sfCostNota');
+  if (!elPq || !elNota) return;
+
+  // A unidade de cada linha, ao lado da quantidade: "300" sem unidade é adivinhação.
+  document.querySelectorAll('[id^="recRow"]').forEach(div => {
+    const i = div.id.replace('recRow', '');
+    const pid = document.getElementById('sfRecProd' + i)?.value;
+    const span = document.getElementById('sfRecUn' + i);
+    if (span) span.textContent = pid ? (_sfInsumos[pid]?.unit || '') : '';
+  });
+
+  const receita = _getRecipeRows();
+  const n = Object.keys(receita).length;
+  const h = _sfHoras();
+  const temHoras = h.pq > 0 || h.gr > 0;
+
+  [elPq, elGr].forEach(el => { if (el) { el.readOnly = true; el.style.background = 'rgba(0,0,0,.14)'; } });
+
+  if (!n && !temHoras) {
+    elPq.value = 0;
+    if (elGr) elGr.value = 0;
+    elNota.textContent = 'Sem insumos cadastrados nem horas de serviço: o custo fica R$ 0,00 e a margem não aparece. '
+      + 'Acrescente o que este serviço consome e quantas horas leva.';
+    return;
+  }
+
+  const c = custoDoServico(receita, _sfInsumos, h, _valorHora);
+  elPq.value = c.pq;
+  if (elGr) elGr.value = c.gr;
+
+  const moto = document.getElementById('sfVeiculo')?.value === 'moto';
+  const partes = [];
+  if (n) partes.push(n + ' insumo(s)');
+  if (temHoras) partes.push('mão de obra (' + _sfNum(h.pq) + ' h' + (moto ? '' : ' / ' + _sfNum(h.gr) + ' h')
+    + ' × R$ ' + _valorHora.toFixed(2).replace('.', ',') + '/h)');
+  let nota = 'Calculado de ' + partes.join(' + ') + ': R$ ' + c.pq.toFixed(2).replace('.', ',')
+    + (moto ? '' : ' (pequeno) · R$ ' + c.gr.toFixed(2).replace('.', ',') + ' (grande)') + '.';
+  if (!temHoras) nota += ' Sem horas de serviço: a mão de obra não entra no custo.';
+  // Se o que estava salvo era outro número, dizer — senão a margem dos cards
+  // mudaria sem ninguém notar.
+  if (_sfCustoAnterior && (_sfCustoAnterior.pq || _sfCustoAnterior.gr)
+      && (Math.abs(_sfCustoAnterior.pq - c.pq) >= 0.01 || Math.abs(_sfCustoAnterior.gr - c.gr) >= 0.01)) {
+    nota += ' Estava R$ ' + _sfCustoAnterior.pq.toFixed(2).replace('.', ',')
+      + (moto ? '' : ' / R$ ' + _sfCustoAnterior.gr.toFixed(2).replace('.', ','))
+      + ', digitado à mão — salvar substitui.';
+  }
+  elNota.textContent = nota;
+}
+
+// Mostra, no painel, a MESMA frase que o cliente vai ler no site. O rótulo
+// "Dias extras" não dizia o que 0, 1 ou 2 significam para quem agenda.
+function _sfHoras() {
+  const moto = document.getElementById('sfVeiculo')?.value === 'moto';
+  const pq = parseFloat(document.getElementById('sfHorasPq')?.value) || 0;
+  const gr = moto ? pq : (parseFloat(document.getElementById('sfHorasGr')?.value) || 0);
+  return { pq, gr };
+}
+
+function _sfNum(v) { return String(Math.round(v * 100) / 100).replace('.', ','); }
+
+function _sfPrazo() {
+  const el = document.getElementById('sfDaysNota');
+  if (!el) return;
+  const h = _sfHoras();
+  const espera = Math.max(0, parseInt(document.getElementById('sfEspera')?.value) || 0);
+  const d = prazoDoServico(h, espera);
+  const maior = Math.max(h.pq, h.gr);
+  let txt = '';
+  if (maior > 0) {
+    const dias = Math.ceil(maior / HORAS_POR_DIA);
+    txt = _sfNum(maior) + ' h ÷ ' + HORAS_POR_DIA + ' h por dia útil = ' + dias + ' dia' + (dias > 1 ? 's' : '') + ' de trabalho'
+      + (espera ? ' + ' + espera + ' de espera' : '') + '. ';
+  }
+  txt += 'O cliente vê: "' + prazoDeEntrega(d) + '".';
+  if (_sfMigrouHoras) txt += ' A mão de obra estava na lista de insumos e veio para cá: salve para gravar.';
+  el.textContent = txt;
+}
+
 function openServiceForm(id) {
   const s = id ? SVCS[id] : null;
   const wrap = document.getElementById('svcFormWrap');
   if (!wrap) return;
+  // O catálogo de insumos e a receita do serviço vêm do banco. Sem eles dá para
+  // editar o resto do serviço normalmente — só a seção de insumos fica vazia.
+  _sfInsumos = {};
+  _sfRecIdx = 0;
+  _sfCustoAnterior = { pq: s?._cost_pq || 0, gr: s?._cost_gr || 0 };
+  _sfServicoAberto = s;
+  _sfMigrouHoras = null;
+  carregarValorHora().then(() => _sfRecalcCusto());
+  if (_stockRef && _stockRecipesRef) {
+    const meu = _sfPreenchimento;
+    Promise.all([_stockRef.once('value'), _stockRecipesRef.once('value')])
+      .then(([est, rec]) => {
+        if (meu !== _sfPreenchimento) return;   // outro formulário assumiu
+        _sfPreencheReceita((rec.val() || {})[id] || {}, est.val() || {});
+      })
+      .catch(e => {
+        console.warn('insumos do serviço:', e);
+        if (meu === _sfPreenchimento) _sfPreencheReceita({});
+      });
+  }
+  _desenharServiceForm(id, s, wrap);
+}
+
+// Desenha as linhas da receita salva e liga o cálculo. Serviço que já tem
+// receita abre calculando — é a origem que a dona quer. Serviço sem receita
+// abre no custo digitado, que é o que ele tem.
+function _sfPreencheReceita(receita, insumos) {
+  _sfPreenchimento++;
+  if (insumos) _sfInsumos = insumos;
+  const lista = document.getElementById('sfRecipeList');
+  if (!lista) return;
+  lista.innerHTML = '';
+  // Mão de obra cadastrada como insumo (como era antes) vira horas de serviço.
+  const sep = separarMaoDeObra(receita, _sfInsumos);
+  _sfMigrouHoras = null;
+  const hp = document.getElementById('sfHorasPq');
+  const hg = document.getElementById('sfHorasGr');
+  const s = _sfServicoAberto;
+  if (sep.tinha && hp && !s?.horas) {
+    hp.value = sep.horas.pq;
+    if (hg) hg.value = sep.horas.gr;
+    _sfMigrouHoras = sep.horas;
+    // O prazo que o cliente vê não pode mudar sem ninguém notar: o que as
+    // horas não cobrem vira dia de espera.
+    const esp = document.getElementById('sfEspera');
+    if (esp && s && s.diasEspera == null) {
+      esp.value = Math.max(0, (s.daysExtra || 0) - diasExtrasPorHoras(Math.max(sep.horas.pq, sep.horas.gr)));
+    }
+  }
+  Object.entries(sep.receita).forEach(([pid, a]) => addRecipeRow(pid, a.pq ?? '', a.gr ?? ''));
+  _sfPrazo();
+  _sfRecalcCusto();
+}
+
+function _desenharServiceForm(id, s, wrap) {
   const catOpts = SVCS_CATS.map(c => `<option${(s?.cat||'') === c ? ' selected' : ''}>${c}</option>`).join('');
   wrap.innerHTML = `
     <div class="svc-form-panel">
       <h4>${id ? 'Editar Serviço' : 'Novo Serviço'}</h4>
       <div class="form-row">
-        <div class="form-group" style="flex:3"><label>Nome do serviço</label><input id="sfName" value="${s?.name||''}"/></div>
+        <div class="form-group" style="flex:3"><label>Nome do serviço</label><input id="sfName" value="${esc(s?.name||'')}"/></div>
         <div class="form-group" style="flex:1"><label>Ícone (emoji)</label><input id="sfIcon" value="${s?.icon||'🔧'}" maxlength="4"/></div>
       </div>
       <div class="form-row">
@@ -5869,13 +6692,35 @@ function openServiceForm(id) {
         <div class="form-group"><label>Categoria</label>
           <select id="sfCat">${catOpts}</select>
         </div>
-        <div class="form-group"><label>Dias extras</label><input id="sfDays" type="number" value="${s?.daysExtra||0}" min="0" max="10"/></div>
+        <div class="form-group"><label>Horas de serviço</label>
+          <div style="display:flex;gap:.4rem">
+            <div style="flex:1;min-width:0"><div id="sfHorasPqRot" style="font-size:.66rem;color:var(--muted);margin-bottom:.15rem">🚗 Pequeno</div>
+              <input id="sfHorasPq" type="number" min="0" step="0.5" value="${s?.horas?.pq ?? ''}" placeholder="horas" oninput="_sfPrazo();_sfRecalcCusto()" style="width:100%"/></div>
+            <div class="sf-horas-gr" style="flex:1;min-width:0"><div style="font-size:.66rem;color:var(--muted);margin-bottom:.15rem">🚙 Grande</div>
+              <input id="sfHorasGr" type="number" min="0" step="0.5" value="${s?.horas?.gr ?? ''}" placeholder="horas" oninput="_sfPrazo();_sfRecalcCusto()" style="width:100%"/></div>
+          </div>
+          <p id="sfDaysNota" style="margin:.3rem 0 0;font-size:.74rem;color:var(--muted)"></p>
+        </div>
+        <div class="form-group"><label>Dias de espera <span style="font-weight:400;color:var(--muted)">(cura, secagem)</span></label>
+          <input id="sfEspera" type="number" min="0" max="10" value="${s?.diasEspera ?? (s?.horas ? 0 : (s?.daysExtra || 0))}" oninput="_sfPrazo()"/>
+        </div>
         <div class="form-group"><label>Ativo</label>
           <select id="sfActive"><option value="1"${s?.active!==false?' selected':''}>✅ Ativo</option><option value="0"${s?.active===false?' selected':''}>⛔ Inativo</option></select>
         </div>
       </div>
+      <div class="form-row full"><div class="form-group"><label>Visibilidade</label>
+        <select id="sfInterno">
+          <option value="0"${s?.interno!==true?' selected':''}>🌐 Público — aparece no site para clientes</option>
+          <option value="1"${s?.interno===true?' selected':''}>🔒 Interno — só no agendamento manual do painel (ex.: revendedor)</option>
+        </select>
+      </div></div>
       <div class="form-row full"><div class="form-group"><label>Descrição</label><input id="sfDesc" value="${s?.desc||''}"/></div></div>
-      <div class="form-row" style="margin-top:.4rem">
+      <div style="margin-top:1.2rem">
+        <div style="font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.6rem">Insumos consumidos</div>
+        <div id="sfRecipeList"></div>
+        <button class="btn-ghost" style="font-size:.76rem;margin-top:.4rem" onclick="addRecipeRow()">+ Adicionar insumo</button>
+      </div>
+      <div class="form-row" style="margin-top:1.2rem">
         <div style="flex:1;font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;align-self:center">Preços</div>
       </div>
       <div class="svc-price-grid" id="sfPriceGrid">
@@ -5883,12 +6728,13 @@ function openServiceForm(id) {
         <div id="sfHeadPq" style="font-family:'Montserrat',sans-serif;font-size:.68rem;font-weight:700;color:var(--muted);text-align:center;padding-bottom:4px">🚗 Pequeno</div>
         <div id="sfHeadGr" class="sf-col-gr" style="font-family:'Montserrat',sans-serif;font-size:.68rem;font-weight:700;color:var(--muted);text-align:center;padding-bottom:4px">🚙 Grande</div>
         <div style="font-size:.75rem;color:var(--muted);padding-top:6px">Custo (R$)</div>
-        <div><input id="sfCostPq" type="number" value="${s?._cost_pq||0}" min="0" step="10"/></div>
-        <div class="sf-col-gr"><input id="sfCostGr" type="number" value="${s?._cost_gr||0}" min="0" step="10"/></div>
+        <div><input id="sfCostPq" type="number" value="${s?._cost_pq||0}" min="0" step="10" readonly/></div>
+        <div class="sf-col-gr"><input id="sfCostGr" type="number" value="${s?._cost_gr||0}" min="0" step="10" readonly/></div>
         <div style="font-size:.75rem;color:var(--muted);padding-top:6px">Venda (R$)</div>
         <div><input id="sfSalePq" type="number" value="${s?.pq||0}" min="0" step="10"/></div>
         <div class="sf-col-gr"><input id="sfSaleGr" type="number" value="${s?.gr||0}" min="0" step="10"/></div>
       </div>
+      <p id="sfCostNota" style="margin:.5rem 0 0;font-size:.78rem;color:var(--muted)"></p>
       <div style="margin-top:1.2rem">
         <div style="font-family:'Montserrat',sans-serif;font-size:.7rem;font-weight:700;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.6rem">Perguntas Frequentes (FAQ)</div>
         <div id="sfFaqList">${(s?.faqs||[]).map((f,i)=>`
@@ -5905,6 +6751,8 @@ function openServiceForm(id) {
       </div>
     </div>`;
   _sfToggleVeiculo();
+  _sfPrazo();
+  _sfRecalcCusto();   // a nota tem que dizer de onde vem o custo desde o início
   wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -5916,7 +6764,9 @@ function _sfToggleVeiculo() {
   const headPq = document.getElementById('sfHeadPq');
   if (grid) grid.style.gridTemplateColumns = isMoto ? '1fr 1fr' : '1fr 1fr 1fr';
   if (headPq) headPq.textContent = isMoto ? '🏍️ Preço único' : '🚗 Pequeno';
-  document.querySelectorAll('#sfPriceGrid .sf-col-gr').forEach(el => {
+  const rotHoras = document.getElementById('sfHorasPqRot');
+  if (rotHoras) rotHoras.textContent = isMoto ? '🏍️ Moto' : '🚗 Pequeno';
+  document.querySelectorAll('#sfPriceGrid .sf-col-gr, #sfRecipeList .sf-rec-gr, .sf-horas-gr').forEach(el => {
     el.style.display = isMoto ? 'none' : '';
   });
 }
@@ -5955,18 +6805,19 @@ async function saveService(id) {
   const name    = document.getElementById('sfName')?.value.trim();
   const icon    = document.getElementById('sfIcon')?.value.trim() || '🔧';
   const cat     = document.getElementById('sfCat')?.value;
-  const days    = parseInt(document.getElementById('sfDays')?.value) || 0;
+  const horas   = _sfHoras();
+  const diasEspera = Math.max(0, parseInt(document.getElementById('sfEspera')?.value) || 0);
+  const days    = prazoDoServico(horas, diasEspera);
   const active  = document.getElementById('sfActive')?.value === '1';
+  const interno = document.getElementById('sfInterno')?.value === '1';
   const veiculo = document.getElementById('sfVeiculo')?.value === 'moto' ? 'moto' : 'carro';
   const desc    = document.getElementById('sfDesc')?.value.trim();
-  let costPq  = parseFloat(document.getElementById('sfCostPq')?.value) || 0;
-  let costGr  = parseFloat(document.getElementById('sfCostGr')?.value) || 0;
   let salePq  = parseFloat(document.getElementById('sfSalePq')?.value) || 0;
   let saleGr  = parseFloat(document.getElementById('sfSaleGr')?.value) || 0;
 
   // Moto tem preço único: o campo "Pequeno" vale para os dois portes,
   // assim todo o cálculo existente (s[carSize]) continua funcionando.
-  if (veiculo === 'moto') { costGr = costPq; saleGr = salePq; }
+  if (veiculo === 'moto') { saleGr = salePq; }
 
   if (!name) { alert('Informe o nome do serviço.'); return; }
   if (veiculo === 'moto') {
@@ -5978,12 +6829,26 @@ async function saveService(id) {
 
   const faqs = _getFaqRows();
   const key = id || slugify(name);
-  const data = { name, icon, cat, veiculo, daysExtra: days, active, desc,
+  const receita = _getRecipeRows();
+
+  // Com o custo vindo dos insumos, recalcular aqui é o que garante que o salvo
+  // é a conta — e não um número que ficou na tela.
+  const c = custoDoServico(receita, _sfInsumos, horas, _valorHora);
+  const costPq = c.pq;
+  const costGr = veiculo === 'moto' ? c.pq : c.gr;
+
+  const data = { name, icon, cat, veiculo, daysExtra: days, horas, diasEspera, active, interno, desc,
     pricing: { pq: { cost: costPq, sale: salePq }, gr: { cost: costGr, sale: saleGr } },
     ...(faqs.length ? { faqs } : {}) };
 
   try {
     await _servicesRef.child(key).set(data);
+    // A receita é do serviço, mas mora em stockRecipes/<id> — é de lá que a tela
+    // de Estoque e a baixa automática (deductStock) leem. `set` e não `update`:
+    // tirar um insumo da lista tem que tirar do banco, senão ele ressuscita.
+    if (_stockRecipesRef) {
+      await _stockRecipesRef.child(key).set(Object.keys(receita).length ? receita : null);
+    }
     document.getElementById('svcFormWrap').innerHTML = '';
   } catch(e) { alert('Erro ao salvar: ' + e.message); }
 }
@@ -6008,18 +6873,21 @@ async function seedServicesFromDefault() {
   if (!_servicesRef) { alert('Firebase não conectado.'); return; }
   if (!confirm('Importar os 9 serviços padrão para o Firebase? Serviços com mesmo ID serão sobrescritos.')) return;
   const defaults = {
-    'lavagem-motor':       { name:'Lavagem de Motor',          icon:'⚙️',  cat:'Serviços Especiais', active:true, daysExtra:0, desc:'Remoção de graxa e oxidação. Proteção elétrica e verniz de motor.',       pricing:{pq:{cost:0,sale:80},  gr:{cost:0,sale:130}} },
-    'lavagem-detalhada':   { name:'Lavagem Detalhada e Motor', icon:'🚿',  cat:'Estética Externa',   active:true, daysExtra:0, desc:'Snow Foam, emblemas, grades, dobradiças, caixas de roda, pneus.',          pricing:{pq:{cost:0,sale:180}, gr:{cost:0,sale:300}} },
-    'higienizacao-tecido': { name:'Higienização de Tecidos',   icon:'🧼',  cat:'Estética Interna',   active:true, daysExtra:0, desc:'Deep Clean com extratora. Ácaros, fungos, manchas e odores.',              pricing:{pq:{cost:0,sale:300}, gr:{cost:0,sale:450}} },
-    'higienizacao-couro':  { name:'Tratamento de Couro',       icon:'🛋️',  cat:'Estética Interna',   active:true, daysExtra:0, desc:'Limpeza profunda + hidratação. Evita rachaduras no couro.',                pricing:{pq:{cost:0,sale:250}, gr:{cost:0,sale:420}} },
-    'polimento-geral':     { name:'Polimento Geral',            icon:'✨',  cat:'Estética Externa',   active:true, daysExtra:1, desc:'Clay Bar, corte, refino e lustre. Remove riscos e devolve brilho.',        pricing:{pq:{cost:0,sale:320}, gr:{cost:0,sale:520}} },
-    'polimento-preto':     { name:'Polimento Carro Preto',     icon:'⬛', cat:'Estética Externa',   active:true, daysExtra:1, desc:'Boinas ultra-macias e compostos nano. Elimina hologramas.',                pricing:{pq:{cost:0,sale:500}, gr:{cost:0,sale:750}} },
-    'polimento-cristal':   { name:'Polimento & Cristalização', icon:'💎',  cat:'Estética Externa',   active:true, daysExtra:2, desc:'Correção completa + selante contra UV, poluição e chuva ácida.',           pricing:{pq:{cost:0,sale:600}, gr:{cost:0,sale:1300}}},
-    'polimento-vidros':    { name:'Polimento de Vidros',        icon:'🔍',  cat:'Serviços Especiais', active:true, daysExtra:0, desc:'Óxido de cério remove manchas e micro-riscos. Melhor visibilidade.',       pricing:{pq:{cost:0,sale:120}, gr:{cost:0,sale:180}} },
-    'reparo-trinca':       { name:'Reparo de Trinca',           icon:'🔧',  cat:'Serviços Especiais', active:true, daysExtra:0, desc:'Resina estrutural + cura UV. Economize até 90% vs trocar o vidro.',        pricing:{pq:{cost:0,sale:80},  gr:{cost:0,sale:150}} },
+    'lavagem-motor':       { name:'Lavagem de Motor',          icon:'⚙️',  cat:'Serviços Especiais', active:true, daysExtra:0, horas:{pq:1,gr:1}, diasEspera:0, desc:'Remoção de graxa e oxidação. Proteção elétrica e verniz de motor.',       pricing:{pq:{cost:0,sale:80},  gr:{cost:0,sale:130}} },
+    'lavagem-detalhada':   { name:'Lavagem Detalhada e Motor', icon:'🚿',  cat:'Estética Externa',   active:true, daysExtra:0, horas:{pq:3,gr:5}, diasEspera:0, desc:'Snow Foam, emblemas, grades, dobradiças, caixas de roda, pneus.',          pricing:{pq:{cost:0,sale:180}, gr:{cost:0,sale:300}} },
+    'higienizacao-tecido': { name:'Higienização de Tecidos',   icon:'🧼',  cat:'Estética Interna',   active:true, daysExtra:0, horas:{pq:4,gr:6.5}, diasEspera:0, desc:'Deep Clean com extratora. Ácaros, fungos, manchas e odores.',              pricing:{pq:{cost:0,sale:300}, gr:{cost:0,sale:450}} },
+    'higienizacao-couro':  { name:'Tratamento de Couro',       icon:'🛋️',  cat:'Estética Interna',   active:true, daysExtra:0, horas:{pq:2,gr:2}, diasEspera:0, desc:'Limpeza profunda + hidratação. Evita rachaduras no couro.',                pricing:{pq:{cost:0,sale:250}, gr:{cost:0,sale:420}} },
+    'polimento-geral':     { name:'Polimento Geral',            icon:'✨',  cat:'Estética Externa',   active:true, daysExtra:1, horas:{pq:6,gr:10}, diasEspera:0, desc:'Clay Bar, corte, refino e lustre. Remove riscos e devolve brilho.',        pricing:{pq:{cost:0,sale:320}, gr:{cost:0,sale:520}} },
+    'polimento-preto':     { name:'Polimento Carro Preto',     icon:'⬛', cat:'Estética Externa',   active:true, daysExtra:1, horas:{pq:8,gr:12}, diasEspera:0, desc:'Boinas ultra-macias e compostos nano. Elimina hologramas.',                pricing:{pq:{cost:0,sale:500}, gr:{cost:0,sale:750}} },
+    'polimento-cristal':   { name:'Polimento & Cristalização', icon:'💎',  cat:'Estética Externa',   active:true, daysExtra:2, horas:{pq:7,gr:11}, diasEspera:1, desc:'Correção completa + selante contra UV, poluição e chuva ácida.',           pricing:{pq:{cost:0,sale:600}, gr:{cost:0,sale:1300}}},
+    'polimento-vidros':    { name:'Polimento de Vidros',        icon:'🔍',  cat:'Serviços Especiais', active:true, daysExtra:0, horas:{pq:2,gr:2}, diasEspera:0, desc:'Óxido de cério remove manchas e micro-riscos. Melhor visibilidade.',       pricing:{pq:{cost:0,sale:120}, gr:{cost:0,sale:180}} },
+    'reparo-trinca':       { name:'Reparo de Trinca',           icon:'🔧',  cat:'Serviços Especiais', active:true, daysExtra:0, horas:{pq:1,gr:1}, diasEspera:0, desc:'Resina estrutural + cura UV. Economize até 90% vs trocar o vidro.',        pricing:{pq:{cost:0,sale:80},  gr:{cost:0,sale:150}} },
   };
   try {
-    await _servicesRef.set(defaults);
+    // `update`, não `set`: a política recusa substituir o nó `services` inteiro,
+    // e mesclar é o que esta função quer de fato — importar os padrões sem
+    // apagar serviço que já exista fora da lista.
+    await _servicesRef.update(defaults);
     alert('✅ 9 serviços importados! Agora preencha os custos para ver as margens.');
   } catch(e) { alert('Erro: ' + e.message); }
 }
@@ -6179,7 +7047,7 @@ function loadPortfolioAdminList() {
         ${d.type === 'video'
           ? `<div class="ba-admin-thumb" style="display:flex;align-items:center;justify-content:center;font-size:1.3rem">🎬</div>`
           : `<img class="ba-admin-thumb" src="${d.url}" alt="" loading="lazy" onerror="this.style.opacity='.3'">`}
-        <span class="ba-admin-caption">${String(d.caption||'').replace(/</g,'&lt;')}</span>
+        <span class="ba-admin-caption">${esc(d.caption||'')}</span>
         <button class="ba-admin-del" onclick="deletePortfolioItem('${id}')">🗑️ Remover</button>
       </div>`).join('');
   }, () => { listEl.innerHTML = '<p style="color:var(--red);font-size:.82rem">Erro ao carregar o carrossel.</p>'; });
@@ -6280,7 +7148,7 @@ function loadGalleryAdminList() {
       `<div class="ba-admin-row">
         <img class="ba-admin-thumb" src="${d.beforeUrl}" alt="Antes" loading="lazy" onerror="this.style.opacity='.3'">
         <img class="ba-admin-thumb" src="${d.afterUrl}" alt="Depois" loading="lazy" onerror="this.style.opacity='.3'">
-        <span class="ba-admin-caption">${String(d.caption||'').replace(/</g,'&lt;')}</span>
+        <span class="ba-admin-caption">${esc(d.caption||'')}</span>
         <button class="ba-admin-del" onclick="deleteGalleryItem('${id}')">🗑️ Remover</button>
       </div>`
     ).join('');
@@ -6374,16 +7242,16 @@ function renderAdminFeedback() {
         </div>
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin-top:.8rem">
           ${showApprove ? `
-          <button class="btn-approve" style="font-size:.75rem;padding:.35rem .9rem" onclick="approveFeedback('${f.id}')">✅ Publicar</button>
-          <button class="btn-reject" style="font-size:.75rem;padding:.35rem .9rem" onclick="hideFeedback('${f.id}')">🚫 Ignorar</button>` : ''}
+          <button class="btn-approve" style="font-size:.75rem;padding:.35rem .9rem" onclick="approveFeedback('${escAttrJs(f.id)}')">✅ Publicar</button>
+          <button class="btn-reject" style="font-size:.75rem;padding:.35rem .9rem" onclick="hideFeedback('${escAttrJs(f.id)}')">🚫 Ignorar</button>` : ''}
           ${f.status === 'approved' ? `
           <span style="font-size:.72rem;color:#10B981;font-weight:700">✅ Publicado</span>
-          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="hideFeedback('${f.id}')">Remover</button>` : ''}
+          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="hideFeedback('${escAttrJs(f.id)}')">Remover</button>` : ''}
           ${f.status === 'internal' ? `<span style="font-size:.72rem;color:var(--orange);font-weight:700">⚠️ Avaliação negativa — não publicada</span>` : ''}
           ${f.status === 'hidden' ? `
           <span style="font-size:.72rem;color:var(--muted)">🚫 Ignorada</span>
-          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="approveFeedback('${f.id}')">Publicar mesmo assim</button>` : ''}
-          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem;color:var(--red,#ef4444);margin-left:auto" onclick="deleteFeedback('${f.id}')">🗑 Excluir</button>
+          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem" onclick="approveFeedback('${escAttrJs(f.id)}')">Publicar mesmo assim</button>` : ''}
+          <button class="btn-ghost" style="font-size:.7rem;padding:.2rem .6rem;color:var(--red,#ef4444);margin-left:auto" onclick="deleteFeedback('${escAttrJs(f.id)}')">🗑 Excluir</button>
         </div>
       </div>`;
 
@@ -6425,8 +7293,6 @@ const STOCK_DEFAULTS = {
   'sabao-sujeira':          { name: 'Sabão Sujeira',                         unit: 'ml', qty: 0, costPerUnit: 0.03,  minQty: 500  },
   'desengraxante':          { name: 'Desengraxante',                         unit: 'ml', qty: 0, costPerUnit: 0.03,  minQty: 500  },
   'verniz-motor':           { name: 'Verniz de Motor',                       unit: 'ml', qty: 0, costPerUnit: 0.05,  minQty: 100  },
-  'mo':                     { name: 'Mão de Obra (R$35/h)',                  unit: 'h',  qty: 0, costPerUnit: 35.00, minQty: 0    },
-  'mo-especializada':       { name: 'Mão de Obra Especializada (R$45/h)',    unit: 'h',  qty: 0, costPerUnit: 45.00, minQty: 0    },
   'shampoo-ph':             { name: 'Shampoo pH Neutro',                     unit: 'ml', qty: 0, costPerUnit: 0.03,  minQty: 500  },
   'pretinho':               { name: 'Pretinho',                              unit: 'ml', qty: 0, costPerUnit: 0.01,  minQty: 100  },
   'limpa-rodas':            { name: 'Limpa Rodas (Descontaminante Ferroso)', unit: 'ml', qty: 0, costPerUnit: 0.08,  minQty: 200  },
@@ -6449,7 +7315,6 @@ const RECIPE_DEFAULTS = {
     'sabao-sujeira':  { pq: 300, gr: 500 },
     'desengraxante':  { pq: 400, gr: 700 },
     'verniz-motor':   { pq: 50,  gr: 80  },
-    'mo':             { pq: 1,   gr: 1   },
   },
   'lavagem-detalhada': {
     'shampoo-ph':             { pq: 300, gr: 500 },
@@ -6457,54 +7322,60 @@ const RECIPE_DEFAULTS = {
     'pretinho':               { pq: 20,  gr: 40  },
     'limpa-rodas':            { pq: 150, gr: 250 },
     'revitalizador-plastico': { pq: 30,  gr: 50  },
-    'mo':                     { pq: 3,   gr: 5   },
   },
   'higienizacao-tecido': {
     'flotador-apc': { pq: 1500, gr: 2500 },
     'bactericida':  { pq: 200,  gr: 400  },
-    'mo':           { pq: 4,    gr: 6.5  },
   },
   'higienizacao-couro': {
     'limpador-couro':   { pq: 150, gr: 250 },
     'hidratante-couro': { pq: 30,  gr: 60  },
-    'mo':               { pq: 2,   gr: 2   },
   },
   'polimento-geral': {
     'cera-corte':  { pq: 30,  gr: 50  },
     'cera-refino': { pq: 25,  gr: 40  },
     'ipa':         { pq: 150, gr: 250 },
-    'mo':          { pq: 6,   gr: 10  },
   },
   'polimento-preto': {
     'cera-corte':       { pq: 30,  gr: 50  },
     'cera-refino':      { pq: 30,  gr: 50  },
     'ipa':              { pq: 200, gr: 350 },
-    'mo-especializada': { pq: 8,   gr: 12  },
   },
   'polimento-cristal': {
     'cera-corte':        { pq: 30,  gr: 50  },
     'cera-refino':       { pq: 25,  gr: 40  },
     'ipa':               { pq: 150, gr: 250 },
     'selante-sintetico': { pq: 15,  gr: 25  },
-    'mo-especializada':  { pq: 7,   gr: 11  },
   },
   'polimento-vidros': {
     'polidor-vidro': { pq: 20, gr: 30 },
-    'mo':            { pq: 2,  gr: 2  },
   },
   'reparo-trinca': {
     'resina-estrutural': { pq: 0.5, gr: 0.5 },
     'resina-acabamento': { pq: 0.2, gr: 0.2 },
     'polidor-vidro':     { pq: 5,   gr: 5   },
-    'mo':                { pq: 1,   gr: 1   },
   },
 };
+
+async function salvarValorHora() {
+  const v = Math.round((parseFloat(document.getElementById('estValorHora')?.value) || 0) * 100) / 100;
+  if (!(v > 0)) { uiAlert('Valor inválido', 'Informe o custo da hora, maior que zero.'); return; }
+  if (!_custosRef) { uiAlert('Erro', 'Banco não conectado.'); return; }
+  try {
+    await _custosRef.child('maoDeObra').set({ valorHora: v, updatedAt: new Date().toISOString() });
+    _valorHora = v;
+    const n = await recalcularCustosServicos();
+    uiAlert('Custo da hora salvo', 'R$ ' + v.toFixed(2).replace('.', ',') + ' por hora. '
+      + (n ? n + ' serviço(s) tiveram o custo atualizado.' : 'Nenhum serviço mudou de custo.'));
+    renderAdminEstoque();
+  } catch (e) { uiAlert('Erro ao salvar', e.message); }
+}
 
 function renderAdminEstoque() {
   const el = document.getElementById('adminContent');
   if (!_stockRef) { el.innerHTML = '<p style="color:var(--muted)">Firebase não conectado.</p>'; return; }
 
-  Promise.all([_stockRef.once('value'), _stockRecipesRef.once('value')])
+  Promise.all([_stockRef.once('value'), _stockRecipesRef.once('value'), carregarValorHora()])
     .then(([stockSnap, recipesSnap]) => {
       const stock   = stockSnap.val()   || {};
       const recipes = recipesSnap.val() || {};
@@ -6513,19 +7384,30 @@ function renderAdminEstoque() {
         .map(([id, p]) => ({ id, ...p }))
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-      // Custo calculado por serviço
-      const svcCosts = Object.entries(recipes).map(([svcId, recipe]) => {
-        let costPq = 0, costGr = 0;
-        Object.entries(recipe).forEach(([pid, amounts]) => {
-          const cpu = stock[pid]?.costPerUnit || 0;
-          costPq += (amounts.pq || 0) * cpu;
-          costGr += (amounts.gr || 0) * cpu;
-        });
-        return { svcId, svcName: SVCS[svcId]?.name || svcId, costPq, costGr };
-      }).sort((a, b) => a.svcName.localeCompare(b.svcName));
+      // Custo calculado por serviço: insumos + horas × custo da hora
+      const svcIds = [...new Set([...Object.keys(recipes), ...Object.keys(SVCS).filter(id => SVCS[id]?.horas)])];
+      const svcCosts = svcIds.map(svcId => {
+        const recipe = recipes[svcId] || {};
+        const horas = SVCS[svcId]?.horas || separarMaoDeObra(recipe, stock).horas;
+        const c = custoDoServico(recipe, stock, horas, _valorHora);
+        return { svcId, svcName: SVCS[svcId]?.name || svcId, costPq: c.pq, costGr: c.gr };
+      }).filter(x => x.costPq || x.costGr).sort((a, b) => a.svcName.localeCompare(b.svcName));
 
       const lowStock = products.filter(p => p.minQty > 0 && p.qty < p.minQty);
       const totalStockVal = products.reduce((s, p) => s + (p.qty * (p.costPerUnit || 0)), 0);
+
+      // Ritmo real de consumo, medido nos serviços concluídos dos últimos 60
+      // dias. Dois meses porque serviço de estética não é diário: numa janela
+      // curta, um insumo usado só em polimento pareceria ter consumo zero.
+      const hoje = new Date();
+      const porDia = consumoPorDia(getBookings(), recipes, JANELA_CONSUMO_DIAS, hoje);
+      products.forEach(p => {
+        p._porDia = porDia[p.id] || 0;
+        p._prev = previsaoCompra(p.qty, p.minQty, p._porDia, hoje);
+      });
+      const comprarLogo = products
+        .filter(p => p._prev && !p._prev.jaAbaixo && p._prev.dias <= DIAS_AVISO_COMPRA)
+        .sort((a, b) => a._prev.dias - b._prev.dias);
 
       el.innerHTML = `
         <h2>📦 Controle de Estoque</h2>
@@ -6533,7 +7415,13 @@ function renderAdminEstoque() {
         ${lowStock.length ? `
         <div style="background:rgba(239,68,68,.1);border:1px solid var(--red);border-radius:10px;padding:.8rem 1.1rem;margin-bottom:1.2rem;font-size:.83rem;color:var(--red)">
           ⚠️ <strong>${lowStock.length} insumo${lowStock.length > 1 ? 's abaixo' : ' abaixo'} do estoque mínimo:</strong>
-          ${lowStock.map(p => `<strong>${esc(p.name)}</strong> (${p.qty} ${p.unit})`).join(' · ')}
+          ${lowStock.map(p => `<strong>${esc(p.name)}</strong> (${esc(_fmtSaldo(p))})`).join(' · ')}
+        </div>` : ''}
+
+        ${comprarLogo.length ? `
+        <div style="background:rgba(245,158,11,.10);border:1px solid #f59e0b;border-radius:10px;padding:.8rem 1.1rem;margin-bottom:1.2rem;font-size:.83rem;color:#f59e0b">
+          🛒 <strong>Comprar nos próximos ${DIAS_AVISO_COMPRA} dias</strong>, no ritmo dos últimos ${JANELA_CONSUMO_DIAS} dias:
+          ${comprarLogo.map(p => `<strong>${esc(p.name)}</strong> (${p._prev.dias === 0 ? 'hoje' : 'em ' + p._prev.dias + ' dia' + (p._prev.dias > 1 ? 's' : '')})`).join(' · ')}
         </div>` : ''}
 
         <div style="display:flex;gap:.7rem;flex-wrap:wrap;margin-bottom:1.2rem;align-items:center">
@@ -6542,25 +7430,38 @@ function renderAdminEstoque() {
           ${products.length ? `<span style="margin-left:auto;font-size:.8rem;color:var(--muted)">Valor total em estoque: <strong style="color:var(--text)">R$ ${totalStockVal.toFixed(2)}</strong></span>` : ''}
         </div>
 
+        <div style="background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:10px;padding:.9rem 1.1rem;margin-bottom:1.4rem">
+          <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+            <strong style="font-size:.88rem">👷 Mão de obra — custo da hora</strong>
+            <span style="font-size:.85rem">R$</span>
+            <input id="estValorHora" type="number" min="1" step="0.5" value="${_valorHora}" style="width:100px"/>
+            <button class="btn-ghost" style="font-size:.78rem" onclick="salvarValorHora()">💾 Salvar</button>
+          </div>
+          <p style="margin:.45rem 0 0;font-size:.75rem;color:var(--muted)">Não é estoque: entra no custo de cada serviço pelas horas de serviço cadastradas nele (${HORAS_POR_DIA} h = 1 dia útil). Salvar recalcula o custo de todos os serviços.</p>
+        </div>
+
         <div style="overflow-x:auto;margin-bottom:2.5rem">
           <table class="history-table" style="min-width:680px">
             <thead><tr>
-              <th>Produto</th><th>Unid.</th><th>Saldo</th><th>Custo / Unid.</th><th>Valor em Estoque</th><th>Mínimo</th><th></th>
+              <th>Produto</th><th>Saldo</th><th>Mínimo</th><th>Custo / Unid.</th><th>Valor em Estoque</th><th>Dura até</th><th></th>
             </tr></thead>
             <tbody>
               ${products.length ? products.map(p => {
                 const low = p.minQty > 0 && p.qty < p.minQty;
                 return `<tr style="${low ? 'background:rgba(239,68,68,.05)' : ''}">
-                  <td style="font-weight:500${low ? ';color:var(--red)' : ''}">${low ? '⚠️ ' : ''}${esc(p.name)}</td>
-                  <td style="color:var(--muted)">${esc(p.unit)}</td>
-                  <td style="font-weight:700${low ? ';color:var(--red)' : ''}">${p.qty}</td>
-                  <td>R$ ${(p.costPerUnit || 0).toFixed(4)}</td>
+                  <td style="font-weight:500${low ? ';color:var(--red)' : ''}">${low ? '⚠️ ' : ''}${esc(p.name)}${p.unit === 'h' ? '<div style="font-size:.7rem;font-weight:400;color:var(--muted)">Mão de obra agora é o custo da hora, acima. Pode excluir depois de salvar os serviços.</div>' : ''}</td>
+                  <td style="font-weight:700${low ? ';color:var(--red)' : ''}">${esc(_fmtSaldo(p))}</td>
+                  <td style="color:var(--muted)">${p.minQty > 0 ? esc(_fmtSaldo(p, p.minQty)) : '—'}</td>
+                  <td>R$ ${(p.costPerUnit || 0).toFixed(4)} / ${esc(p.unit)}
+                    ${p.purchasePrice > 0 && p.purchaseUnitLabel
+                      ? `<div style="font-size:.72rem;color:var(--muted)">R$ ${p.purchasePrice.toFixed(2)} / ${esc(p.purchaseUnitLabel)}</div>`
+                      : ''}</td>
                   <td style="color:var(--muted)">R$ ${(p.qty * (p.costPerUnit || 0)).toFixed(2)}</td>
-                  <td style="color:var(--muted)">${p.minQty || '—'}</td>
+                  <td style="color:var(--muted);font-size:.78rem">${_textoPrevisao(p)}</td>
                   <td style="white-space:nowrap;text-align:right">
-                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="restockProduct('${p.id}','${esc(p.name).replace(/'/g,"\\'")  }')">📥 Repor</button>
-                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="openProductForm('${p.id}')">✏️</button>
-                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem;color:var(--red)" onclick="deleteProduct('${p.id}','${esc(p.name).replace(/'/g,"\\'")}')">🗑</button>
+                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="restockProduct('${escAttrJs(p.id)}','${escAttrJs(p.name)}')">📥 Repor</button>
+                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem" onclick="openProductForm('${escAttrJs(p.id)}')">✏️</button>
+                    <button class="btn-ghost" style="font-size:.71rem;padding:.2rem .5rem;color:var(--red)" onclick="deleteProduct('${escAttrJs(p.id)}','${escAttrJs(p.name)}')">🗑</button>
                   </td>
                 </tr>`;
               }).join('') : `<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:2rem">
@@ -6571,7 +7472,7 @@ function renderAdminEstoque() {
         </div>
 
         ${svcCosts.length ? `
-        <h3 style="font-size:.95rem;margin-bottom:.8rem">💰 Custo de Insumos por Serviço</h3>
+        <h3 style="font-size:.95rem;margin-bottom:.8rem">💰 Custo por Serviço <span style="font-weight:400;color:var(--muted);font-size:.8em">(insumos + mão de obra a R$ ${_valorHora.toFixed(2).replace('.', ',')}/h)</span></h3>
         <div style="overflow-x:auto;margin-bottom:2.5rem">
           <table class="history-table" style="min-width:420px">
             <thead><tr><th>Serviço</th><th>Carro Pequeno</th><th>Carro Grande</th></tr></thead>
@@ -6593,7 +7494,7 @@ function renderAdminEstoque() {
             .map(([svcId, recipe]) => `
             <div style="background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:10px;padding:.9rem 1rem">
               <div style="font-weight:700;font-size:.85rem;margin-bottom:.55rem">${esc(SVCS[svcId]?.name || svcId)}</div>
-              ${Object.entries(recipe).map(([pid, amounts]) => {
+              ${Object.entries(recipe).filter(([pid]) => stock[pid]?.unit !== 'h').map(([pid, amounts]) => {
                 const p = stock[pid];
                 return `<div style="font-size:.76rem;color:var(--muted);display:flex;justify-content:space-between;padding:.13rem 0;border-bottom:1px solid rgba(255,255,255,.04)">
                   <span>${esc(p?.name || pid)}</span>
@@ -6604,50 +7505,267 @@ function renderAdminEstoque() {
         </div>` : ''}
       `;
     })
-    .catch(e => { document.getElementById('adminContent').innerHTML = `<p style="color:var(--red)">Erro: ${e.message}</p>`; });
+    .catch(e => { document.getElementById('adminContent').innerHTML = `<p style="color:var(--red)">Erro: ${esc(e.message)}</p>`; });
 }
+
+// ── Custo do insumo: a pessoa sabe o preço do GALÃO, não o preço do ml ──────
+//
+// O pedido foi textual: "eu compro em galão de 5 l e sei o preço do galão de 5 l,
+// não deveria ter que ficar fazendo a conversão para o cálculo do uso". Antes o
+// campo editável era `costPerUnit` com passo de 0,0001 — sabendo que o galão
+// custa R$ 180, era preciso calcular 180 ÷ 5000 = 0,036 na mão, a cada cadastro.
+//
+// Agora o preço da unidade de compra é o caminho principal e `costPerUnit` é
+// DERIVADO, com a conta à vista para conferência. O campo por unidade de uso
+// continua existindo — quem compra a granel precisa dele.
+//
+// `costPerUnit` segue sendo o que as receitas leem: nada de dado antigo quebra.
+
+
+// Preço mostrado ao abrir. Quando o produto já foi salvo pelo caminho novo, é o
+// preço guardado. Quando não, é uma RECONSTITUIÇÃO a partir do custo por unidade
+// — e a ida e volta fecha no mesmo número, então abrir a tela de um insumo
+// antigo não mexe no custo que ele já tinha.
+function _spPrecoInicial(p) {
+  if (p.purchasePrice > 0) return p.purchasePrice;
+  const c = parseFloat(p.costPerUnit) || 0;
+  if (!(c > 0)) return '';
+  // Sem compra salva, o múltiplo inicial é 1 da unidade de uso — então o preço
+  // da "unidade de compra" é o próprio custo por unidade, e a conta fecha igual.
+  const f = parseFloat(p.purchaseConversionFactor) || 1;
+  return Math.round(c * f * 100) / 100;
+}
+
+// Unidades e suas famílias. Converter só faz sentido dentro da mesma família:
+// comprar em kg e usar em ml exigiria a densidade do produto, que o sistema não
+// tem e não deve adivinhar — 1 kg de cera não é 1 litro de cera.
+const SP_UNIDADES = {
+  ml: { familia: 'volume', naBase: 1    , nome: 'ml' },
+  L:  { familia: 'volume', naBase: 1000 , nome: 'L'  },
+  g:  { familia: 'massa' , naBase: 1    , nome: 'g'  },
+  kg: { familia: 'massa' , naBase: 1000 , nome: 'kg' },
+  un: { familia: 'conta' , naBase: 1    , nome: 'un' },
+  h:  { familia: 'tempo' , naBase: 1    , nome: 'h'  },
+};
+
+// Quantas unidades de USO cabem na unidade de COMPRA. "5" + "L", usando ml → 5000.
+// É o número que ela digitava à mão antes.
+function _spFatorCompra(multiplo, unidadeCompra, unidadeUso) {
+  const m = parseFloat(multiplo);
+  const a = SP_UNIDADES[unidadeCompra], b = SP_UNIDADES[unidadeUso];
+  if (!(m > 0) || !a || !b || a.familia !== b.familia) return null;
+  return _spArredonda(m * a.naBase / b.naBase);
+}
+
+// Unidades de compra que fazem sentido para uma unidade de uso. Oferecer kg para
+// um insumo medido em ml é oferecer um erro.
+function _spUnidadesCompra(unidadeUso) {
+  const fam = SP_UNIDADES[unidadeUso]?.familia;
+  return Object.keys(SP_UNIDADES).filter(u => SP_UNIDADES[u].familia === fam);
+}
+
+// Produto antigo guardou só o fator (5000). Reconstitui "5 L" para a tela, dando
+// preferência à unidade maior quando ela divide certo — ninguém diz "compro
+// 5000 ml", diz "compro um galão de 5 litros".
+function _spCompraDeFator(fator, unidadeUso) {
+  const f = parseFloat(fator);
+  if (!(f > 0)) return null;
+  const candidatas = _spUnidadesCompra(unidadeUso)
+    .sort((x, y) => SP_UNIDADES[y].naBase - SP_UNIDADES[x].naBase);
+  for (const u of candidatas) {
+    const mult = _spArredonda(f * (SP_UNIDADES[unidadeUso]?.naBase || 1) / SP_UNIDADES[u].naBase);
+    if (mult >= 1 && Number.isInteger(mult)) return { multiplo: mult, unidade: u };
+  }
+  return { multiplo: f, unidade: unidadeUso };
+}
+
+function _spArredonda(v) { return Math.round(v * 1e6) / 1e6; }
+
+// A conta, num lugar só. A tela e o salvamento chamam esta função — duas cópias
+// da mesma divisão é como o custo salvo passa a divergir do custo mostrado.
+// Devolve null quando não há como derivar, que é diferente de derivar zero.
+function _spCustoDerivado(preco, fator) {
+  if (!(preco > 0) || !(fator > 0)) return null;
+  return _spArredonda(preco / fator);
+}
+
+// Dinheiro por unidade de uso costuma ter mais de 2 casas (R$ 0,036/ml). Mostra
+// 4 casas, e mais se 4 arredondariam para zero — "R$ 0,0000" não informa nada.
+function _spMoeda(v) {
+  let casas = 4;
+  while (casas < 8 && Number(v.toFixed(casas)) === 0 && v > 0) casas++;
+  return v.toFixed(casas).replace('.', ',');
+}
+
+// Como a compra aparece ao abrir: o que foi salvo, a reconstituição do fator
+// antigo, ou "1 <unidade de uso>".
+//
+// O padrão 1 existe para que insumo antigo — que só tem custo por unidade de uso
+// — abra já coerente: "1 ml custa R$ 0,03" dá exatamente o mesmo custo que
+// estava salvo. Sem isso, tirar a opção de informar o custo à mão obrigaria a
+// recadastrar a compra de cada um dos insumos antes de poder salvar qualquer
+// coisa.
+function _spCompraInicial(p) {
+  const uso = p.unit || 'ml';
+  if (p.purchaseMultiple > 0 && SP_UNIDADES[p.purchaseUnit]) {
+    return { multiplo: p.purchaseMultiple, unidade: p.purchaseUnit };
+  }
+  const velho = _spCompraDeFator(p.purchaseConversionFactor, uso);
+  if (velho) return velho;
+  return { multiplo: 1, unidade: uso };
+}
+
+// Quantas unidades de USO cabem em UMA unidade de compra — 1 L = 1000 ml.
+// Diferente do fator da embalagem (5 L = 5000 ml): o saldo é contado na unidade
+// ("tenho 17,5 litros"), não em embalagens.
+function _spFatorUnidade(p) {
+  const c = _spCompraInicial(p);
+  return _spFatorCompra(1, c.unidade, p.unit || 'ml') || 1;
+}
+
+// Saldo e mínimo são guardados na unidade de USO (é nela que a receita desconta)
+// e mostrados na unidade de COMPRA, que é como ela conta na prateleira: "tenho
+// 3,5 galões", não "tenho 17500 ml".
+function _spParaCompra(valorBase, fator) {
+  const v = (parseFloat(valorBase) || 0) / (fator || 1);
+  return Math.round(v * 1e4) / 1e4;
+}
+function _spParaUso(valorCompra, fator) {
+  return Math.round((parseFloat(valorCompra) || 0) * (fator || 1) * 1e4) / 1e4;
+}
+
+function _spOpcoesCompra(unidadeUso, escolhida) {
+  return _spUnidadesCompra(unidadeUso)
+    .map(u => `<option value="${u}"${u === escolhida ? ' selected' : ''}>${SP_UNIDADES[u].nome}</option>`)
+    .join('');
+}
+
+// Trocar a unidade de uso muda quais unidades de compra fazem sentido. Deixar
+// "kg" selecionado depois de mudar o uso para ml daria uma conversão impossível.
+function _spSincronizaUnidades() {
+  const uso = document.getElementById('spUnit')?.value || 'ml';
+  const sel = document.getElementById('spPurchaseUnit');
+  if (sel) {
+    const antes = sel.value;
+    const validas = _spUnidadesCompra(uso);
+    sel.innerHTML = _spOpcoesCompra(uso, validas.includes(antes) ? antes : uso);
+  }
+  _spRecalcCusto();
+}
+
+// O custo por unidade de uso é SEMPRE a divisão do preço de compra pela
+// conversão. Não há opção de informá-lo à mão: duas origens para o mesmo número
+// é como o custo do serviço passa a discordar do que ela pagou de verdade.
+function _spRecalcCusto() {
+  const elCusto = document.getElementById('spCost');
+  const elNota  = document.getElementById('spCostNota');
+  if (!elCusto || !elNota) return;
+
+  const unidade  = document.getElementById('spUnit')?.value || 'ml';
+  const multiplo = parseFloat(document.getElementById('spPurchaseMult')?.value) || 0;
+  const uCompra  = document.getElementById('spPurchaseUnit')?.value || unidade;
+  const preco    = parseFloat(document.getElementById('spPurchasePrice')?.value) || 0;
+  const fator    = _spFatorCompra(multiplo, uCompra, unidade) || 0;
+  const rotulo   = multiplo > 0 ? (multiplo + ' ' + uCompra) : 'unidade de compra';
+
+  // Saldo e mínimo são contados na UNIDADE de compra (L), não na embalagem
+  // (galão de 5 L): "tenho 17,5 litros" é como se conta na prateleira.
+  ['spQtyUn', 'spMinUn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = uCompra;
+  });
+  const fatorUn = _spFatorCompra(1, uCompra, unidade) || 0;
+  const elQN = document.getElementById('spQtyNota');
+  if (elQN) {
+    const saldo = parseFloat(document.getElementById('spQty')?.value) || 0;
+    const minimo = parseFloat(document.getElementById('spMin')?.value) || 0;
+    const emb = fatorUn > 0 && fator > 0 ? ' (' + Math.round(saldo * fatorUn / fator * 100) / 100
+      + ' × ' + rotulo + ')' : '';
+    elQN.textContent = fatorUn > 0 && (saldo > 0 || minimo > 0)
+      ? 'Em ' + unidade + ': ' + _spParaUso(saldo, fatorUn) + emb
+        + ' · alerta em ' + _spParaUso(minimo, fatorUn) + ' ' + unidade + '.'
+      : 'Conte em ' + uCompra + ' — pode usar decimal (17,5 = dezessete e meio).';
+  }
+
+  const custo = _spCustoDerivado(preco, fator);
+  if (custo === null) {
+    elCusto.value = 0;
+    elNota.textContent = preco > 0
+      ? 'Falta o múltiplo de compra — quantos ' + (uCompra || unidade) + ' vêm na embalagem.'
+      : 'Preencha o múltiplo, a unidade e o preço de compra: é daí que sai o custo de cada serviço.';
+    return;
+  }
+
+  elCusto.value = custo;
+  // A conversão aparece inteira quando a unidade de compra difere da de uso:
+  // "5 L = 5000 ml" é a parte que ela não precisa mais calcular.
+  const conversao = uCompra === unidade ? (fator + ' ' + unidade) : (rotulo + ' = ' + fator + ' ' + unidade);
+  elNota.textContent = 'Calculado: R$ ' + preco.toFixed(2).replace('.', ',') + ' ÷ (' + conversao
+    + ') = R$ ' + _spMoeda(custo) + ' por ' + unidade + '.';
+}
+
+function _spMarcaDeriva() { _spRecalcCusto(); }
 
 function openProductForm(id) {
   const body = document.getElementById('stockProductModalBody');
   if (!body) return;
 
   const render = p => {
+    // Produto já salvo pelo caminho novo (tem preço guardado) continua calculado.
+    // Produto antigo abre no modo "informado direto", para o custo salvo não
+    // mudar sozinho só por eu ter aberto a tela.
     body.innerHTML = `
       <div class="form-row full"><div class="form-group"><label>Nome do insumo *</label>
         <input id="spName" value="${esc(p.name || '')}"/>
       </div></div>
       <div class="form-row">
         <div class="form-group"><label>Unidade de medida</label>
-          <select id="spUnit" class="form-control">
+          <select id="spUnit" class="form-control" onchange="_spSincronizaUnidades()">
             <option value="ml" ${(p.unit||'ml')==='ml'?'selected':''}>ml</option>
             <option value="g"  ${p.unit==='g' ?'selected':''}>g (gramas)</option>
-            <option value="h"  ${p.unit==='h' ?'selected':''}>h (horas)</option>
+            ${p.unit==='h' ? '<option value="h" selected>h (horas)</option>' : ''}
             <option value="un" ${p.unit==='un'?'selected':''}>un (unidade)</option>
           </select>
         </div>
-        <div class="form-group"><label>Saldo atual</label>
-          <input id="spQty" type="number" value="${p.qty ?? 0}" min="0" step="0.01"/>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Múltiplo de compra</label>
+          <input id="spPurchaseMult" type="number" value="${_spCompraInicial(p).multiplo}"
+            min="0" step="0.01" placeholder="Ex: 5" oninput="_spMarcaDeriva()"/>
+        </div>
+        <div class="form-group"><label>Unidade de compra</label>
+          <select id="spPurchaseUnit" class="form-control" onchange="_spMarcaDeriva()">
+            ${_spOpcoesCompra(p.unit || 'ml', _spCompraInicial(p).unidade)}
+          </select>
         </div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Custo por unidade (R$)</label>
-          <input id="spCost" type="number" value="${p.costPerUnit ?? 0}" min="0" step="0.0001" placeholder="0.0500"/>
+        <div class="form-group"><label>Preço de compra (R$)</label>
+          <input id="spPurchasePrice" type="number" value="${_spPrecoInicial(p)}"
+            min="0" step="0.01" placeholder="Ex: 180.00" oninput="_spMarcaDeriva()"/>
         </div>
-        <div class="form-group"><label>Estoque mínimo (alerta)</label>
-          <input id="spMin" type="number" value="${p.minQty ?? 0}" min="0" step="1"/>
+        <div class="form-group"><label>Custo por unidade de uso (R$)</label>
+          <input id="spCost" type="number" value="${p.costPerUnit ?? 0}" min="0" step="0.0001" readonly/>
         </div>
       </div>
+      <p id="spCostNota" style="margin:-.4rem 0 .9rem;font-size:.78rem;color:var(--muted)"></p>
       <div class="form-row">
-        <div class="form-group"><label>Unidade de compra usual (opcional)</label>
-          <input id="spPurchaseLabel" value="${esc(p.purchaseUnitLabel || '')}" placeholder="Ex: Galão 5L"/>
+        <div class="form-group">
+          <label>Saldo atual (<span id="spQtyUn">${esc(_spCompraInicial(p).unidade)}</span>)</label>
+          <input id="spQty" type="number" value="${_spParaCompra(p.qty, _spFatorUnidade(p))}"
+            min="0" step="0.01" oninput="_spRecalcCusto()"/>
         </div>
-        <div class="form-group"><label>Equivale a quantas unidades de uso?</label>
-          <input id="spPurchaseFactor" type="number" value="${p.purchaseConversionFactor ?? ''}" min="0" step="0.01" placeholder="Ex: 5000"/>
+        <div class="form-group">
+          <label>Estoque mínimo (<span id="spMinUn">${esc(_spCompraInicial(p).unidade)}</span>)</label>
+          <input id="spMin" type="number" value="${_spParaCompra(p.minQty, _spFatorUnidade(p))}"
+            min="0" step="0.01" oninput="_spRecalcCusto()"/>
         </div>
       </div>
+      <p id="spQtyNota" style="margin:-.4rem 0 0;font-size:.78rem;color:var(--muted)"></p>
       <button class="btn-primary btn-full" style="margin-top:1.2rem"
         onclick="saveProduct(${id ? `'${id}'` : 'null'})">💾 Salvar</button>
     `;
+    _spRecalcCusto();
   };
 
   if (id) {
@@ -6661,27 +7779,59 @@ function openProductForm(id) {
 async function saveProduct(id) {
   const name = document.getElementById('spName')?.value.trim();
   const unit = document.getElementById('spUnit')?.value || 'ml';
-  const qty  = parseFloat(document.getElementById('spQty')?.value)  || 0;
-  const cost = parseFloat(document.getElementById('spCost')?.value) || 0;
-  const min  = parseFloat(document.getElementById('spMin')?.value)  || 0;
-  const purchaseUnitLabel = document.getElementById('spPurchaseLabel')?.value.trim() || '';
-  const purchaseConversionFactor = parseFloat(document.getElementById('spPurchaseFactor')?.value) || 0;
+  // Saldo e mínimo chegam na unidade de COMPRA e são guardados na de USO, que é
+  // a unidade em que a receita desconta.
+  const qtyCompra = parseFloat(document.getElementById('spQty')?.value) || 0;
+  const minCompra = parseFloat(document.getElementById('spMin')?.value) || 0;
+  const purchaseMultiple = parseFloat(document.getElementById('spPurchaseMult')?.value) || 0;
+  const purchaseUnit     = document.getElementById('spPurchaseUnit')?.value || unit;
+  const purchasePrice    = parseFloat(document.getElementById('spPurchasePrice')?.value) || 0;
+  // O fator continua sendo gravado: é dele que a REPOSIÇÃO depende para aceitar
+  // entrada em galões. Só deixou de ser digitado — agora sai de 5 × L ÷ ml.
+  const purchaseConversionFactor = _spFatorCompra(purchaseMultiple, purchaseUnit, unit) || 0;
+  const purchaseUnitLabel = purchaseMultiple > 0 ? (purchaseMultiple + ' ' + purchaseUnit) : '';
   if (!name) { uiAlert('Campo obrigatório', 'Informe o nome do insumo.'); return; }
+
+  // O custo por unidade de uso é SEMPRE a divisão. Recalcular aqui, e não ler o
+  // campo da tela, é o que garante que o salvo é a conta.
+  const cost = _spCustoDerivado(purchasePrice, purchaseConversionFactor);
+  if (cost === null) {
+    uiAlert('Falta a compra deste insumo',
+      'O custo por ' + unit + ' é sempre calculado a partir da compra, e é esse número que ' +
+      'forma o custo de cada serviço. Informe o múltiplo (quantos ' + purchaseUnit +
+      ' vêm na embalagem) e o preço pago.\n\n' +
+      'Se você compra a granel, use múltiplo 1 e o preço de 1 ' + purchaseUnit + '.');
+    return;
+  }
+
+  // Saldo e mínimo vêm na UNIDADE (L), não na embalagem: 1 L, não 5 L.
+  const fatorUnidade = _spFatorCompra(1, purchaseUnit, unit) || 1;
+  const qty = _spParaUso(qtyCompra, fatorUnidade);
+  const min = _spParaUso(minCompra, fatorUnidade);
 
   const productId = id || name.toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
   const payload = { name, unit, qty, costPerUnit: cost, minQty: min, updatedAt: new Date().toISOString() };
-  // Unidade de compra é opcional e só faz sentido reter quando os dois campos existem
-  // (fail-open: salva mesmo parcial, mas restockProduct só oferece a opção quando ambos existem).
-  if (purchaseUnitLabel)         payload.purchaseUnitLabel = purchaseUnitLabel;
+  // Data da contagem: é a partir dela que o saldo passa a ser consumido pelas
+  // vendas. Sem registrar, a projeção de quando comprar não teria âncora e não
+  // haveria como dizer "contado em tal dia" quando o número não bater.
+  payload.qtyDate = new Date().toISOString();
+  if (purchaseUnitLabel)            payload.purchaseUnitLabel = purchaseUnitLabel;
   if (purchaseConversionFactor > 0) payload.purchaseConversionFactor = purchaseConversionFactor;
+  if (purchaseMultiple > 0)         payload.purchaseMultiple = purchaseMultiple;
+  if (purchaseMultiple > 0)         payload.purchaseUnit = purchaseUnit;
+  // Guardar o preço é o que faz a tela reabrir com "R$ 180" em vez de obrigar a
+  // reconstituir o valor a partir do custo por ml.
+  if (purchasePrice > 0)            payload.purchasePrice = purchasePrice;
 
   try {
     await _stockRef.child(productId).set(payload);
     closeModal('stockProductModal');
     renderAdminEstoque();
+    // O custo do insumo mudou: o dos serviços que o usam muda junto.
+    recalcularCustosServicos().catch(e => console.warn('recalcular custos:', e));
   } catch(e) { uiAlert('Erro ao salvar', e.message); }
 }
 
@@ -6786,36 +7936,122 @@ async function _doSeedStockDefaults() {
       };
     });
     await _stockRef.update(stockUpd);
-    await _stockRecipesRef.set(RECIPE_DEFAULTS);
+    await _stockRecipesRef.update(RECIPE_DEFAULTS);  // idem: mescla, não substitui o nó
     uiAlert('✅ Lista padrão carregada', 'Agora configure saldo e custo de cada insumo clicando em ✏️.');
     renderAdminEstoque();
   } catch(e) { uiAlert('Erro', e.message); }
 }
 
 // Deduz insumos do estoque ao concluir um agendamento
+// Quanto um agendamento consome de cada insumo, somando os serviços dele.
+//
+// A soma importa: antes isto vivia dentro do deductStock escrevendo
+// `updates[pid] = saldo - consumo` dentro de um forEach de serviços, então dois
+// serviços do MESMO agendamento usando o mesmo insumo faziam o segundo
+// sobrescrever o primeiro — o consumo de um deles sumia do estoque.
+function consumoDoAgendamento(booking, recipes) {
+  const svcIds = (booking.services || [booking.service]).filter(Boolean);
+  const size = booking.carSize || 'pq';
+  const total = {};
+  svcIds.forEach(svcId => {
+    const recipe = (recipes || {})[svcId];
+    if (!recipe) return;
+    Object.entries(recipe).forEach(([pid, amounts]) => {
+      const consume = amounts[size] ?? amounts.pq ?? 0;
+      if (consume > 0) total[pid] = (total[pid] || 0) + consume;
+    });
+  });
+  return total;
+}
+
 async function deductStock(booking) {
   if (!_stockRef || !_stockRecipesRef) return;
-  const svcIds = (booking.services || [booking.service]).filter(Boolean);
-  const size   = booking.carSize || 'pq';
   try {
     const [stockSnap, recipesSnap] = await Promise.all([
       _stockRef.once('value'),
       _stockRecipesRef.once('value'),
     ]);
-    const stock   = stockSnap.val()   || {};
-    const recipes = recipesSnap.val() || {};
+    const stock = stockSnap.val() || {};
+    const consumo = consumoDoAgendamento(booking, recipesSnap.val() || {});
     const updates = {};
-    svcIds.forEach(svcId => {
-      const recipe = recipes[svcId];
-      if (!recipe) return;
-      Object.entries(recipe).forEach(([pid, amounts]) => {
-        const consume = amounts[size] ?? amounts.pq ?? 0;
-        const current = stock[pid]?.qty ?? 0;
-        updates[pid + '/qty'] = +Math.max(0, current - consume).toFixed(4);
-      });
+    Object.entries(consumo).forEach(([pid, qtd]) => {
+      if (stock[pid]?.unit === 'h') return;   // mão de obra não sai da prateleira
+      const current = stock[pid]?.qty ?? 0;
+      updates[pid + '/qty'] = +Math.max(0, current - qtd).toFixed(4);
     });
     if (Object.keys(updates).length) await _stockRef.update(updates);
   } catch(e) { console.warn('deductStock:', e); }
+}
+
+// Consumo médio POR DIA de cada insumo, medido nos serviços realizados.
+//
+// Só agendamento concluído conta: é o que de fato tirou produto da prateleira, e
+// é o mesmo critério da baixa automática. Agendamento futuro ou cancelado não
+// consumiu nada. A janela é em dias corridos, não em número de serviços — o que
+// interessa é "quanto tempo o que eu tenho ainda dura".
+function consumoPorDia(bookings, recipes, janelaDias, hoje) {
+  const fim = hoje instanceof Date ? hoje : new Date(hoje);
+  const ini = new Date(fim.getTime() - janelaDias * 86400000);
+  const total = {};
+  (bookings || []).forEach(b => {
+    if (!b || b.status !== 'completed') return;
+    const quando = b.completedAt ? new Date(b.completedAt) : null;
+    if (!quando || isNaN(quando) || quando < ini || quando > fim) return;
+    Object.entries(consumoDoAgendamento(b, recipes)).forEach(([pid, q]) => {
+      total[pid] = (total[pid] || 0) + q;
+    });
+  });
+  const porDia = {};
+  Object.entries(total).forEach(([pid, q]) => { porDia[pid] = q / janelaDias; });
+  return porDia;
+}
+
+// Dois meses de janela porque serviço de estética não é diário: numa janela
+// curta, um insumo usado só em polimento pareceria ter consumo zero e nunca
+// entraria no aviso de compra.
+const JANELA_CONSUMO_DIAS = 60;
+const DIAS_AVISO_COMPRA = 14;
+
+// Saldo (ou outro valor em unidade de uso) escrito na unidade de COMPRA, que é
+// como ela conta na prateleira. Decimal, porque meio galão existe.
+function _fmtSaldo(p, valorBase) {
+  const base = parseFloat(valorBase === undefined ? p.qty : valorBase) || 0;
+  const uCompra = SP_UNIDADES[p.purchaseUnit] ? p.purchaseUnit : (p.unit || '');
+  const fatorUn = _spFatorCompra(1, uCompra, p.unit || 'ml') || 1;
+  const n = Math.round((base / fatorUn) * 100) / 100;
+  return String(n).replace('.', ',') + ' ' + uCompra;
+}
+
+// "Dura até" numa frase curta. Sem consumo medido não inventa prazo: diz que
+// não há consumo registrado, que é informação diferente de "acaba hoje".
+function _textoPrevisao(p) {
+  if (!p._prev) {
+    return p._porDia > 0 ? '—' : '<span title="Nenhum serviço concluído nos últimos '
+      + JANELA_CONSUMO_DIAS + ' dias usou este insumo">sem consumo registrado</span>';
+  }
+  if (p._prev.jaAbaixo) return '<strong style="color:var(--red)">repor agora</strong>';
+  const d = p._prev.data;
+  const data = String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+  const cor = p._prev.dias <= DIAS_AVISO_COMPRA ? '#f59e0b' : 'var(--muted)';
+  return '<span style="color:' + cor + '">' + data + ' (' + p._prev.dias + ' dia'
+    + (p._prev.dias === 1 ? '' : 's') + ')</span>';
+}
+
+// Quando o insumo chega no estoque mínimo, no ritmo medido.
+//
+// Devolve null quando não dá para projetar — sem consumo registrado, ou já
+// abaixo do mínimo. Null é diferente de "zero dias": uma tela que mostra "0
+// dias" para um produto que ninguém usa faz comprar o que não precisa.
+function previsaoCompra(qty, minQty, porDia, hoje) {
+  const saldo = parseFloat(qty) || 0;
+  const minimo = parseFloat(minQty) || 0;
+  const ritmo = parseFloat(porDia) || 0;
+  if (ritmo <= 0) return null;
+  const folga = saldo - minimo;
+  if (folga <= 0) return { dias: 0, data: new Date(hoje), jaAbaixo: true };
+  const dias = Math.floor(folga / ritmo);
+  const data = new Date(new Date(hoje).getTime() + dias * 86400000);
+  return { dias, data, jaAbaixo: false };
 }
 
 function renderAdminConfig() {
@@ -6831,8 +8067,10 @@ function renderAdminConfig() {
     </div>
     <div class="admin-panel" style="max-width:520px">
       <h3>Segurança</h3>
-      <div class="form-row full"><div class="form-group"><label>Nova senha de administrador</label><input id="cfgNewPw" type="password" placeholder="Mínimo 8 caracteres"/></div></div>
-      <div class="form-row full"><div class="form-group"><label>Confirmar senha</label><input id="cfgConfPw" type="password" placeholder="Repita a nova senha"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Senha atual</label><input id="cfgCurPw" type="password" autocomplete="current-password" placeholder="Sua senha de hoje"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Nova senha de administrador</label><input id="cfgNewPw" type="password" autocomplete="new-password" placeholder="Mínimo 10 caracteres"/></div></div>
+      <div class="form-row full"><div class="form-group"><label>Confirmar senha</label><input id="cfgConfPw" type="password" autocomplete="new-password" placeholder="Repita a nova senha"/></div></div>
+      <div style="font-size:.76rem;color:var(--muted);margin-bottom:.7rem">Ao menos 10 caracteres, com letra maiúscula, minúscula e número.</div>
       <button class="btn-primary" onclick="changePw()">Alterar Senha</button>
       <hr style="border:none;border-top:1px solid var(--border);margin:1.2rem 0"/>
       <h4 style="font-family:Montserrat,sans-serif;font-size:.78rem;font-weight:700;color:var(--text);margin-bottom:.5rem">📱 Este aparelho</h4>
@@ -6891,7 +8129,6 @@ function renderAdminConfig() {
       <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">Exportar todos os agendamentos em formato JSON para backup ou integração futura com sistema de gestão.</p>
       <button class="btn-ghost" onclick="exportData()">⬇️ Exportar Dados (JSON)</button>
       &nbsp;<button class="btn-ghost" style="font-size:.78rem" onclick="migrateBookingsToUid()">🔗 Vincular agendamentos a contas</button>
-      &nbsp;<button class="btn-reject" style="font-size:.78rem" onclick="clearAllData()">🗑️ Limpar Todos os Dados</button>
     </div>`;
 }
 
@@ -6931,11 +8168,11 @@ function loadAdminCoupons() {
     if (!list.length) { el.innerHTML = '<p style="color:var(--muted);font-size:.78rem">Nenhum cupom criado.</p>'; return; }
     el.innerHTML = list.map(c => `
       <div style="display:flex;align-items:center;gap:.6rem;padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.78rem;flex-wrap:wrap">
-        <strong style="font-family:Montserrat,sans-serif;color:${c.used?'var(--muted)':'var(--accent)'}">${c.code}</strong>
+        <strong style="font-family:Montserrat,sans-serif;color:${c.used?'var(--muted)':'var(--accent)'}">${esc(c.code)}</strong>
         <span>${c.discountType==='percent'?c.discountValue+'%':'R$'+c.discountValue}</span>
         ${c.validUntil?`<span style="color:var(--muted)">até ${c.validUntil}</span>`:''}
         ${c.used?'<span style="color:var(--red)">Usado</span>':'<span style="color:var(--green)">Disponível</span>'}
-        ${!c.used?`<button class="ba-admin-del" onclick="deleteCoupon('${c.code}')">🗑️</button>`:''}
+        ${!c.used?`<button class="ba-admin-del" onclick="deleteCoupon('${escAttrJs(c.code)}')">🗑️</button>`:''}
       </div>`).join('');
   });
 }
@@ -6996,7 +8233,7 @@ async function copyAdminCalendarLink(btn, kind) {
   try {
     const resp = await fetch('/api/calendar-sync', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + await firebase.auth().currentUser.getIdToken() },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + await AUTH.currentUser.getIdToken() },
       body: JSON.stringify({ action: 'admin-links' })
     });
     const r = await resp.json().catch(() => ({}));
@@ -7024,17 +8261,26 @@ function toggleAdminDevice(on) {
   msg.style.display = 'block';
 }
 function changePw() {
+  const cur  = document.getElementById('cfgCurPw').value;
   const np   = document.getElementById('cfgNewPw').value;
   const cp   = document.getElementById('cfgConfPw').value;
-  if(np.length < 8) { alert('Senha deve ter pelo menos 8 caracteres.'); return; }
-  if(np !== cp) { alert('As senhas não coincidem.'); return; }
-  const user = firebase.auth().currentUser;
+  // O mínimo é 10 porque é o que a política do pool exige: validar 8 aqui só
+  // adiantaria um erro vindo do servidor, confuso para quem está trocando.
+  if(np.length < 10)  { alert('A senha precisa ter ao menos 10 caracteres.'); return; }
+  if(!/[a-z]/.test(np) || !/[A-Z]/.test(np) || !/[0-9]/.test(np)) {
+    alert('A senha precisa ter letra maiúscula, minúscula e número.'); return;
+  }
+  if(np !== cp)       { alert('As senhas não coincidem.'); return; }
+  // O Cognito exige a senha atual para trocar; o Firebase se apoiava em
+  // "login recente". Pedir a senha vigente é mais seguro que confiar na
+  // idade da sessão.
+  if(!cur)            { alert('Informe sua senha atual.'); return; }
+  const user = AUTH.currentUser;
   if(!user) { alert('Sessão expirada. Faça login novamente.'); return; }
-  user.updatePassword(np)
+  user.updatePassword(np, cur)
     .then(() => {
       alert('Senha alterada com sucesso!');
-      document.getElementById('cfgNewPw').value = '';
-      document.getElementById('cfgConfPw').value = '';
+      ['cfgCurPw','cfgNewPw','cfgConfPw'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     })
     .catch(e => alert('Erro ao alterar senha: ' + e.message));
 }
@@ -7124,7 +8370,7 @@ const BODY_TYPES = [
 function bodySize(key) { return (BODY_TYPES.find(b => b.key === key) || {}).size || 'pq'; }
 function bodyLabel(key) { return (BODY_TYPES.find(b => b.key === key) || {}).label || ''; }
 function bodyTypeOptions(sel) {
-  return BODY_TYPES.map(b => `<option value="${b.key}"${sel === b.key ? ' selected' : ''}>${b.label}</option>`).join('');
+  return BODY_TYPES.map(b => `<option value="${esc(b.key)}"${esc(sel === b.key ? ' selected' : '')}>${esc(b.label)}</option>`).join('');
 }
 // Resumo do veículo para telas de confirmação/status: "🏍️ Moto" ou "Carroceria · Porte".
 function veiculoResumo(b) {
@@ -7173,14 +8419,14 @@ function renderCombos() {
     const svcsHtml = (combo.serviceIds || []).map(sid => {
       const s = SVCS[sid];
       if (!s) return '';
-      return `<li class="combo-svc-item">${s.icon} ${s.name}<span>${fmtMoney(s[size] || 0)}</span></li>`;
+      return `<li class="combo-svc-item">${s.icon} ${esc(s.name)}<span>${fmtMoney(s[size] || 0)}</span></li>`;
     }).join('');
     return `
     <div class="combo-card">
       <div class="combo-card-glow"></div>
       ${pct ? `<div class="combo-savings-badge">−${pct}%</div>` : ''}
       <span class="combo-emoji">${combo.emoji || '🎁'}</span>
-      <div class="combo-name">${combo.name}</div>
+      <div class="combo-name">${esc(combo.name)}</div>
       <ul class="combo-svc-list">${svcsHtml}</ul>
       <div class="combo-total-row">
         ${p.savings ? `<span class="combo-regular">${fmtMoney(p.regular)}</span>` : ''}
@@ -7206,7 +8452,7 @@ function getDisplayCats() {
   const ORDER = ['Estética Interna', 'Estética Externa', 'Serviços Especiais'];
   const groups = {};
   Object.entries(SVCS).forEach(([id, s]) => {
-    if (s.active === false) return;
+    if (!svcPublico(s)) return;
     if (s.veiculo === 'moto') return; // motos têm bloco próprio
     const cat = s.cat || 'Outros';
     if (!groups[cat]) groups[cat] = [];
@@ -7230,7 +8476,7 @@ function _svcCardHtml(id, price) {
         <div class="price-val"><span class="cur">R$</span>${(price||0).toLocaleString('pt-BR')}</div>
       </div>
     </div>
-    <div class="svc-name">${s.name}</div>
+    <div class="svc-name">${esc(s.name)}</div>
     <div class="svc-desc">${s.desc}</div>
     <div class="svc-card-actions">
       <button class="svc-btn-agendar" onclick="openBooking('${id}')">Agendar →</button>
@@ -7242,7 +8488,7 @@ function _svcCardHtml(id, price) {
 // IDs de serviços de moto ativos (bloco próprio na vitrine)
 function getMotoServices() {
   return Object.entries(SVCS)
-    .filter(([, s]) => s.active !== false && s.veiculo === 'moto')
+    .filter(([, s]) => svcPublico(s) && s.veiculo === 'moto')
     .map(([id]) => id);
 }
 
@@ -7264,7 +8510,7 @@ function renderServices() {
     // Abas Carro Pequeno / Carro Grande — só serviços de carro
     html = getDisplayCats().map(cat => `
       <div>
-        <div class="cat-label">${cat.label}</div>
+        <div class="cat-label">${esc(cat.label)}</div>
         <div class="svcs-grid">
           ${cat.keys.map(id => _svcCardHtml(id, SVCS[id] ? (SVCS[id][currentSizeGlobal] || SVCS[id].pq) : 0)).join('')}
         </div>
@@ -7311,11 +8557,11 @@ function updateWaLink() {
 // fotos avulsas do resultado, sem par de "antes". Fallback: lista estática abaixo
 // (arquivos de assets/portfolio), usada enquanto o nó estiver vazio ou sem resposta.
 // Slides com arquivos ausentes são removidos automaticamente via onerror.
+// `fusca.mp4`, `branco.jpg.jpg` e `moto.jpg.jpg` saíram desta lista: não existem
+// em assets/portfolio/. Davam 404 em toda visita e os slides eram removidos pelo
+// onerror — ou seja, já não apareciam; só sujavam o console e gastavam requisição.
 const HERO_FALLBACK = [
-  {src:'assets/portfolio/fusca.mp4',                       type:'video', alt:'SP Car Clean'},
-  {src:'assets/portfolio/branco.jpg.jpg',                  alt:'Carro branco'},
   {src:'assets/portfolio/estofado.jpg.jpg',                alt:'Higienização de estofado'},
-  {src:'assets/portfolio/moto.jpg.jpg',                    alt:'Moto'},
   {src:'assets/portfolio/antes-e-depois-estofado.jpg.jpg', alt:'Antes e depois estofado'},
   {src:'assets/portfolio/detalhes.jpg.jpg',                alt:'Detalhes'},
   {src:'assets/portfolio/revitalização.jpg.jpg',           alt:'Revitalização'},
@@ -7323,6 +8569,28 @@ const HERO_FALLBACK = [
   {src:'assets/portfolio/produtos.jpg.jpg',                alt:'Produtos'},
   {src:'assets/portfolio/estepe.jpg.jpg',                  alt:'Estepe'},
 ];
+
+// As 7 fotos estáticas são o PISO do carrossel, não uma alternativa a ele.
+// Antes isto era ou/ou: bastava UM item em /portfolio para as 7 fotos atuais do
+// site saírem do ar. Com a sincronização do Drive isso deixou de ser hipótese —
+// a primeira rodada grava 2 fotos, e o carrossel cairia de 7 para 2, perdendo
+// acervo bom sem ninguém pedir.
+//
+// O piso sai de cena quando as estáticas são assumidas pelo painel ("Importar
+// as fotos atuais do site", importHeroDefaults): daí em diante são registros
+// como os outros, e remover uma pelo painel remove de verdade. É isso que
+// `assumidas` detecta — qualquer item apontando para assets/portfolio/ quer
+// dizer "já é gerenciado, não reponha".
+function _heroMedia(val) {
+  const media = Object.values(val || {})
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .map(p => ({ src: p.url, type: p.type === 'video' ? 'video' : undefined, alt: p.caption || 'SP Car Clean' }));
+  if (!media.length) return HERO_FALLBACK.slice();
+  const assumidas = media.some(m => /^assets\/portfolio\//.test(String(m.src || '')));
+  if (assumidas) return media;
+  const jaTem = new Set(media.map(m => String(m.src || '')));
+  return media.concat(HERO_FALLBACK.filter(m => !jaTem.has(m.src)));
+}
 
 let _heroTimer = null;
 function _buildHeroCarousel(media) {
@@ -7419,39 +8687,46 @@ function _buildHeroCarousel(media) {
 }
 _buildHeroCarousel(HERO_FALLBACK);
 
-(function initFirebase() {
-  const firebaseConfig = {
-    apiKey: (window.__ENV && window.__ENV.FIREBASE_API_KEY) || '',
-    authDomain: "sp-car-clean.firebaseapp.com",
-    databaseURL: "https://sp-car-clean-default-rtdb.firebaseio.com",
-    projectId: "sp-car-clean",
-    messagingSenderId: "726947312422",
-    appId: "1:726947312422:web:f6a0bcebc57f19b3f107e7"
-  };
+(function initBanco() {
   try {
-    firebase.initializeApp(firebaseConfig);
-    _fbDB        = firebase.database();
-    _bookingsRef = _fbDB.ref('bookings');
-    _dayLoadRef  = _fbDB.ref('dayLoad');       // nó público só com a lotação por dia
-    _bookingIndexRef = _fbDB.ref('bookingIndex'); // índice bookingIndex/$uid/$id → cliente lê os próprios
-    _portfolioRef = _fbDB.ref('portfolio');    // carrossel "Nossas Obras" gerenciado pelo admin
-    _blockedRef  = _fbDB.ref('blocked');
-    _cfgRef      = _fbDB.ref('config');
-    _galleryRef  = _fbDB.ref('gallery');
-    _servicesRef = _fbDB.ref('services');
-    _combosRef   = _fbDB.ref('combos');
-    _clientNotesRef    = _fbDB.ref('clientNotes');
-    _clientProfilesRef = _fbDB.ref('clientProfiles');
-    _couponsRef        = _fbDB.ref('coupons');
-    _referralsRef      = _fbDB.ref('referrals');   // programa Indique um Amigo
-    _giftcardsRef      = _fbDB.ref('giftcards');
-    _waitlistRef       = _fbDB.ref('waitlist');
-    _feedbackRef       = _fbDB.ref('feedback');
-    _stockRef          = _fbDB.ref('stock');
-    _stockRecipesRef   = _fbDB.ref('stockRecipes');
-    _clientLinksRef    = _fbDB.ref('clientLinks');
-    _clientLinkDismissalsRef = _fbDB.ref('clientLinkDismissals');
-    _clientOverridesRef = _fbDB.ref('clientOverrides');
+    // Todo acesso a dados vai por /api/admin-data, que valida e autoriza no
+    // servidor — e desde 16/11/2026 fala com o DynamoDB. O SDK do Firebase saiu
+    // do frontend junto com o projeto, que foi excluído em 10/11.
+    //
+    // `ehAdmin` usa o MESMO critério do servidor: grupo `admin` no token do
+    // Cognito, o que functions/lib/admin-auth.js exige. Usar isAdmin() (e-mail
+    // igual a CFG.adminEmail) deixaria a segunda conta administrativa de fora.
+    // Ele não decide permissão — só evita pedir ao servidor o que já se sabe
+    // que será recusado, e escolhe o que mostrar na tela.
+    DB.configurar({
+      ehAdmin: () => {
+        const u = AUTH.currentUser;
+        return !!u && Array.isArray(u.grupos) && u.grupos.includes('admin');
+      },
+      pegarToken: () => (AUTH.currentUser ? AUTH.currentUser.getIdToken() : Promise.resolve(null)),
+    });
+    _bookingsRef = DB.ref('bookings');
+    _dayLoadRef  = DB.ref('dayLoad');       // nó público só com a lotação por dia
+    _bookingIndexRef = DB.ref('bookingIndex'); // índice bookingIndex/$uid/$id → cliente lê os próprios
+    _portfolioRef = DB.ref('portfolio');    // carrossel "Nossas Obras" gerenciado pelo admin
+    _blockedRef  = DB.ref('blocked');
+    _cfgRef      = DB.ref('config');
+    _galleryRef  = DB.ref('gallery');
+    _servicesRef = DB.ref('services');
+    _combosRef   = DB.ref('combos');
+    _clientNotesRef    = DB.ref('clientNotes');
+    _clientProfilesRef = DB.ref('clientProfiles');
+    _couponsRef        = DB.ref('coupons');
+    _referralsRef      = DB.ref('referrals');   // programa Indique um Amigo
+    _giftcardsRef      = DB.ref('giftcards');
+    _waitlistRef       = DB.ref('waitlist');
+    _feedbackRef       = DB.ref('feedback');
+    _stockRef          = DB.ref('stock');
+    _stockRecipesRef   = DB.ref('stockRecipes');
+    _custosRef         = DB.ref('custos');
+    _clientLinksRef    = DB.ref('clientLinks');
+    _clientLinkDismissalsRef = DB.ref('clientLinkDismissals');
+    _clientOverridesRef = DB.ref('clientOverrides');
     // clientNotes/clientLinks/clientLinkDismissals/clientOverrides são admin-only nas regras
     // do RTDB. Ler aqui (antes de onAuthStateChanged restaurar a sessão) era negado em
     // silêncio e as mesclagens/anotações "sumiam" a cada visita — por isso a carga fica em
@@ -7497,6 +8772,10 @@ _buildHeroCarousel(HERO_FALLBACK);
       _bookingsRef.on('value', snap => {
         const data = snap.val();
         _bookings = data ? Object.values(data) : [];
+        // Espelho do que está no banco: é o que deixa o setBookings gravar só o
+        // agendamento alterado em vez de reenviar a coleção inteira.
+        _bookingsRemotos = {};
+        Object.entries(data || {}).forEach(([id, b]) => { _bookingsRemotos[id] = JSON.stringify(b); });
         // Mantém a lotação pública (dayLoad) sincronizada a cada mudança
         _recomputeDayLoad();
         // Vincula agendamentos órfãos a contas de clientes (1x por sessão, sem interação)
@@ -7533,7 +8812,7 @@ _buildHeroCarousel(HERO_FALLBACK);
       if (typeof currentAdminTab !== 'undefined' && currentAdminTab === 'avaliacoes') renderAdminFeedback();
     }, e => console.warn('Firebase feedback:', e));
 
-    firebase.auth().onAuthStateChanged(user => {
+    AUTH.onAuthStateChanged(user => {
       _authUser = user;
       // Tela de senha do app: sem sessão de admin restaurada, libera o campo.
       if (_adminGatePending && !isAdmin()) adminGateReady();
@@ -7568,10 +8847,10 @@ _buildHeroCarousel(HERO_FALLBACK);
       // Cliente que já liberou as notificações: mantém o aparelho ligado à conta.
       if (window.pwaEnableClientPush) window.pwaEnableClientPush({ silent: true });
       // Cliente logado — carrega perfil e os próprios agendamentos (via índice)
-      _clientProfilesRef.child(user.uid).once('value', snap => {
-        _clientProfile = snap.val() || { uid: user.uid, email: user.email };
-        _updateClientNavUI();
-      });
+      chamarMe('perfil')
+        .then(perfil => { _clientProfile = perfil || { uid: user.uid, email: user.email }; })
+        .catch(e => console.warn('meu perfil:', e.message))
+        .finally(() => _updateClientNavUI());
       _loadMyBookings(user.uid, () => {
         // Se a tela "Minha conta" já estiver aberta, re-renderiza com os dados
         const m = document.getElementById('clientAccountModal');
@@ -7587,12 +8866,22 @@ _buildHeroCarousel(HERO_FALLBACK);
 
     // ── Nossas Obras (carrossel do hero): fotos gerenciadas pelo admin em /portfolio ──
     // Nó vazio → mantém o fallback estático; com itens → remonta o carrossel ao vivo.
+    //
+    // As 7 fotos estáticas são o PISO do carrossel, não uma alternativa a ele.
+    // Antes isto era ou/ou: bastava um único item em /portfolio para as 7 fotos
+    // atuais do site saírem do ar. Com a sincronização do Drive isso deixou de
+    // ser hipótese — a primeira rodada grava 2 fotos e o carrossel cairia de 7
+    // para 2, perdendo acervo bom sem ninguém pedir.
+    //
+    // O piso sai de cena quando a dona assume as estáticas pelo painel
+    // ("Importar as fotos atuais", importHeroDefaults): a partir daí elas são
+    // registros como os outros, e remover uma pelo painel remove de verdade.
+    // É isso que `assumidas` detecta — qualquer item apontando para
+    // assets/portfolio/ significa "já é gerenciado, não reponha".
     _portfolioRef.on('value', snap => {
       const val = snap.val();
       if (!val) return;
-      const media = Object.values(val)
-        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-        .map(p => ({ src: p.url, type: p.type === 'video' ? 'video' : undefined, alt: p.caption || 'SP Car Clean' }));
+      const media = _heroMedia(val);
       if (media.length) _buildHeroCarousel(media);
     }, e => console.warn('Firebase portfolio:', e));
 
@@ -7631,8 +8920,11 @@ _buildHeroCarousel(HERO_FALLBACK);
             pq: s.pricing?.pq?.sale ?? s.pq ?? 0,
             gr: s.pricing?.gr?.sale ?? s.gr ?? 0,
             daysExtra: s.daysExtra || 0,
+            horas: s.horas || null,
+            diasEspera: s.diasEspera ?? null,
             desc: s.desc || '',
             active: s.active !== false,
+            interno: s.interno === true,
             _cost_pq: s.pricing?.pq?.cost ?? 0,
             _cost_gr: s.pricing?.gr?.cost ?? 0,
             faqs: Array.isArray(s.faqs) ? s.faqs : (s.faqs ? Object.values(s.faqs) : []),
@@ -7660,21 +8952,13 @@ _buildHeroCarousel(HERO_FALLBACK);
 })();
 
 // ============================================================
-// CLEAR ALL DATA
+// DADOS DO SISTEMA
 // ============================================================
-function clearAllData() {
-  if(!confirm('Limpar TODOS os dados? Agendamentos e bloqueios serão removidos do Firebase. Isso não pode ser desfeito!')) return;
-  Promise.all([
-    _bookingsRef ? _bookingsRef.remove() : Promise.resolve(),
-    _blockedRef  ? _blockedRef.remove()  : Promise.resolve(),
-    _dayLoadRef  ? _dayLoadRef.remove()  : Promise.resolve(),
-    _bookingIndexRef ? _bookingIndexRef.remove() : Promise.resolve(),
-  ]).then(() => {
-    _bookings = []; _blocked = []; _dayLoad = {};
-    alert('Dados limpos com sucesso.');
-    doAdminLogout();
-  }).catch(e => { console.error(e); alert('Erro ao limpar dados: ' + e.message); });
-}
+// O botão "Limpar Todos os Dados" (e a função clearAllData) saíram daqui. Ele
+// apagava agendamentos, bloqueios, lotação e índice de clientes de uma vez, não
+// servia a nenhuma operação do dia a dia, e um clique errado custava a base do
+// negócio. Exclusão de agendamento continua existindo onde faz sentido: um por
+// um, em deleteBooking(). O backup diário no S3 é a rede, não a licença.
 
 // ============================================================
 // EMAILJS
@@ -7701,7 +8985,7 @@ function sendEmail(templateId, params) {
 // O destino sai do agendamento no servidor. Best-effort: nunca trava o painel.
 async function notifyClientPush(bookingId, title, message) {
   try {
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user || !isAdmin()) return;
     const body = String(message || '').replace(/\s+/g, ' ').trim().slice(0, 200);
     await fetch('/api/notify-client', {
@@ -7716,9 +9000,75 @@ async function notifyClientPush(bookingId, title, message) {
 // A função upload-url (só admin) devolve uma URL pré-assinada; o arquivo vai
 // direto do navegador para o bucket. Retorna a URL pública do arquivo.
 const _MEDIA_TYPES = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', gif:'image/gif', heic:'image/heic', heif:'image/heif', mp4:'video/mp4', mov:'video/quicktime', webm:'video/webm' };
+// Otimiza a imagem no navegador antes de enviar. Três ganhos, nesta ordem:
+//
+//  1. A função upload-url recusa imagem acima de 5 MB. Foto de celular passa
+//     disso com folga (as do Drive vão de 2 a 23 MB), então sem isto a maior
+//     parte do acervo simplesmente não sobe pelo painel.
+//  2. O que sobe é o que o visitante baixa. Uma foto de 8 MB num carrossel de
+//     10 custa o plano de dados de quem abre o site no celular.
+//  3. Recompor a imagem no canvas DESCARTA o EXIF. Em foto tirada na casa do
+//     cliente isso inclui o GPS — ou seja, o endereço dele deixa de ir ao ar.
+//
+// Fora do raster (GIF animado perde a animação, SVG não é foto) e em navegador
+// sem canvas, devolve o arquivo original: a Lambda ainda recusa pelo tamanho, e
+// a mensagem dela é clara. Também devolve o original se a recompressão não
+// reduzir — não faz sentido perder qualidade sem ganhar byte.
+const OTIM_LADO_MAX  = 1600;  // suficiente para tela 2x do carrossel
+const OTIM_QUALIDADE = 0.82;
+const OTIM_PISO_BYTES = 300 * 1024;
+
+async function otimizarImagem(file) {
+  if (!file || !String(file.type || '').startsWith('image/')) return file;
+  if (file.type === 'image/gif' || file.type === 'image/svg+xml') return file;
+  if (typeof createImageBitmap !== 'function') return file;
+
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    return file; // HEIC que o navegador não decodifica, arquivo corrompido
+  }
+
+  const maior  = Math.max(bitmap.width, bitmap.height);
+  const escala = maior > OTIM_LADO_MAX ? OTIM_LADO_MAX / maior : 1;
+  if (escala === 1 && file.size <= OTIM_PISO_BYTES) {
+    if (bitmap.close) bitmap.close();
+    return file; // já pequena e já leve
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = Math.round(bitmap.width  * escala);
+  canvas.height = Math.round(bitmap.height * escala);
+  const ctx = canvas.getContext('2d');
+  if (!ctx || !canvas.toBlob) { if (bitmap.close) bitmap.close(); return file; }
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  if (bitmap.close) bitmap.close();
+
+  let blob = await new Promise(r => canvas.toBlob(r, 'image/webp', OTIM_QUALIDADE));
+  // Navegador sem WebP devolve PNG em SILÊNCIO (não null), e PNG de foto é
+  // enorme — conferir o tipo é o que evita trocar 8 MB por 12 MB.
+  if (!blob || blob.type !== 'image/webp') {
+    blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', OTIM_QUALIDADE));
+  }
+  if (!blob || blob.size >= file.size) return file;
+
+  const tipo = blob.type === 'image/webp' ? 'image/webp' : 'image/jpeg';
+  const ext  = tipo === 'image/webp' ? 'webp' : 'jpg';
+  const base = String(file.name || 'foto').replace(/\.[^.]*$/, '');
+  return new File([blob], `${base}.${ext}`, { type: tipo, lastModified: Date.now() });
+}
+
 async function uploadMedia(file, folder, bookingId, onProgress) {
-  const user = firebase.auth().currentUser;
+  const user = AUTH.currentUser;
   if (!user) throw new Error('faça login novamente');
+  // Antes de medir e de pedir a URL pré-assinada: o `size` que vai para a
+  // Lambda tem que ser o do arquivo que será realmente enviado.
+  const _bytesAntes = file && file.size;
+  file = await otimizarImagem(file);
+  if (file && file.size !== _bytesAntes) {
+    console.log(`uploadMedia: ${(_bytesAntes/1048576).toFixed(2)} MB → ${(file.size/1048576).toFixed(2)} MB (${file.type})`);
+  }
   const ext = String(file.name || '').split('.').pop().toLowerCase();
   const contentType = file.type || _MEDIA_TYPES[ext] || '';
   const resp = await fetch('/api/upload-url', {
@@ -7948,26 +9298,12 @@ document.addEventListener('click', function(e) {
 // ============================================================
 // GALERIA ANTES/DEPOIS
 // ============================================================
-const GALLERY_FALLBACK = [
-  {
-    before: 'assets/portfolio/branco.jpg.jpg',
-    after:  'assets/portfolio/branco.jpg.jpg',
-    beforeFilter: 'grayscale(50%) brightness(.72) saturate(.3) contrast(1.1)',
-    caption: 'Polimento Completo — Palio Branco'
-  },
-  {
-    before: 'assets/portfolio/estofado.jpg.jpg',
-    after:  'assets/portfolio/estofado.jpg.jpg',
-    beforeFilter: 'grayscale(40%) brightness(.7) saturate(.25) contrast(1.15)',
-    caption: 'Higienização de Estofado'
-  },
-  {
-    before: 'assets/portfolio/revitalização.jpg.jpg',
-    after:  'assets/portfolio/revitalização.jpg.jpg',
-    beforeFilter: 'grayscale(55%) brightness(.68) saturate(.2) contrast(1.1)',
-    caption: 'Revitalização de Pintura e Plásticos'
-  },
-];
+// Sem fallback, de propósito. O que havia aqui era um antes/depois FALSO: a mesma
+// foto nos dois lados, com um filtro cinza no "antes" simulando sujeira — e uma
+// das três apontava para `branco.jpg.jpg`, que não existe. A seção se chama
+// "Resultados Reais": antes e depois é prova de serviço, e fabricar a prova não
+// se sustenta. Agora a seção só aparece com par real cadastrado na aba Galeria.
+const GALLERY_FALLBACK = [];
 
 function buildGalleryCard(item) {
   const card = document.createElement('div');
@@ -8005,7 +9341,7 @@ function buildGalleryCard(item) {
   caption.textContent = item.caption;
 
   card.append(beforeImg, afterWrap, handle, lblB, lblA, caption);
-  afterImg.addEventListener('error', () => card.remove(), { once: true });
+  afterImg.addEventListener('error', () => { card.remove(); _ajustarSecaoGaleria(); }, { once: true });
 
   function setPos(clientX) {
     const rect = card.getBoundingClientRect();
@@ -8025,11 +9361,19 @@ function buildGalleryCard(item) {
   return card;
 }
 
+// Título "Veja a transformação" sobre espaço vazio é pior que não ter a seção.
+function _ajustarSecaoGaleria() {
+  const grid = document.getElementById('baGrid');
+  const secao = grid && (grid.closest('section') || grid.parentElement);
+  if (secao) secao.style.display = grid.children.length ? '' : 'none';
+}
+
 function renderGalleryCards(items) {
   const grid = document.getElementById('baGrid');
   if (!grid) return;
   grid.innerHTML = '';
   items.forEach(item => grid.appendChild(buildGalleryCard(item)));
+  _ajustarSecaoGaleria();
 }
 
 function reloadGallerySection() {
@@ -8057,7 +9401,7 @@ async function iaTriggerRelatorio(btn) {
   btn.disabled = true;
   btn.textContent = '⏳ Gerando...';
   try {
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user) throw new Error('Sessão expirada — faça login novamente');
     const token = await user.getIdToken();
     const resp = await fetch('/api/ai', {
@@ -8093,7 +9437,7 @@ async function iaGerarReativacao() {
   );
   if (coupon === null) return; // cancelou
 
-  const user = firebase.auth().currentUser;
+  const user = AUTH.currentUser;
   if (!user) { alert('Sessão expirada — faça login novamente.'); return; }
   const token = await user.getIdToken();
 
@@ -8135,6 +9479,14 @@ async function iaGerarReativacao() {
       alert('Erro: ' + (data.error || data.reason || 'desconhecido'));
       return;
     }
+    // Sem rascunho não há o que revisar — e o motivo quase sempre é
+    // descadastro. Abrir o modal vazio parece bug.
+    if (!(data.drafts || []).length) {
+      alert(data.pulados
+        ? `Nenhum texto gerado: ${data.pulados} cliente(s) pediram para não receber e-mails de marketing.`
+        : 'Nenhum texto gerado.');
+      return;
+    }
     iaShowReativacaoReview(data.drafts || []);
   } catch (err) {
     overlay.remove();
@@ -8160,7 +9512,7 @@ function iaShowReativacaoReview(drafts) {
             <button class="btn-ghost" style="font-size:.73rem;padding:.2rem .55rem"
               onclick="navigator.clipboard.writeText(document.getElementById('ia-draft-${i}').value).then(()=>{this.textContent='✓ Copiado!';setTimeout(()=>this.textContent='📋 Copiar',1500)})">📋 Copiar</button>
             ${d.email ? `<button class="btn-ghost" style="font-size:.73rem;padding:.2rem .55rem"
-              onclick="iaEnviarReativacao('${escHtml(d.email)}','${escHtml(d.name||'')}',document.getElementById('ia-draft-${i}').value)">📧 Enviar e-mail</button>` : ''}
+              onclick="iaEnviarReativacao('${escAttrJs(d.email)}','${escAttrJs(d.name||'')}',document.getElementById('ia-draft-${i}').value)">📧 Enviar e-mail</button>` : ''}
           </div>
         </div>`).join('')}
     </div>`;
@@ -8185,9 +9537,9 @@ function iaEnviarReativacao(email, name, text) {
 // --- 1.3 Agente de agenda (waitlist) ---
 function iaDispatchAgenda(freedDate, cancelledService, cancelledCarSize) {
   if (!freedDate) return;
-  firebase.database().ref('aiConfig/agenda').once('value').then(snap => {
+  DB.ref('aiConfig/agenda').once('value').then(snap => {
     if (!snap.val()?.enabled) return;
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user) return;
     user.getIdToken().then(token => {
       fetch('/api/ai', {
@@ -8258,7 +9610,7 @@ async function iaUpsellSuggest(email, serviceId, lastBooking) {
 const IA_DEFAULTS = {
   ping:       { monthlyBudgetCalls: 10,  maxTokens: 256,  schedule: null,            name: 'Ping (Teste)',            desc: 'Valida a conectividade com a Claude API.' },
   relatorio:  { monthlyBudgetCalls: 10,  maxTokens: 1024, schedule: 'weekly:mon:08', name: 'Relatório Semanal',        desc: 'Resumo executivo semanal enviado via Telegram às segundas.' },
-  reativacao: { monthlyBudgetCalls: 60,  maxTokens: 1024, schedule: null,            name: 'Reativação de Inativos',   desc: 'E-mails personalizados para clientes sem retorno há 90+ dias.' },
+  reativacao: { monthlyBudgetCalls: 60,  maxTokens: 1024, schedule: 'weekly:tue:08', name: 'Reativação de Inativos',   desc: 'Terças, envia e-mail para quem não volta há 90+ dias — respeitando o descadastro. No painel, gera textos para revisão.' },
   agenda:     { monthlyBudgetCalls: 30,  maxTokens: 512,  schedule: null,            name: 'Otimizador de Agenda',     desc: 'Ranqueia candidatos da waitlist para vagas liberadas.' },
   upsell:     { monthlyBudgetCalls: 300, maxTokens: 256,  schedule: null,            name: 'Sugestão de Complemento',  desc: 'Sugere 1 complemento no agendamento com base no histórico.' },
   concierge:  { monthlyBudgetCalls: 500, maxTokens: 600,  schedule: null,            name: 'Chat Concierge',           desc: 'Widget de chat público que responde dúvidas e recomenda serviços.' },
@@ -8276,9 +9628,9 @@ async function renderAdminIA() {
     await iaEnsureConfigs();
     const month = new Date().toISOString().slice(0, 7);
     const [cfgSnap, usageSnap, logsSnap] = await Promise.all([
-      firebase.database().ref('aiConfig').once('value'),
-      firebase.database().ref(`aiUsage/${month}`).once('value'),
-      firebase.database().ref('aiLogs').orderByKey().limitToLast(20).once('value')
+      DB.ref('aiConfig').once('value'),
+      DB.ref(`aiUsage/${month}`).once('value'),
+      DB.ref('aiLogs').orderByKey().limitToLast(20).once('value')
     ]);
     const configs = cfgSnap.val()   || {};
     const usages  = usageSnap.val() || {};
@@ -8398,11 +9750,11 @@ async function renderAdminIA() {
 }
 
 async function iaEnsureConfigs() {
-  const snap = await firebase.database().ref('aiConfig').once('value');
+  const snap = await DB.ref('aiConfig').once('value');
   const existing = snap.val() || {};
   for (const [id, def] of Object.entries(IA_DEFAULTS)) {
     if (!existing[id]) {
-      await firebase.database().ref(`aiConfig/${id}`).set({
+      await DB.ref(`aiConfig/${id}`).set({
         enabled: false,
         monthlyBudgetCalls: def.monthlyBudgetCalls,
         maxTokens: def.maxTokens,
@@ -8416,7 +9768,7 @@ async function iaEnsureConfigs() {
 
 async function iaToggle(agentId, enabled) {
   try {
-    await firebase.database().ref(`aiConfig/${agentId}`).update({
+    await DB.ref(`aiConfig/${agentId}`).update({
       enabled,
       disabledReason: enabled ? null : 'manual',
       updatedAt: new Date().toISOString()
@@ -8430,7 +9782,7 @@ async function iaToggle(agentId, enabled) {
 async function iaUpdateBudget(agentId, value) {
   if (!value || value < 1) return;
   try {
-    await firebase.database().ref(`aiConfig/${agentId}`).update({
+    await DB.ref(`aiConfig/${agentId}`).update({
       monthlyBudgetCalls: value,
       updatedAt: new Date().toISOString()
     });
@@ -8447,7 +9799,7 @@ async function iaPingTest() {
   btn.textContent = '⏳ Aguardando...';
   res.textContent = '';
   try {
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user) { res.style.color = '#f87171'; res.textContent = 'Faça login primeiro.'; return; }
     const token = await user.getIdToken();
     const resp  = await fetch('/api/ai', {
@@ -8482,7 +9834,7 @@ async function iaTriggerInsumos(btn) {
   btn.disabled = true;
   btn.textContent = '⏳ Analisando estoque...';
   try {
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user) throw new Error('Sessão expirada — faça login novamente');
     const token = await user.getIdToken();
     const resp = await fetch('/api/ai', {
@@ -8518,7 +9870,7 @@ async function iaGerarLegenda(btn) {
   btn.textContent = '⏳ Gerando legenda...';
 
   try {
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user) throw new Error('Sessão expirada — faça login novamente');
     const token = await user.getIdToken();
 
@@ -8572,7 +9924,7 @@ async function iaDescreveCheckin(btn) {
   btn.textContent = '⏳ Analisando fotos...';
 
   try {
-    const user = firebase.auth().currentUser;
+    const user = AUTH.currentUser;
     if (!user) { alert('Faça login para usar esta função.'); return; }
     const token = await user.getIdToken();
 
@@ -8614,7 +9966,7 @@ async function iaDescreveCheckin(btn) {
 
 // --- 2.2 Widget Concierge ---
 (function initConciergeWidget() {
-  firebase.database().ref('aiConfig/concierge/enabled').once('value').then(snap => {
+  DB.ref('aiConfig/concierge/enabled').once('value').then(snap => {
     if (!snap.val()) return;
     document.getElementById('concierge-fab').style.display = 'flex';
   }).catch(() => {});
@@ -8646,7 +9998,7 @@ function _conciergeAppend(role, text, serviceId) {
   bubble.style.cssText = `max-width:80%;padding:.5rem .75rem;border-radius:${isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px'};font-size:.83rem;line-height:1.45;white-space:pre-wrap;word-break:break-word;${isUser ? 'background:var(--accent);color:#fff' : 'background:rgba(255,255,255,.08);color:inherit'}`;
   bubble.textContent = text;
   wrap.appendChild(bubble);
-  if (serviceId && SVCS[serviceId]) {
+  if (serviceId && svcPublico(SVCS[serviceId])) {
     const btn = document.createElement('button');
     btn.className = 'btn-primary';
     btn.style.cssText = 'font-size:.75rem;padding:.25rem .65rem;margin-top:.4rem;display:block';

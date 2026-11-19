@@ -1,4 +1,5 @@
 const { clientIp, rateLimit, originAllowed, corsHeaders } = require('./lib/guard');
+const { dbGet } = require('./lib/core/store');
 
 exports.handler = async (event) => {
   const cors = corsHeaders(event);
@@ -28,16 +29,13 @@ exports.handler = async (event) => {
   // Valor autoritativo: lê o valor do gift card gravado no Firebase (o front cria
   // o registro `pending` antes de pedir o link). O valor do cliente é só fallback.
   let faceValue = Number(amount) || 0;
-  const dbUrl    = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
-  const dbSecret = process.env.FIREBASE_DATABASE_SECRET;
-  if (dbUrl && dbSecret) {
+  // O valor de verdade é o do banco, não o que veio na requisição — foi assim
+  // que o gift card virou forjável uma vez.
+  {
     try {
-      const r = await fetch(`${dbUrl}/giftcards/${encodeURIComponent(code)}.json?auth=${dbSecret}`);
-      if (r.ok) {
-        const gc = await r.json();
-        const dbAmount = Number(gc?.amount) || 0;
-        if (dbAmount > 0) faceValue = dbAmount;
-      }
+      const gc = await dbGet(`giftcards/${code}`);
+      const dbAmount = Number(gc?.amount) || 0;
+      if (dbAmount > 0) faceValue = dbAmount;
     } catch (e) { /* mantém o fallback do cliente */ }
   }
   if (!faceValue || faceValue <= 0) {

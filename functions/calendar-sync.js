@@ -18,8 +18,8 @@
 // deriva do segredo de origem do CloudFront, que já existe no Lambda).
 
 const crypto = require('crypto');
-const { dbGet } = require('./lib/core/firebase');
-const { verifyAdmin, lookupUser, bearerToken } = require('./lib/admin-auth');
+const { dbGet } = require('./lib/core/store');
+const { verifyAdmin, identificar, bearerToken } = require('./lib/admin-auth');
 const { clientIp, rateLimit, originAllowed, corsHeaders } = require('./lib/guard');
 
 const SHOWN = ['pending', 'approved', 'confirmed', 'completed'];
@@ -222,7 +222,7 @@ exports.handler = async (event) => {
 
     if (data.action === 'client-link') {
       // Conta logada → e-mail da conta; sem conta → código + e-mail conferidos no agendamento.
-      const user = await lookupUser(bearerToken(event));
+      const user = await identificar(bearerToken(event));
       let email = user && user.email;
       if (!email) {
         const id = String(data.bookingId || '').trim().toUpperCase();

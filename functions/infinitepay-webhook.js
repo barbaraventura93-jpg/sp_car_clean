@@ -11,10 +11,15 @@
 // reenviar, em vez de confirmar às cegas (fail-closed).
 
 const { pushBookingUpdate } = require('./lib/webpush');
+const { firebase } = require('./lib/core/store-http');
+const store = require('./lib/core/store');
+const pontos = require('./lib/core/pontos');
 
 const PAYMENT_CHECK_URL = 'https://api.checkout.infinitepay.io/payment_check';
 const PAID_STATUSES     = ['paid', 'approved', 'captured', 'succeeded', 'complete', 'completed'];
 const CHECK_TIMEOUT_MS  = 8000;
+// Estados de agendamento que um pagamento pode confirmar.
+const PAYABLE_STATUSES  = ['pending', 'approved'];
 
 exports.handler = async (event) => {
   // 200        → InfinitePay considera entregue e para de reenviar.
@@ -37,17 +42,11 @@ exports.handler = async (event) => {
   }
 
   const handle   = process.env.INFINITEPAY_HANDLE;
-  const dbUrl    = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
-  const dbSecret = process.env.FIREBASE_DATABASE_SECRET;
 
   // Sem o handle não há como verificar a autenticidade → fail-closed (peça reenvio).
   if (!handle) {
     console.error('infinitepay-webhook: INFINITEPAY_HANDLE não configurado — pagamento não verificado');
     return retry('handle not configured');
-  }
-  if (!dbUrl || !dbSecret) {
-    console.error('infinitepay-webhook: FIREBASE_DATABASE_URL ou FIREBASE_DATABASE_SECRET não configurado');
-    return retry('db not configured');
   }
 
   // ── Verificação server-side contra a API oficial do InfinitePay ──────────
@@ -69,9 +68,17 @@ exports.handler = async (event) => {
   // ── Ativação de Gift Card ────────────────────────────────────────────────
   if (String(order_nsu).startsWith('GIFT-')) {
     try {
-      const gc = await dbReq('GET', dbUrl, dbSecret, `/giftcards/${encodeURIComponent(order_nsu)}`);
+      const gc = await dbReq('GET', `/giftcards/${encodeURIComponent(order_nsu)}`);
       if (!gc) return ok('gift card not found');
       if (gc.status === 'active') return ok('gift card already active');
+      // Só um cartão AINDA NÃO PAGO pode ser ativado. O webhook pode ser
+      // repetido por qualquer pessoa — o pagamento original continua existindo
+      // no InfinitePay e a verificação acima passa de novo. Sem esta trava, um
+      // cartão esgotado voltava a ter o saldo cheio.
+      if (gc.status !== 'pending') {
+        console.warn(`infinitepay-webhook: ${order_nsu} em status '${gc.status}' não é ativável — webhook repetido ignorado`);
+        return ok('gift card not pending');
+      }
 
       const expectedCents = expectedCentsFor(gc.amount, feeRate);
       if (amountIsShort(verifiedPaidCents, expectedCents)) {
@@ -79,7 +86,7 @@ exports.handler = async (event) => {
         return ok('amount mismatch');
       }
 
-      await dbReq('PATCH', dbUrl, dbSecret, `/giftcards/${encodeURIComponent(order_nsu)}`, {
+      await dbReq('PATCH', `/giftcards/${encodeURIComponent(order_nsu)}`, {
         status: 'active',
         balance: gc.amount,
         activatedAt: new Date().toISOString(),
@@ -98,9 +105,25 @@ exports.handler = async (event) => {
 
   // ── Confirmação de agendamento ───────────────────────────────────────────
   try {
-    const booking = await dbReq('GET', dbUrl, dbSecret, `/bookings/${encodeURIComponent(order_nsu)}`);
+    const booking = await dbReq('GET', `/bookings/${encodeURIComponent(order_nsu)}`);
     if (!booking) return ok('booking not found');
-    if (booking.status === 'confirmed') return ok('already confirmed');
+    // "Já confirmado" só quando o PAGAMENTO foi confirmado. O status
+    // `confirmed` sozinho não basta: o cliente o põe ao apertar "confirmar
+    // pagamento" no site (/api/me), sem pagamento verificado. Antes de
+    // 18/11/2026, um pagamento real que chegasse depois disso era descartado
+    // aqui — sem `paymentConfirmedAt`, sem registro do valor e sem pontos.
+    if (booking.paymentConfirmedAt) return ok('already confirmed');
+    const aguardandoPagamento = PAYABLE_STATUSES.includes(booking.status)
+      || booking.status === 'confirmed';
+    // Só confirma o que está esperando pagamento. Pelo mesmo motivo do gift
+    // card: um webhook repetido não pode ressuscitar um agendamento cancelado,
+    // recusado ou já concluído. Se um pagamento de verdade chegar depois do
+    // cancelamento, ele fica registrado aqui no log para a admin resolver —
+    // reabrir sozinho seria decidir por ela.
+    if (!aguardandoPagamento) {
+      console.error(`infinitepay-webhook: pagamento verificado para ${order_nsu} em status '${booking.status}' — NÃO confirmado, requer conferência manual`);
+      return ok('booking not payable');
+    }
 
     // Valor esperado: preferimos o priceWithFee gravado ao gerar o link.
     const expectedReais = booking.priceWithFee || booking.finalPrice || booking.price || 0;
@@ -111,13 +134,23 @@ exports.handler = async (event) => {
       return ok('amount mismatch');
     }
 
-    await dbReq('PATCH', dbUrl, dbSecret, `/bookings/${encodeURIComponent(order_nsu)}`, {
+    await dbReq('PATCH', `/bookings/${encodeURIComponent(order_nsu)}`, {
       status: 'confirmed',
       paymentConfirmedAt: new Date().toISOString(),
       paymentTransactionId: transaction_nsu || '',
       paymentMethod: verifiedCapture,
       paidAmount: verifiedPaidCents ? verifiedPaidCents / 100 : 0
     });
+    // Pontos de fidelidade: caem agora, com o pagamento confirmado (regra de
+    // 18/11/2026, lib/core/pontos.js). Best-effort: uma falha aqui não pode
+    // fazer o InfinitePay reenviar e reconfirmar o pagamento. O crédito é
+    // único por agendamento, então reenvio também não credita duas vezes.
+    try {
+      const p = await pontos.creditarPorPagamento(order_nsu, { store });
+      console.log(`infinitepay-webhook: pontos de ${order_nsu}: ${p.creditado}${p.motivo ? ` (${p.motivo})` : ''}`);
+    } catch (e) {
+      console.error(`infinitepay-webhook: pontos de ${order_nsu} falharam: ${e.message}`);
+    }
     // Aviso no celular do cliente (best-effort: nunca derruba a confirmação).
     await pushBookingUpdate({ id: order_nsu, ...booking }, '✅ Pagamento confirmado',
       `Seu agendamento ${order_nsu} está confirmado. Até breve!`).catch(() => {});
@@ -191,13 +224,10 @@ function amountIsShort(paidCents, expectedCents) {
   return paidCents < expectedCents - 1;
 }
 
-async function dbReq(method, dbUrl, dbSecret, path, body) {
-  const resp = await fetch(`${dbUrl}${path}.json?auth=${dbSecret}`, {
-    method,
-    ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
-  });
-  if (!resp.ok) throw new Error(`Firebase ${method} ${path} → HTTP ${resp.status}`);
-  return resp.json();
+// Banco: DynamoDB desde 16/11/2026. O nome e os verbos ficaram porque é o que
+// os quatro pontos de chamada abaixo usam; quem traduz é lib/core/store-http.js.
+async function dbReq(method, path, body) {
+  return firebase(method, path, body);
 }
 
 async function sendGiftEmail(gc, order_nsu) {
@@ -231,3 +261,6 @@ async function sendGiftEmail(gc, order_nsu) {
     })
   }).catch(e => console.error('gift card email error:', e.message));
 }
+
+// Exportado para teste: a conta do valor esperado decide se um pagamento vale.
+exports._interno = { expectedCentsFor, amountIsShort };
