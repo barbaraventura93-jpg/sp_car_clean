@@ -20,6 +20,13 @@ acessada por terceiros" (o Lambda ficou bloqueado na conta inteira):
 
 Falta ainda o passo 3 acima (usuário só de leitura para a revisão), se quiser.
 
+**Atualização 18/11/2026, depois disso:** as permissões da chave foram reduzidas aos
+recursos `sp-car-clean-*` (opção B, com apply direcionado; ver `docs/iam/` e
+A-01 em `docs/revisao-2026-11-09.md`). Ela não apaga mais nada nem mexe no
+IAM. Mudanças no IAM passam a ser feitas por você, no CloudShell. O que ainda
+vale fazer é só a troca por credencial temporária. (O `IAMReadOnlyAccess`
+citado acima também saiu: a leitura do IAM ficou restrita a `sp-car-clean-*`.)
+
 **Situação:** o ambiente de desenvolvimento do Claude guarda uma chave de
 acesso da AWS que não expira e tem permissão quase total (inclusive para criar
 outras permissões). Em 14/11/2026 você decidiu mantê-la para o desenvolvimento

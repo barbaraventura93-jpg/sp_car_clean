@@ -1,0 +1,60 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EstadoDoTerraform",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::sp-car-clean-tfstate-442042534458"
+    },
+    {
+      "Sid": "EstadoDoTerraformArquivoETrava",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::sp-car-clean-tfstate-442042534458/sp-car-clean/*"
+    },
+    {
+      "Sid": "TerraformLeOsSegredosAoPlanejar",
+      "Effect": "Allow",
+      "Action": ["ssm:GetParameter", "ssm:GetParameters"],
+      "Resource": "arn:aws:ssm:sa-east-1:442042534458:parameter/sp-car-clean/*"
+    },
+    {
+      "Sid": "FuncoesCriarEAtualizarSemApagar",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:CreateFunction",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:AddPermission",
+        "lambda:RemovePermission",
+        "lambda:TagResource"
+      ],
+      "Resource": "arn:aws:lambda:sa-east-1:442042534458:function:sp-car-clean-*"
+    },
+    {
+      "Sid": "EntregarSoOPapelDasFuncoesAoLambda",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::442042534458:role/sp-car-clean-functions",
+      "Condition": {"StringEquals": {"iam:PassedToService": "lambda.amazonaws.com"}}
+    },
+    {
+      "Sid": "RotasDaApiSemApagarAApi",
+      "Effect": "Allow",
+      "Action": ["apigateway:POST", "apigateway:PATCH", "apigateway:DELETE"],
+      "Resource": "arn:aws:apigateway:sa-east-1::/apis/ae7v1hy3d9/*"
+    },
+    {
+      "Sid": "GrupoDeLogsDeFuncaoNova",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:TagResource",
+        "logs:TagLogGroup"
+      ],
+      "Resource": "arn:aws:logs:sa-east-1:442042534458:log-group:/aws/lambda/sp-car-clean-*"
+    }
+  ]
+}

@@ -1,0 +1,215 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListagensQueAAwsSoAceitaComAsterisco",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListAllMyBuckets",
+        "lambda:ListFunctions",
+        "dynamodb:ListTables",
+        "cognito-idp:ListUserPools",
+        "cloudfront:ListDistributions",
+        "cloudfront:ListFunctions",
+        "cloudfront:ListOriginAccessControls",
+        "cloudfront:ListCachePolicies",
+        "cloudfront:ListOriginRequestPolicies",
+        "cloudfront:ListResponseHeadersPolicies",
+        "route53:ListHostedZones",
+        "route53:ListHostedZonesByName",
+        "acm:ListCertificates",
+        "wafv2:ListWebACLs",
+        "scheduler:ListSchedules",
+        "logs:DescribeLogGroups",
+        "ssm:DescribeParameters",
+        "sns:ListTopics",
+        "iam:ListRoles",
+        "cloudtrail:LookupEvents",
+        "freetier:GetAccountPlanState"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3ConfiguracaoDosBuckets",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:GetBucket*",
+        "s3:GetLifecycleConfiguration",
+        "s3:GetEncryptionConfiguration"
+      ],
+      "Resource": "arn:aws:s3:::sp-car-clean-*"
+    },
+    {
+      "Sid": "S3ArquivosDoSiteEDaMidia",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:GetObjectTagging"],
+      "Resource": [
+        "arn:aws:s3:::sp-car-clean-site-442042534458/*",
+        "arn:aws:s3:::sp-car-clean-media-442042534458/*"
+      ]
+    },
+    {
+      "Sid": "LambdaLeitura",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:GetFunctionCodeSigningConfig",
+        "lambda:GetFunctionConcurrency",
+        "lambda:GetPolicy",
+        "lambda:GetRuntimeManagementConfig",
+        "lambda:ListVersionsByFunction",
+        "lambda:ListTags"
+      ],
+      "Resource": "arn:aws:lambda:sa-east-1:442042534458:function:sp-car-clean-*"
+    },
+    {
+      "Sid": "LogsDasFuncoes",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogStreams",
+        "logs:GetLogEvents",
+        "logs:FilterLogEvents",
+        "logs:ListTagsForResource",
+        "logs:ListTagsLogGroup"
+      ],
+      "Resource": "arn:aws:logs:sa-east-1:442042534458:log-group:/aws/lambda/sp-car-clean-*"
+    },
+    {
+      "Sid": "DynamoDBSoEstruturaSemDados",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:DescribeTable",
+        "dynamodb:DescribeTimeToLive",
+        "dynamodb:DescribeContinuousBackups",
+        "dynamodb:ListTagsOfResource"
+      ],
+      "Resource": "arn:aws:dynamodb:sa-east-1:442042534458:table/sp-car-clean-*"
+    },
+    {
+      "Sid": "CognitoConfiguracaoEGrupoAdmin",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:DescribeUserPool",
+        "cognito-idp:DescribeUserPoolClient",
+        "cognito-idp:ListUserPoolClients",
+        "cognito-idp:GetUserPoolMfaConfig",
+        "cognito-idp:GetGroup",
+        "cognito-idp:ListGroups",
+        "cognito-idp:ListUsersInGroup",
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminListGroupsForUser",
+        "cognito-idp:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:cognito-idp:sa-east-1:442042534458:userpool/sa-east-1_HTZb1VsE9"
+    },
+    {
+      "Sid": "ApiGatewayLeitura",
+      "Effect": "Allow",
+      "Action": "apigateway:GET",
+      "Resource": [
+        "arn:aws:apigateway:sa-east-1::/apis",
+        "arn:aws:apigateway:sa-east-1::/apis/ae7v1hy3d9",
+        "arn:aws:apigateway:sa-east-1::/apis/ae7v1hy3d9/*"
+      ]
+    },
+    {
+      "Sid": "AgendamentosLeitura",
+      "Effect": "Allow",
+      "Action": ["scheduler:GetSchedule", "scheduler:ListTagsForResource"],
+      "Resource": "arn:aws:scheduler:sa-east-1:442042534458:schedule/default/sp-car-clean-*"
+    },
+    {
+      "Sid": "CloudFrontLeitura",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:GetDistribution",
+        "cloudfront:GetDistributionConfig",
+        "cloudfront:GetInvalidation",
+        "cloudfront:ListInvalidations",
+        "cloudfront:ListTagsForResource",
+        "cloudfront:GetFunction",
+        "cloudfront:DescribeFunction",
+        "cloudfront:GetOriginAccessControl",
+        "cloudfront:GetCachePolicy",
+        "cloudfront:GetOriginRequestPolicy",
+        "cloudfront:GetResponseHeadersPolicy"
+      ],
+      "Resource": [
+        "arn:aws:cloudfront::442042534458:distribution/ERDVFQXHI8NI2",
+        "arn:aws:cloudfront::442042534458:function/sp-car-clean-*",
+        "arn:aws:cloudfront::442042534458:origin-access-control/E1LVKBSH5LROET",
+        "arn:aws:cloudfront::442042534458:cache-policy/*",
+        "arn:aws:cloudfront::442042534458:origin-request-policy/*",
+        "arn:aws:cloudfront::442042534458:response-headers-policy/*"
+      ]
+    },
+    {
+      "Sid": "DnsDoDominio",
+      "Effect": "Allow",
+      "Action": [
+        "route53:GetHostedZone",
+        "route53:ListResourceRecordSets",
+        "route53:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:route53:::hostedzone/Z01076489MTRTBE8O3KJ"
+    },
+    {
+      "Sid": "DnsEstadoDaMudanca",
+      "Effect": "Allow",
+      "Action": "route53:GetChange",
+      "Resource": "arn:aws:route53:::change/*"
+    },
+    {
+      "Sid": "CertificadoEWafLeitura",
+      "Effect": "Allow",
+      "Action": [
+        "acm:DescribeCertificate",
+        "acm:ListTagsForCertificate",
+        "wafv2:GetWebACL",
+        "wafv2:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:acm:us-east-1:442042534458:certificate/*",
+        "arn:aws:wafv2:us-east-1:442042534458:global/webacl/sp-car-clean-site/*"
+      ]
+    },
+    {
+      "Sid": "IamLeituraSoDoProjeto",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion",
+        "iam:GetOpenIDConnectProvider"
+      ],
+      "Resource": [
+        "arn:aws:iam::442042534458:role/sp-car-clean-*",
+        "arn:aws:iam::442042534458:policy/sp-car-clean-*",
+        "arn:aws:iam::442042534458:oidc-provider/token.actions.githubusercontent.com"
+      ]
+    },
+    {
+      "Sid": "IamVerAsPropriasPermissoes",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetUser",
+        "iam:ListAttachedUserPolicies",
+        "iam:ListUserPolicies",
+        "iam:SimulatePrincipalPolicy"
+      ],
+      "Resource": "arn:aws:iam::442042534458:user/github-actions-tracker"
+    },
+    {
+      "Sid": "SegredosSoONomeNuncaOValor",
+      "Effect": "Allow",
+      "Action": "ssm:ListTagsForResource",
+      "Resource": "arn:aws:ssm:sa-east-1:442042534458:parameter/sp-car-clean/*"
+    }
+  ]
+}
