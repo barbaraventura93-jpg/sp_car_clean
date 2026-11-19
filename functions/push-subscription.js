@@ -9,14 +9,14 @@
 //     • { bookingId, email } conferidos no Firebase   → só aquele agendamento (sem conta)
 
 const { publicKey, isValidSubscription, saveSubscription, saveClientSubscription, clientTarget } = require('./lib/webpush');
-const { verifyAdmin, lookupUser, bearerToken } = require('./lib/admin-auth');
-const { dbGet } = require('./lib/core/firebase');
+const { verifyAdmin, identificar, bearerToken } = require('./lib/admin-auth');
+const { dbGet } = require('./lib/core/store');
 const { clientIp, rateLimit, originAllowed, corsHeaders } = require('./lib/guard');
 
 // Alvos que o cliente provou serem dele (token e/ou código + e-mail do agendamento).
 async function clientTargets(event, data) {
   const targets = [];
-  const user = await lookupUser(bearerToken(event));
+  const user = await identificar(bearerToken(event));
   if (user) targets.push(clientTarget('uid', user.uid), clientTarget('email', user.email));
 
   const bookingId = String(data.bookingId || '').trim().toUpperCase();

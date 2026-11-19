@@ -1,4 +1,5 @@
 const { clientIp, rateLimit, originAllowed, corsHeaders } = require('./lib/guard');
+const { dbGet } = require('./lib/core/store');
 
 exports.handler = async (event) => {
   const cors = corsHeaders(event);
@@ -31,16 +32,13 @@ exports.handler = async (event) => {
   // corrida com a escrita do painel). O webhook (item 1) ainda revalida o valor
   // efetivamente pago.
   let price = Number(finalPrice) || 0;
-  const dbUrl    = (process.env.FIREBASE_DATABASE_URL || '').replace(/\/$/, '');
-  const dbSecret = process.env.FIREBASE_DATABASE_SECRET;
-  if (dbUrl && dbSecret) {
+  // O preço de verdade é o do banco, nunca o que o cliente mandou: o corpo da
+  // requisição é editável por quem paga.
+  {
     try {
-      const r = await fetch(`${dbUrl}/bookings/${encodeURIComponent(bookingId)}.json?auth=${dbSecret}`);
-      if (r.ok) {
-        const bk = await r.json();
-        const dbPrice = Number(bk?.finalPrice) || Number(bk?.price) || 0;
-        if (dbPrice > 0) price = dbPrice;
-      }
+      const bk = await dbGet(`bookings/${bookingId}`);
+      const dbPrice = Number(bk?.finalPrice) || Number(bk?.price) || 0;
+      if (dbPrice > 0) price = dbPrice;
     } catch (e) { /* mantém o fallback do cliente */ }
   }
   if (!price || price <= 0) {

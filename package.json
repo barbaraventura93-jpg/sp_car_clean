@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "description": "SP Car Clean — Estética Automotiva Premium",
   "scripts": {
-    "build": "mkdir -p dist && cp index.html dist/ && cp -r assets dist/",
+    "test": "node scripts/run-tests.js",
+    "test:rapido": "node scripts/run-tests.js --rapido",
+    "build": "node build.js",
     "start": "npx serve ."
   },
-  "dependencies": {
-    "firebase": "^12.13.0"
-  }
+  "devDependencies": {
+    "playwright": "1.63.0"
+  },
+  "private": true
 }

@@ -347,8 +347,12 @@ body.admin-gate-on #waFloat,body.admin-gate-on #concierge-fab,body.admin-gate-on
 .admin-gate-brand .sub{font-size:.76rem;color:var(--muted);margin-top:.25rem}
 .admin-gate-foot{display:none;text-align:center;margin-top:1.5rem}
 .admin-gate .admin-gate-foot{display:block}
-.admin-gate-foot a{font-size:.76rem;color:var(--muted);cursor:pointer;border-bottom:1px dashed rgba(255,255,255,.14);padding-bottom:2px;transition:color .2s}
-.admin-gate-foot a:hover{color:var(--accent)}
+/* Rodapé de link que aparece em qualquer contexto de modal — ao contrário do
+   .admin-gate-foot, que o CSS esconde fora da tela cheia do app. */
+.modal-foot-link{display:block;text-align:center;margin-top:1.5rem}
+.admin-gate .admin-gate-foot{margin-top:.8rem}
+.admin-gate-foot a,.modal-foot-link a{font-size:.76rem;color:var(--muted);cursor:pointer;border-bottom:1px dashed rgba(255,255,255,.14);padding-bottom:2px;transition:color .2s}
+.admin-gate-foot a:hover,.modal-foot-link a:hover{color:var(--accent)}
 #adminGateChecking{display:none;align-items:center;justify-content:center;gap:.5rem;font-size:.78rem;color:var(--muted);margin-bottom:1rem}
 #adminGateChecking.on{display:flex}
 .admin-gate-spin{width:14px;height:14px;border:2px solid rgba(255,255,255,.14);border-top-color:var(--accent);border-radius:50%;animation:agSpin .7s linear infinite}

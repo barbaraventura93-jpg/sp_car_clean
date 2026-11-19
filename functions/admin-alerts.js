@@ -8,10 +8,13 @@
 //  2. Estoque: produtos com quantidade abaixo do mínimo cadastrado (ou zerados).
 //
 // Novos agendamentos, reagendamentos e cancelamentos já avisam na hora
-// (notify-booking). Variáveis: FIREBASE_DATABASE_URL, FIREBASE_DATABASE_SECRET,
-// ADMIN_ALERT_DAYS (opcional), TELEGRAM_* (opcional), push (PUSH_TABLE + VAPID).
+// (notify-booking).
+//
+// Variáveis: DATA_TABLE (opcional — o padrão é a tabela de dados do projeto),
+//            ADMIN_ALERT_DAYS (opcional), TELEGRAM_* (opcional),
+//            push (PUSH_TABLE + VAPID).
 
-const { dbGet } = require('./lib/core/firebase');
+const { dbGet } = require('./lib/core/store');
 const { sendTelegram } = require('./lib/core/telegram');
 const { sendAdminPush } = require('./lib/webpush');
 

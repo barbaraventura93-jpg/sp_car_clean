@@ -355,6 +355,32 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
 > (código + e-mail, sem campos internos). O cliente logado vê o próprio histórico pelo
 > índice `bookingIndex/$uid`.
 >
+> **Gift cards: crédito não pode mais ser forjado.** A regra de `giftcards/$code`
+> era `".write": "newData.exists()"` — sem checar login. Como o `buyGiftCard()` cria o
+> cartão `pending` **do navegador do comprador anônimo**, antes de ir para o pagamento,
+> a escrita tinha de ser aberta; o efeito colateral é que qualquer pessoa podia gravar
+> `giftcards/QUALQUER-CODIGO` com `status: "active"` e o saldo que quisesse, e gastar
+> esse crédito num agendamento. O resgate (`_useGiftCard`) também roda no navegador, e
+> o servidor só conferia valor na **compra** (webhook do InfinitePay), nunca no **uso**.
+>
+> Agora a regra aceita exatamente duas formas sem login: **criar** um cartão com
+> `status: "pending"` e `balance: 0` (o que o `buyGiftCard()` faz), e **gastar** saldo de
+> um cartão já `active`, sem nunca aumentá-lo nem mexer no `amount` ou no `code`.
+> Virar `pending → active` com saldo só acontece por quem ignora as regras: o webhook,
+> que usa o `FIREBASE_DATABASE_SECRET` depois de conferir o pagamento na InfinitePay, e
+> o admin, coberto pela regra pai da coleção. Criar um `pending` com `amount` alto é
+> inócuo — sem pagamento verificado, o saldo nunca é liberado.
+>
+> Verifique com [`scripts/test-giftcard-rules.sh`](scripts/test-giftcard-rules.sh),
+> antes e depois do `firebase deploy --only database`: seis tentativas de fraude devem
+> dar **401** e o fluxo legítimo de compra deve dar **200**. Se o teste 7 falhar, a
+> compra de gift card está quebrada no site.
+>
+> Ainda em aberto, de propósito: `giftcards/$code` segue com `.read: true`, porque a
+> tela de checkout e a de retorno do pagamento leem o cartão pelo código. Quem tiver o
+> código vê também nome, e-mail e telefone do comprador. Fechar isso exige separar os
+> campos públicos num nó próprio — mudança maior, fora do escopo desta correção.
+
 > **Escrita protegida (item 2 do backlog).** Sem login, `bookings/$id` só aceita
 > **criar** um agendamento ou as alterações self-service (reagendar/cancelar/feedback):
 > valor, pagamento e identidade (`price`/`finalPrice`/`priceWithFee`/`paidAmount`/
@@ -419,7 +445,7 @@ gravados com `scripts/aws-put-secrets.sh`. As chaves públicas usadas no build
       ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'",
       "$code": {
         ".read":  true,
-        ".write": "newData.exists()"
+        ".write": "newData.exists() && ((!data.exists() && newData.child('status').val() == 'pending' && newData.child('balance').val() == 0 && newData.child('amount').isNumber() && newData.child('amount').val() > 0) || (data.exists() && data.child('status').val() == 'active' && newData.child('amount').val() == data.child('amount').val() && newData.child('code').val() == data.child('code').val() && newData.child('balance').isNumber() && newData.child('balance').val() >= 0 && newData.child('balance').val() <= data.child('balance').val() && (newData.child('status').val() == 'active' || newData.child('status').val() == 'depleted')))"
       }
     },
     "stock":           { ".read": "auth != null && auth.token.email == 'spcarclean0@gmail.com'", ".write": "auth != null && auth.token.email == 'spcarclean0@gmail.com'" },
