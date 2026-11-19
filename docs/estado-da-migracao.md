@@ -73,7 +73,10 @@ Tem de ser **depois** do apply: o deploy publica código para cada arquivo em
 `functions/`, e `sp-car-clean-unsubscribe` só existe depois dele. Sem isso o
 deploy falha e nem o frontend sobe.
 
-### 3. REMOVER a permissão temporária
+### 3. REMOVER a permissão temporária — FEITO em 18/11/2026
+
+Removida em 18/11/2026, junto com a troca de `IAMFullAccess` por
+`IAMReadOnlyAccess` nessa chave (ver `CLAUDE.md`).
 
 A outra sessão anexou ao usuário `github-actions-tracker` a política inline
 **`temporario-terraform-apply-pr67`** para que o apply fosse possível daqui. Ela
